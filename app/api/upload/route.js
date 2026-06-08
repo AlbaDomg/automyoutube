@@ -13,7 +13,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Missing videoId' }, { status: 400 });
     }
 
-    // Fetch video details
+    // Obtener detalles del video
     const video = await prisma.video.findUnique({
       where: { id: videoId }
     });
@@ -22,7 +22,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Video not found' }, { status: 404 });
     }
 
-    // Get the connected YouTube channel
+    // Obtener el canal de YouTube conectado
     const channel = await prisma.channel.findFirst({
       orderBy: { updatedAt: 'desc' }
     });
@@ -31,7 +31,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'No YouTube channel connected. Please authenticate first.' }, { status: 400 });
     }
 
-    // Save final metadata updates and change status to UPLOADING
+    // Guardar las actualizaciones finales de metadatos y cambiar el estado a UPLOADING
     const parsedScheduledAt = scheduledAt ? new Date(scheduledAt) : null;
     const formattedTags = Array.isArray(tags) ? tags.join(', ') : (tags || video.tags);
     
@@ -47,7 +47,7 @@ export async function POST(request) {
       }
     });
 
-    // Run the upload process asynchronously in the background so it doesn't block the request (which would timeout)
+    // Ejecutar el proceso de subida de forma asíncrona en segundo plano para que no bloquee la petición (lo cual causaría un tiempo de espera agotado)
     uploadToYouTubeBackground(updatedVideo.id, channel.id);
 
     return NextResponse.json({
@@ -79,7 +79,7 @@ async function uploadToYouTubeBackground(videoId, channelId) {
       expiry_date: channel.tokenExpiry.getTime()
     });
 
-    // Refresh credentials if expired or near expiry (within 5 minutes)
+    // Actualizar las credenciales si han caducado o están cerca de caducar (dentro de 5 minutos)
     if (channel.tokenExpiry.getTime() - Date.now() < 300 * 1000) {
       console.log('[YouTube Upload] Access token is expiring. Refreshing...');
       const { credentials } = await oauth2Client.refreshAccessToken();
@@ -98,7 +98,7 @@ async function uploadToYouTubeBackground(videoId, channelId) {
       auth: oauth2Client
     });
 
-    // Ensure title does not exceed 100 characters
+    // Asegurar que el título no exceda los 100 caracteres
     let finalTitle = video.title || 'Uploaded Video';
     if (finalTitle.length > 100) {
       console.warn(`[YouTube Upload] Title "${finalTitle}" exceeds 100 characters. Truncating to 100 characters.`);
@@ -112,7 +112,7 @@ async function uploadToYouTubeBackground(videoId, channelId) {
         tags: video.tags ? video.tags.split(',').map(t => t.trim().replace(/^#/, '')).filter(Boolean) : [],
       },
       status: {
-        privacyStatus: 'private' // Required to enable scheduling
+        privacyStatus: 'private' // Requerido para habilitar la programación
       }
     };
 
@@ -156,7 +156,7 @@ async function uploadToYouTubeBackground(videoId, channelId) {
     const youtubeVideoId = res.data.id;
     console.log(`[YouTube Upload] Successfully uploaded to YouTube. ID: ${youtubeVideoId}`);
 
-    // Upload custom thumbnail if exists
+    // Subir miniatura personalizada si existe
     const uploadsDir = path.join(process.cwd(), 'uploads');
     const thumbnailPath = path.join(uploadsDir, `${videoId}-thumbnail.jpg`);
     if (fs.existsSync(thumbnailPath)) {
@@ -176,7 +176,7 @@ async function uploadToYouTubeBackground(videoId, channelId) {
       }
     }
 
-    // Update video entry in DB
+    // Actualizar la entrada del video en la base de datos
     await prisma.video.update({
       where: { id: videoId },
       data: {
@@ -186,7 +186,7 @@ async function uploadToYouTubeBackground(videoId, channelId) {
       }
     });
 
-    // Cleanup local video file to save server space
+    // Limpiar el archivo de video local para ahorrar espacio en el servidor
     try {
       fs.unlinkSync(video.filePath);
       console.log(`[YouTube Upload] Deleted temporary video file: ${video.filePath}`);

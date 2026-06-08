@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, Fragment } from "react";
 import styles from "./page.module.css";
 
-// Helper to generate a random UUID, with a fallback for older browsers/non-secure contexts
+// Ayudante para generar un UUID aleatorio, con soporte para navegadores antiguos/contextos no seguros
 function generateUUID() {
   if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
     return window.crypto.randomUUID();
@@ -16,11 +16,11 @@ function generateUUID() {
 }
 
 export default function Dashboard() {
-  // Channel state
+  // Estado del canal
   const [channel, setChannel] = useState({ connected: false, channel: null });
   const [loadingChannel, setLoadingChannel] = useState(true);
 
-  // Configuration state
+  // Estado de la configuración
   const [showSettings, setShowSettings] = useState(false);
   const [config, setConfig] = useState({
     GEMINI_API_KEY: "",
@@ -35,17 +35,17 @@ export default function Dashboard() {
   });
   const [savingConfig, setSavingConfig] = useState(false);
 
-  // Upload/analysis state
+  // Estado de subida/análisis
   const [uploadState, setUploadState] = useState({
     file: null,
-    status: "idle", // idle, uploading, analyzing, ready, success, error
+    status: "idle", // inactivo, subiendo, analizando, listo, éxito, error
     progress: 0,
     speed: "",
     videoId: "",
     errorMessage: "",
   });
 
-  // Metadata form state
+  // Estado del formulario de metadatos
   const [metadata, setMetadata] = useState({
     selectedTitle: "",
     titlesOptions: [],
@@ -55,17 +55,17 @@ export default function Dashboard() {
     scheduledAt: "",
   });
 
-  // Video queue/history state
+  // Estado de la cola/historial de videos
   const [videosList, setVideosList] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef(null);
   const [deletingVideoId, setDeletingVideoId] = useState(null);
   const deleteTimeoutRef = useRef(null);
 
-  // Language state
+  // Estado del idioma
   const [language, setLanguage] = useState("Spanish");
 
-  // Edit Video Modal state
+  // Estado del modal de edición de video
   const [editingVideo, setEditingVideo] = useState(null);
   const [editForm, setEditForm] = useState({
     title: "",
@@ -81,7 +81,7 @@ export default function Dashboard() {
   // Pestañas (Tabs)
   const [activeTab, setActiveTab] = useState("upload");
 
-  // YouTube Videos Optimization state
+  // Estado de optimización de videos de YouTube
   const [youtubeVideos, setYoutubeVideos] = useState([]);
   const [loadingYoutubeVideos, setLoadingYoutubeVideos] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -92,7 +92,7 @@ export default function Dashboard() {
   const [newThumbnailBase64, setNewThumbnailBase64] = useState(null);
   const [updatingYoutubeVideo, setUpdatingYoutubeVideo] = useState(false);
 
-  // Check connection status, configuration & get video queue
+  // Comprobar estado de conexión, configuración y obtener la cola de videos
   useEffect(() => {
     fetchConfig();
     fetchChannel();
@@ -105,7 +105,7 @@ export default function Dashboard() {
     }
   }, [activeTab, channel.connected]);
 
-  // Poll database status if there are active tasks (uploading or analyzing)
+  // Consultar el estado de la base de datos si hay tareas activas (subiendo o analizando)
   useEffect(() => {
     const hasActiveTasks = videosList.some(
       (v) => v.status === "UPLOADING" || v.status === "ANALYZING"
@@ -114,7 +114,7 @@ export default function Dashboard() {
     if (hasActiveTasks || uploadState.status === "analyzing" || uploadState.status === "uploading") {
       const interval = setInterval(() => {
         fetchVideos();
-        // If we are waiting for a specific analysis in the current session, check its status
+        // Si estamos esperando un análisis específico en la sesión actual, comprobar su estado
         if (uploadState.videoId && (uploadState.status === "analyzing" || uploadState.status === "uploading")) {
           checkCurrentVideoStatus(uploadState.videoId);
         }
@@ -151,7 +151,7 @@ export default function Dashboard() {
       setShowSettings(false);
       setConfigInput({ GEMINI_API_KEY: "", YOUTUBE_CLIENT_ID: "", YOUTUBE_CLIENT_SECRET: "" });
       await fetchConfig();
-      await fetchChannel(); // Refetch channel connection in case credentials changed
+      await fetchChannel(); // Volver a obtener la conexión del canal en caso de que cambien las credenciales
     } catch (err) {
       alert("Error al guardar: " + err.message);
     } finally {
@@ -187,11 +187,11 @@ export default function Dashboard() {
       if (deleteTimeoutRef.current) clearTimeout(deleteTimeoutRef.current);
       deleteTimeoutRef.current = setTimeout(() => {
         setDeletingVideoId(null);
-      }, 4000); // 4 seconds to click again to confirm
+      }, 4000); // 4 segundos para hacer clic de nuevo para confirmar
       return;
     }
 
-    // Second click: perform the delete from local app
+    // Segundo clic: realizar la eliminación desde la aplicación local
     setDeletingVideoId(null);
     if (deleteTimeoutRef.current) clearTimeout(deleteTimeoutRef.current);
 
@@ -342,7 +342,7 @@ export default function Dashboard() {
       const responseData = await res.json();
       if (responseData.scheduled) {
         alert("¡Actualización de video programada con éxito!");
-        fetchVideos(); // Refresh queue list
+        fetchVideos(); // Actualizar la lista de la cola
       } else {
         alert("¡Video actualizado en YouTube con éxito!");
       }
@@ -367,7 +367,7 @@ export default function Dashboard() {
         setUploadState((prev) => ({ ...prev, status: "ready" }));
         setMetadata({
           selectedTitle: video.title || "",
-          titlesOptions: [video.title].filter(Boolean), // Backend stores main title
+          titlesOptions: [video.title].filter(Boolean), // El backend almacena el título principal
           description: video.description || "",
           tags: video.tags || "",
           isScheduled: false,
@@ -398,7 +398,7 @@ export default function Dashboard() {
     }
   };
 
-  // Drag and drop handlers
+  // Controladores de arrastrar y soltar
   const handleDragOver = (e) => {
     e.preventDefault();
   };
@@ -463,7 +463,7 @@ export default function Dashboard() {
     });
   };
 
-  // Chunked upload implementation
+  // Implementación de subida fragmentada
   const startChunkedUpload = async (file) => {
     const uploadId = generateUUID();
     const chunkSize = 900 * 1024; // 900KB para ajustarse al límite de 1MB de proxies públicos como Tunnelmole o Ngrok
@@ -515,8 +515,8 @@ export default function Dashboard() {
         uploadedBytes += end - start;
         const progressPercent = Math.round((uploadedBytes / file.size) * 100);
 
-        // Speed calculation
-        const timeElapsed = (Date.now() - startTime) / 1000; // seconds
+        // Cálculo de velocidad
+        const timeElapsed = (Date.now() - startTime) / 1000; // segundos
         const speedMB = uploadedBytes / (1024 * 1024) / timeElapsed; // MB/s
 
         setUploadState((prev) => ({
@@ -545,7 +545,7 @@ export default function Dashboard() {
             videoId: data.videoId,
           }));
 
-          // Trigger Gemini analysis
+          // Desencadenar el análisis de Gemini
           triggerAnalysis(data.videoId, language);
           return;
         }
@@ -684,7 +684,7 @@ export default function Dashboard() {
         </div>
 
         <div className={styles.headerActions}>
-          {/* Settings Button */}
+          {/* Botón de Configuración */}
           <button
             onClick={() => {
               setConfigInput({
@@ -760,7 +760,7 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {/* Warnings & Config banner */}
+      {/* Banner de Advertencias y Configuración */}
       {!config.isConfigured && (
         <div className={styles.warningBanner}>
           <div className={styles.warningContent}>
@@ -802,7 +802,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Tabs Selector */}
+      {/* Selector de Pestañas */}
       {channel.connected && (
         <div className={styles.tabsContainer}>
           <button
@@ -821,11 +821,11 @@ export default function Dashboard() {
       )}
 
       {activeTab === "upload" ? (
-        /* Main Grid */
+        /* Rejilla Principal */
         <div className={styles.dashboardGrid}>
-          {/* Left Column: Upload / Form */}
+          {/* Columna Izquierda: Subida / Formulario */}
           <div className={styles.mainCol}>
-            {/* Uploader Card */}
+            {/* Tarjeta de Subida */}
             {uploadState.status === "idle" && (
               <div className={styles.card} style={{ position: "relative" }}>
                 <div className={styles.cardTitle}>Subir Nuevo Video</div>
@@ -893,7 +893,7 @@ export default function Dashboard() {
                   />
                 </div>
 
-                {/* Language Selection */}
+                {/* Selección de Idioma */}
                 <div className={styles.inputGroup} style={{ marginTop: "1.25rem" }}>
                   <label htmlFor="languageSelect">Idioma para los Metadatos (Títulos, Descripción y Tags)</label>
                   <select
@@ -910,7 +910,7 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* Uploading progress card */}
+            {/* Tarjeta de progreso de subida */}
             {uploadState.status === "uploading" && (
               <div className={styles.card}>
                 <div className={styles.cardTitle}>Subiendo al Servidor Local</div>
@@ -935,7 +935,7 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* AI Analyzing status card */}
+            {/* Tarjeta de estado de análisis de IA */}
             {uploadState.status === "analyzing" && (
               <div className={styles.card}>
                 <div className={styles.analyzingContainer}>
@@ -964,7 +964,7 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* Success state */}
+            {/* Estado de éxito */}
             {uploadState.status === "success" && (
               <div className={styles.card}>
                 <div className={styles.analyzingContainer} style={{ padding: "2rem 1rem" }}>
@@ -1003,7 +1003,7 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* Error State */}
+            {/* Estado de error */}
             {uploadState.status === "error" && (
               <div className={styles.card}>
                 <div className={styles.analyzingContainer} style={{ padding: "2rem 1rem" }}>
@@ -1042,7 +1042,7 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* Metadata Form (Shows when status is 'ready') */}
+            {/* Formulario de Metadatos (Se muestra cuando el estado es 'ready') */}
             {uploadState.status === "ready" && (
               <form onSubmit={handleSubmitMetadata} className={styles.card}>
                 <div className={styles.cardTitle}>Configurar y Programar Video</div>
@@ -1065,7 +1065,7 @@ export default function Dashboard() {
                   </div>
                 )}
 
-                {/* Title Suggestions */}
+                {/* Sugerencias de Título */}
                 {metadata.titlesOptions.length > 0 && (
                   <div className={styles.titlesSuggestionGroup}>
                     <div className={styles.suggestionTitleLabel}>
@@ -1095,7 +1095,7 @@ export default function Dashboard() {
                   </div>
                 )}
 
-                {/* Editable Fields */}
+                {/* Campos Editables */}
                 <div className={styles.inputGroup}>
                   <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
                     <span>Título Final</span>
@@ -1136,7 +1136,7 @@ export default function Dashboard() {
                   />
                 </div>
 
-                {/* Scheduling Details */}
+                {/* Detalles de Programación */}
                 <div className={styles.inputGroup} style={{ flexDirection: "row", alignItems: "center", gap: "0.5rem" }}>
                   <input
                     type="checkbox"
@@ -1162,7 +1162,7 @@ export default function Dashboard() {
                   </div>
                 )}
 
-                {/* Submit Buttons */}
+                {/* Botones de Envío */}
                 <button type="submit" disabled={isSubmitting || !channel.connected} className={styles.btnSubmit}>
                   {isSubmitting ? (
                     <>Procesando...</>
@@ -1192,7 +1192,7 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* Right Column: Upload History / Queue */}
+          {/* Columna Derecha: Historial de Subida / Cola */}
           <div className={styles.sidebarCol}>
             <div className={styles.card}>
               <div className={styles.cardTitle}>
@@ -1327,7 +1327,7 @@ export default function Dashboard() {
           </div>
         </div>
       ) : (
-        /* Optimize Existing Videos Layout */
+        /* Diseño de Optimización de Videos Existentes */
         <div className={styles.mainCol}>
           <div className={styles.card}>
             <div className={styles.cardTitle}>Optimizar Videos Existentes en tu Canal</div>
@@ -1399,7 +1399,7 @@ export default function Dashboard() {
                         </div>
 
                         <div className={styles.inlineEditContent}>
-                          {/* Left Column: Visual details & IA Suggestions */}
+                          {/* Columna Izquierda: Detalles visuales y sugerencias de IA */}
                           <div className={styles.inlineEditColLeft}>
                             <div className={styles.selectedVideoPreview}>
                               <img src={selectedYoutubeVideo.thumbnail} alt="Selected thumbnail" className={styles.selectedVideoThumbnail} />
@@ -1439,7 +1439,7 @@ export default function Dashboard() {
                             )}
                           </div>
 
-                          {/* Right Column: Editable fields & Save action */}
+                          {/* Columna Derecha: Campos editables y acción de guardar */}
                           <div className={styles.inlineEditColRight}>
                             <div className={styles.inputGroup}>
                               <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
@@ -1554,7 +1554,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Settings Modal */}
+      {/* Modal de Configuración */}
       {showSettings && (
         <div className={styles.settingsOverlay}>
           <form onSubmit={handleSaveConfig} className={styles.settingsModal}>
@@ -1652,7 +1652,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Edit Video Modal */}
+      {/* Modal de Edición de Video */}
       {editingVideo && (
         <div className={styles.settingsOverlay}>
           <form onSubmit={handleUpdateVideo} className={styles.settingsModal} style={{ maxWidth: "600px" }}>
