@@ -136,7 +136,7 @@ Respond in JSON format with the following keys:
       }));
     } catch (err) {
       // Si el modelo 2.5-flash ha agotado la cuota de la cuenta (429 / RESOURCE_EXHAUSTED),
-      // intentamos usar gemini-1.5-flash como fallback automático.
+      // intentamos usar gemini-2.0-flash como fallback automático.
       const isQuotaExceeded = err.message && (
         err.message.includes('429') ||
         err.message.includes('RESOURCE_EXHAUSTED') ||
@@ -145,9 +145,9 @@ Respond in JSON format with the following keys:
       );
 
       if (isQuotaExceeded) {
-        console.warn('[Gemini API] Límite de cuota excedido para gemini-2.5-flash. Intentando fallback con gemini-1.5-flash...');
+        console.warn('[Gemini API] Límite de cuota excedido para gemini-2.5-flash. Intentando fallback con gemini-2.0-flash...');
         response = await callGeminiWithRetry(() => ai.models.generateContent({
-          model: 'gemini-1.5-flash',
+          model: 'gemini-2.0-flash',
           contents: [
             {
               role: 'user',
