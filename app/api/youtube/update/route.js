@@ -1,0 +1,158 @@
+import { NextResponse } from 'next/server';
+import prisma from '@/lib/db';
+import { getOAuth2Client } from '@/lib/youtube';
+import { google } from 'googleapis';
+import fs from 'fs';
+import path from 'path';
+
+export async function POST(request) {
+  try {
+    const { youtubeVideoId, title, description, tags, thumbnail, scheduledAt } = await request.json();
+
+    if (!youtubeVideoId) {
+      return NextResponse.json({ error: 'Missing youtubeVideoId parameter' }, { status: 400 });
+    }
+
+    const channel = await prisma.channel.findFirst({
+      orderBy: { updatedAt: 'desc' }
+    });
+
+    if (!channel) {
+      return NextResponse.json({ error: 'No YouTube channel connected. Please authenticate first.' }, { status: 400 });
+    }
+
+    if (scheduledAt) {
+      // Create scheduled update entry in db
+      const cleanedTags = tags ? tags.split(',').map(t => t.trim().replace(/^#/, '')).filter(Boolean).join(', ') : '';
+      const newVideoUpdate = await prisma.video.create({
+        data: {
+          filename: `Actualización: ${title ? title.substring(0, 40) : youtubeVideoId}`,
+          filePath: 'YOUTUBE_UPDATE',
+          title: title || '',
+          description: description || '',
+          tags: cleanedTags,
+          scheduledAt: new Date(scheduledAt),
+          status: 'SCHEDULED',
+          youtubeId: youtubeVideoId
+        }
+      });
+
+      // Save custom thumbnail base64 if provided
+      if (thumbnail) {
+        const uploadsDir = path.join(process.cwd(), 'uploads');
+        if (!fs.existsSync(uploadsDir)) {
+          fs.mkdirSync(uploadsDir, { recursive: true });
+        }
+
+        const base64Data = thumbnail.replace(/^data:image\/\w+;base64,/, "");
+        const buffer = Buffer.from(base64Data, 'base64');
+        const tempThumbPath = path.join(uploadsDir, `${newVideoUpdate.id}-thumbnail.jpg`);
+        fs.writeFileSync(tempThumbPath, buffer);
+        console.log(`[Update Video API] Saved scheduled custom thumbnail at ${tempThumbPath}`);
+      }
+
+      console.log(`[Update Video API] Successfully scheduled metadata update for YouTube video ${youtubeVideoId} at ${scheduledAt}`);
+      return NextResponse.json({ success: true, message: 'YouTube video update scheduled successfully', scheduled: true });
+    }
+
+    const oauth2Client = await getOAuth2Client();
+    oauth2Client.setCredentials({
+      access_token: channel.accessToken,
+      refresh_token: channel.refreshToken,
+      expiry_date: channel.tokenExpiry.getTime()
+    });
+
+    // Refresh token if needed
+    if (channel.tokenExpiry.getTime() - Date.now() < 300 * 1000) {
+      try {
+        const { credentials } = await oauth2Client.refreshAccessToken();
+        await prisma.channel.update({
+          where: { id: channel.id },
+          data: {
+            accessToken: credentials.access_token,
+            tokenExpiry: new Date(credentials.expiry_date)
+          }
+        });
+      } catch (err) {
+        console.error('Error refreshing token in update api:', err);
+      }
+    }
+
+    const youtube = google.youtube({
+      version: 'v3',
+      auth: oauth2Client
+    });
+
+    // 1. Fetch current video details to preserve categoryId and other required fields
+    const videoGetRes = await youtube.videos.list({
+      part: 'snippet',
+      id: youtubeVideoId
+    });
+
+    if (!videoGetRes.data.items || videoGetRes.data.items.length === 0) {
+      return NextResponse.json({ error: 'Video not found on YouTube' }, { status: 404 });
+    }
+
+    const currentSnippet = videoGetRes.data.items[0].snippet;
+
+    // 2. Update the snippet fields (ensuring title is within YouTube's 100-character limit)
+    let finalTitle = title || currentSnippet.title;
+    if (finalTitle && finalTitle.length > 100) {
+      console.warn(`[Update Video API] Title "${finalTitle}" exceeds 100 characters. Truncating to 100 characters.`);
+      finalTitle = finalTitle.substring(0, 100);
+    }
+
+    const updatedSnippet = {
+      ...currentSnippet,
+      title: finalTitle,
+      description: description || currentSnippet.description,
+      tags: tags ? tags.split(',').map(t => t.trim().replace(/^#/, '')).filter(Boolean) : currentSnippet.tags
+    };
+
+    console.log(`[Update Video API] Updating YouTube metadata for video ${youtubeVideoId}...`);
+    await youtube.videos.update({
+      part: 'snippet',
+      requestBody: {
+        id: youtubeVideoId,
+        snippet: updatedSnippet
+      }
+    });
+
+    // 3. Upload custom thumbnail if provided
+    if (thumbnail) {
+      const uploadsDir = path.join(process.cwd(), 'uploads');
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+
+      const base64Data = thumbnail.replace(/^data:image\/\w+;base64,/, "");
+      const buffer = Buffer.from(base64Data, 'base64');
+      const tempThumbPath = path.join(uploadsDir, `temp-update-${youtubeVideoId}.jpg`);
+
+      try {
+        fs.writeFileSync(tempThumbPath, buffer);
+        console.log(`[Update Video API] Uploading new custom thumbnail for video ${youtubeVideoId}...`);
+        await youtube.thumbnails.set({
+          videoId: youtubeVideoId,
+          media: {
+            mimeType: 'image/jpeg',
+            body: fs.createReadStream(tempThumbPath)
+          }
+        });
+        console.log('[Update Video API] Custom thumbnail uploaded successfully!');
+      } catch (thumbError) {
+        console.warn('[Update Video API] Failed to upload custom thumbnail (your channel might need phone verification):', thumbError.message);
+        // We do not fail the request if ONLY the thumbnail upload fails (often due to channel verification)
+      } finally {
+        if (fs.existsSync(tempThumbPath)) {
+          fs.unlinkSync(tempThumbPath);
+        }
+      }
+    }
+
+    return NextResponse.json({ success: true, message: 'YouTube video updated successfully' });
+  } catch (error) {
+    console.error('Error updating YouTube video:', error);
+    return NextResponse.json({ error: error.message || 'Failed to update YouTube video' }, { status: 500 });
+  }
+}
