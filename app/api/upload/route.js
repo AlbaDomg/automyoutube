@@ -136,7 +136,7 @@ async function uploadToYouTubeBackground(videoId, channelId) {
       onUploadProgress: async (evt) => {
         const progress = Math.min(Math.round((evt.bytesRead / fileSize) * 100), 99);
         const now = Date.now();
-        // Update database if progress has increased and at least 1 second elapsed since last write
+        // Actualiza la base de datos si el progreso ha aumentado y ha transcurrido al menos 1 segundo desde la última escritura
         if (progress > currentProgress && (now - lastProgressUpdate > 1000)) {
           currentProgress = progress;
           lastProgressUpdate = now;

@@ -118,7 +118,7 @@ export default function Dashboard() {
         if (uploadState.videoId && (uploadState.status === "analyzing" || uploadState.status === "uploading")) {
           checkCurrentVideoStatus(uploadState.videoId);
         }
-      }, 2000); // Poll every 2 seconds for active tasks to keep progress bar smooth
+      }, 2000); // Consulta cada 2 segundos por tareas activas para mantener fluida la barra de progreso
       return () => clearInterval(interval);
     }
   }, [videosList, uploadState.status, uploadState.videoId]);
@@ -466,7 +466,7 @@ export default function Dashboard() {
   // Chunked upload implementation
   const startChunkedUpload = async (file) => {
     const uploadId = generateUUID();
-    const chunkSize = 900 * 1024; // 900KB to fit under public proxy (Tunnelmole/Ngrok) 1MB limit
+    const chunkSize = 900 * 1024; // 900KB para ajustarse al límite de 1MB de proxies públicos como Tunnelmole o Ngrok
     const totalChunks = Math.ceil(file.size / chunkSize);
 
     setUploadState({
