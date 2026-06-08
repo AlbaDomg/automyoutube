@@ -22,46 +22,110 @@ export async function POST(request) {
       fs.mkdirSync(uploadsDir, { recursive: true });
     }
 
-    const tempFilePath = path.join(uploadsDir, `temp-${uploadId}-${fileName}`);
+    // Guardar cada fragmento en un archivo temporal numerado para permitir subidas en paralelo sin corrupción
+    const chunkPath = path.join(uploadsDir, `temp-${uploadId}-${chunkIndex}`);
 
-    // Read chunk data
+    // Leer los datos del fragmento
     const arrayBuffer = await chunkFile.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Append buffer to the temp file
-    // We assume sequential uploads on the client
-    fs.appendFileSync(tempFilePath, buffer);
+    // Escribir el fragmento en su archivo indexado
+    fs.writeFileSync(chunkPath, buffer);
 
-    // If it's the last chunk, finalize the file
-    if (chunkIndex === totalChunks - 1) {
+    // Verificar si todos los fragmentos han sido subidos con éxito
+    let allChunksUploaded = true;
+    for (let i = 0; i < totalChunks; i++) {
+      if (!fs.existsSync(path.join(uploadsDir, `temp-${uploadId}-${i}`))) {
+        allChunksUploaded = false;
+        break;
+      }
+    }
+
+    // Si todos los fragmentos están listos, los fusionamos en el archivo final
+    if (allChunksUploaded) {
       const finalFilePath = path.join(uploadsDir, `${uploadId}-${fileName}`);
-      fs.renameSync(tempFilePath, finalFilePath);
+      const lockFilePath = path.join(uploadsDir, `lock-${uploadId}`);
 
-      // Create video entry in the database
-      const video = await prisma.video.create({
-        data: {
-          id: uploadId,
-          filename: fileName,
-          filePath: finalFilePath,
-          status: 'READY'
+      // Evitar que peticiones concurrentes intenten fusionar el archivo al mismo tiempo
+      if (!fs.existsSync(finalFilePath) && !fs.existsSync(lockFilePath)) {
+        try {
+          fs.writeFileSync(lockFilePath, 'locked');
+
+          const writeStream = fs.createWriteStream(finalFilePath);
+          for (let i = 0; i < totalChunks; i++) {
+            const chunkPartPath = path.join(uploadsDir, `temp-${uploadId}-${i}`);
+            const data = fs.readFileSync(chunkPartPath);
+            writeStream.write(data);
+          }
+          writeStream.end();
+
+          // Esperar a que la escritura del archivo termine por completo
+          await new Promise((resolve) => {
+            writeStream.on('finish', resolve);
+          });
+
+          // Limpiar archivos temporales de los fragmentos
+          for (let i = 0; i < totalChunks; i++) {
+            const chunkPartPath = path.join(uploadsDir, `temp-${uploadId}-${i}`);
+            if (fs.existsSync(chunkPartPath)) {
+              fs.unlinkSync(chunkPartPath);
+            }
+          }
+
+          // Eliminar el archivo de bloqueo
+          if (fs.existsSync(lockFilePath)) {
+            fs.unlinkSync(lockFilePath);
+          }
+
+          // Crear la entrada del video en la base de datos
+          const video = await prisma.video.create({
+            data: {
+              id: uploadId,
+              filename: fileName,
+              filePath: finalFilePath,
+              status: 'READY'
+            }
+          });
+
+          return NextResponse.json({
+            success: true,
+            completed: true,
+            videoId: video.id,
+            message: 'Archivo subido y ensamblado correctamente.'
+          });
+        } catch (mergeErr) {
+          console.error('Error al fusionar fragmentos:', mergeErr);
+          if (fs.existsSync(lockFilePath)) {
+            fs.unlinkSync(lockFilePath);
+          }
+          return NextResponse.json({ error: 'Fallo al fusionar los fragmentos en el servidor.' }, { status: 500 });
         }
-      });
+      } else {
+        // Si otro hilo ya está fusionando, esperamos a que termine para devolver éxito
+        let checkAttempts = 0;
+        while (!fs.existsSync(finalFilePath) && checkAttempts < 30) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+          checkAttempts++;
+        }
 
-      return NextResponse.json({
-        success: true,
-        completed: true,
-        videoId: video.id,
-        message: 'File upload complete'
-      });
+        if (fs.existsSync(finalFilePath)) {
+          return NextResponse.json({
+            success: true,
+            completed: true,
+            videoId: uploadId,
+            message: 'Archivo subido y ensamblado por otra petición paralela.'
+          });
+        }
+      }
     }
 
     return NextResponse.json({
       success: true,
       completed: false,
-      message: `Chunk ${chunkIndex + 1}/${totalChunks} uploaded`
+      message: `Fragmento ${chunkIndex + 1}/${totalChunks} subido correctamente.`
     });
   } catch (error) {
-    console.error('Error during chunk upload:', error);
-    return NextResponse.json({ error: 'Chunk upload failed' }, { status: 500 });
+    console.error('Error durante la subida del fragmento:', error);
+    return NextResponse.json({ error: 'Error interno en la subida del fragmento.' }, { status: 500 });
   }
 }

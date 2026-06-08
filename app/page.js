@@ -309,8 +309,63 @@ export default function Dashboard() {
     const file = e.target.files[0];
     if (file) {
       const reader = new FileReader();
-      reader.onload = () => {
-        setNewThumbnailBase64(reader.result);
+      reader.onload = (event) => {
+        // Establecer el estado con el archivo original de inmediato para asegurar que la miniatura
+        // se renderice en la interfaz al instante sin depender de la carga asíncrona de la imagen.
+        setNewThumbnailBase64(event.target.result);
+
+        try {
+          const img = new Image();
+          img.onerror = () => {
+            console.warn("[Thumbnail] Fallo al cargar el objeto Image, se usará el archivo original.");
+          };
+          img.onload = () => {
+            try {
+              const canvas = document.createElement("canvas");
+              // Las miniaturas de YouTube deben ser de 1280x720 (16:9)
+              const targetWidth = 1280;
+              const targetHeight = 720;
+              canvas.width = targetWidth;
+              canvas.height = targetHeight;
+              
+              const ctx = canvas.getContext("2d");
+              if (!ctx) {
+                console.warn("[Thumbnail] No se pudo obtener el contexto 2d del canvas.");
+                return;
+              }
+
+              // Dibujar la imagen recortándola y escalándola para llenar el lienzo de 1280x720 (object-fit: cover)
+              const imgRatio = img.width / img.height;
+              const targetRatio = targetWidth / targetHeight;
+              let drawWidth, drawHeight, drawX, drawY;
+              
+              if (imgRatio > targetRatio) {
+                drawHeight = img.height;
+                drawWidth = img.height * targetRatio;
+                drawX = (img.width - drawWidth) / 2;
+                drawY = 0;
+              } else {
+                drawWidth = img.width;
+                drawHeight = img.width / targetRatio;
+                drawX = 0;
+                drawY = (img.height - drawHeight) / 2;
+              }
+              
+              ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight, 0, 0, targetWidth, targetHeight);
+              
+              // Exportar como JPEG con calidad 0.8 para asegurar un tamaño de archivo inferior a 250kb,
+              // evitando el límite de 1MB de Tunnelmole que causa el error 413 Payload Too Large.
+              const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
+              setNewThumbnailBase64(dataUrl);
+              console.log("[Thumbnail] Imagen comprimida correctamente en segundo plano.");
+            } catch (canvasErr) {
+              console.error("[Thumbnail] Error procesando compresión con canvas:", canvasErr);
+            }
+          };
+          img.src = event.target.result;
+        } catch (err) {
+          console.error("[Thumbnail] Error en el flujo de compresión de imagen:", err);
+        }
       };
       reader.readAsDataURL(file);
     }
@@ -466,7 +521,15 @@ export default function Dashboard() {
   // Implementación de subida fragmentada
   const startChunkedUpload = async (file) => {
     const uploadId = generateUUID();
-    const chunkSize = 900 * 1024; // 900KB para ajustarse al límite de 1MB de proxies públicos como Tunnelmole o Ngrok
+    // Ajustar dinámicamente el tamaño del fragmento según si el usuario accede localmente o a través de un túnel
+    const isLocal = typeof window !== "undefined" && 
+      (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" || window.location.hostname.startsWith("192.168."));
+    
+    // Configuración optimizada de tamaño y concurrencia:
+    // - Local: 5MB por fragmento y concurrencia de 6 (máxima velocidad)
+    // - Túnel (Tunnelmole/móvil): 400KB por fragmento y concurrencia de 2 (máxima estabilidad en redes externas y túneles)
+    const chunkSize = isLocal ? 5 * 1024 * 1024 : 400 * 1024;
+    const limit = isLocal ? 6 : 2;
     const totalChunks = Math.ceil(file.size / chunkSize);
 
     setUploadState({
@@ -488,8 +551,13 @@ export default function Dashboard() {
 
     const startTime = Date.now();
     let uploadedBytes = 0;
+    let completedTriggered = false;
 
-    for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+    // Crear un arreglo con los índices de todos los fragmentos
+    const chunkIndices = Array.from({ length: totalChunks }, (_, i) => i);
+
+    // Función interna para subir un fragmento específico con reintentos
+    const uploadChunkTask = async (chunkIndex) => {
       const start = chunkIndex * chunkSize;
       const end = Math.min(start + chunkSize, file.size);
       const chunk = file.slice(start, end);
@@ -501,31 +569,53 @@ export default function Dashboard() {
       formData.append("chunkIndex", chunkIndex.toString());
       formData.append("totalChunks", totalChunks.toString());
 
-      try {
-        const res = await fetch("/api/upload/chunk", {
-          method: "POST",
-          body: formData,
-        });
+      let attempts = 0;
+      const maxAttempts = 3;
+      let res;
+      let data;
 
-        if (!res.ok) {
-          throw new Error("El servidor falló al procesar el fragmento.");
+      while (attempts < maxAttempts) {
+        try {
+          res = await fetch("/api/upload/chunk", {
+            method: "POST",
+            body: formData,
+          });
+
+          if (!res.ok) {
+            throw new Error(`El servidor respondió con código ${res.status}`);
+          }
+
+          data = await res.json();
+          break; // Salir del bucle si la subida fue exitosa
+        } catch (fetchErr) {
+          attempts++;
+          if (attempts >= maxAttempts) {
+            throw new Error(`El fragmento ${chunkIndex + 1} falló tras ${maxAttempts} intentos: ${fetchErr.message}`);
+          }
+          console.warn(`Intento ${attempts} fallido para el fragmento ${chunkIndex + 1}. Reintentando en 1s...`);
+          await new Promise((resolve) => setTimeout(resolve, 1000)); // Esperar 1 segundo antes de reintentar
         }
+      }
 
-        const data = await res.json();
-        uploadedBytes += end - start;
-        const progressPercent = Math.round((uploadedBytes / file.size) * 100);
+      uploadedBytes += end - start;
+      const progressPercent = Math.round((uploadedBytes / file.size) * 100);
 
-        // Cálculo de velocidad
-        const timeElapsed = (Date.now() - startTime) / 1000; // segundos
-        const speedMB = uploadedBytes / (1024 * 1024) / timeElapsed; // MB/s
+      // Cálculo de velocidad de subida
+      const timeElapsed = (Date.now() - startTime) / 1000; // segundos
+      const speedMB = uploadedBytes / (1024 * 1024) / timeElapsed; // MB/s
 
-        setUploadState((prev) => ({
-          ...prev,
-          progress: progressPercent,
-          speed: `${speedMB.toFixed(1)} MB/s`,
-        }));
+      setUploadState((prev) => ({
+        ...prev,
+        progress: progressPercent,
+        speed: `${speedMB.toFixed(1)} MB/s`,
+      }));
 
-        if (data.completed) {
+      // Si el servidor confirma que todos los fragmentos han sido recibidos y ensamblados
+      if (data && data.completed) {
+        if (!completedTriggered) {
+          completedTriggered = true;
+
+          // Subir la miniatura extraída si está disponible
           if (extractedThumbBase64) {
             try {
               await fetch("/api/upload/thumbnail", {
@@ -533,9 +623,9 @@ export default function Dashboard() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ videoId: data.videoId, thumbnail: extractedThumbBase64 }),
               });
-              console.log("Uploaded extracted thumbnail to backend.");
+              console.log("Miniatura extraída subida con éxito al backend.");
             } catch (upThumbErr) {
-              console.error("Failed to upload thumbnail to backend:", upThumbErr);
+              console.error("Fallo al subir la miniatura extraída al backend:", upThumbErr);
             }
           }
 
@@ -545,18 +635,47 @@ export default function Dashboard() {
             videoId: data.videoId,
           }));
 
-          // Desencadenar el análisis de Gemini
+          // Iniciar el análisis automatizado con Gemini
           triggerAnalysis(data.videoId, language);
-          return;
         }
-      } catch (err) {
+      }
+    };
+
+    // Ejecutor de subida con límite de concurrencia (Promise Pool)
+    const runPool = async () => {
+      const pool = [];
+      for (const index of chunkIndices) {
+        // Ejecutar la tarea de subida y registrarla en el pool activo
+        const promise = uploadChunkTask(index).then(() => {
+          // Eliminar del pool una vez que la promesa se resuelva
+          pool.splice(pool.indexOf(promise), 1);
+        });
+        pool.push(promise);
+
+        // Si alcanzamos el límite de concurrencia, esperamos a que al menos una termine
+        if (pool.length >= limit) {
+          await Promise.race(pool);
+        }
+      }
+      // Esperar a que todos los fragmentos restantes en el pool finalicen
+      await Promise.all(pool);
+    };
+
+    try {
+      await runPool();
+
+      // Control adicional por si todos terminaron pero no se recibió completed en el cliente por algún fallo de red
+      if (!completedTriggered) {
+        throw new Error("La subida finalizó pero el servidor no confirmó el ensamblado del video.");
+      }
+    } catch (err) {
+      if (!completedTriggered) {
         setUploadState((prev) => ({
           ...prev,
           status: "error",
           errorMessage: err.message || "Error al subir el video.",
         }));
         fetchVideos();
-        return;
       }
     }
   };
@@ -1031,13 +1150,42 @@ export default function Dashboard() {
                       {uploadState.errorMessage}
                     </p>
                   </div>
-                  <button
-                    onClick={() => setUploadState({ ...uploadState, status: "idle" })}
-                    className={styles.btnSubmit}
-                    style={{ maxWidth: "200px", marginTop: "1rem" }}
-                  >
-                    Reintentar Subida
-                  </button>
+                  
+                  {/* Botones de acción dinámicos según el tipo de fallo (Subida vs Análisis) */}
+                  <div style={{ display: "flex", gap: "1rem", justifyContent: "center", width: "100%", flexWrap: "wrap", marginTop: "1.5rem" }}>
+                    {uploadState.videoId ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setUploadState((prev) => ({ ...prev, status: "analyzing", errorMessage: "" }));
+                            triggerAnalysis(uploadState.videoId, language);
+                          }}
+                          className={styles.btnSubmit}
+                          style={{ width: "auto", minWidth: "160px" }}
+                        >
+                          Reintentar Análisis
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setUploadState({ ...uploadState, status: "idle", videoId: "" })}
+                          className={styles.btnCancel}
+                          style={{ width: "auto", minWidth: "160px" }}
+                        >
+                          Subir Otro Video
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setUploadState({ ...uploadState, status: "idle" })}
+                        className={styles.btnSubmit}
+                        style={{ width: "auto", minWidth: "180px" }}
+                      >
+                        Reintentar Subida
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -1370,7 +1518,7 @@ export default function Dashboard() {
                     <div
                       onClick={() => {
                         setSelectedYoutubeVideo(video);
-                        setUpdateForm({ title: video.title, description: video.description, tags: "", isScheduled: false, scheduledAt: "" });
+                        setUpdateForm({ title: video.title, description: video.description, tags: video.tags || "", isScheduled: false, scheduledAt: "" });
                         setOptimizationSuggestions(null);
                         setNewThumbnailBase64(null);
                       }}
@@ -1487,6 +1635,16 @@ export default function Dashboard() {
                                 onChange={handleNewThumbnailSelect}
                                 style={{ background: "transparent", border: "none", padding: 0 }}
                               />
+                              {selectedYoutubeVideo?.isShort && (
+                                <div style={{ fontSize: "0.75rem", color: "var(--warning, #f59e0b)", marginTop: "0.5rem", display: "flex", gap: "0.25rem", alignItems: "center" }}>
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ flexShrink: 0 }}>
+                                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                                    <line x1="12" y1="9" x2="12" y2="13" />
+                                    <line x1="12" y1="17" x2="12.01" y2="17" />
+                                  </svg>
+                                  <span>YouTube no permite portadas personalizadas para Shorts (videos de menos de 60s) desde la API o la web de Studio de escritorio.</span>
+                                </div>
+                              )}
                               {newThumbnailBase64 && (
                                 <div style={{ marginTop: "0.5rem", position: "relative" }}>
                                   <img src={newThumbnailBase64} alt="New preview" style={{ width: "100%", maxWidth: "160px", borderRadius: "8px", border: "1px solid var(--border-color)" }} />

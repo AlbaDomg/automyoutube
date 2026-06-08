@@ -45,9 +45,10 @@ export async function GET(request) {
     });
 
     let videos = [];
+    let videoIds = [];
 
     if (q) {
-      // Search for user's videos by query
+      // Buscar videos del usuario según la consulta
       const searchRes = await youtube.search.list({
         part: 'snippet',
         forMine: true,
@@ -56,40 +57,64 @@ export async function GET(request) {
         maxResults: 20
       });
 
-      videos = (searchRes.data.items || []).map(item => ({
-        id: item.id.videoId,
-        title: item.snippet.title,
-        description: item.snippet.description,
-        thumbnail: item.snippet.thumbnails?.medium?.url || item.snippet.thumbnails?.default?.url || '',
-        publishedAt: item.snippet.publishedAt
-      }));
+      videoIds = (searchRes.data.items || []).map(item => item.id.videoId).filter(Boolean);
     } else {
-      // Get the channel's uploads playlist
+      // Obtener la lista de reproducción de subidas del canal
       const channelRes = await youtube.channels.list({
         part: 'contentDetails',
         id: channel.id
       });
 
       if (!channelRes.data.items || channelRes.data.items.length === 0) {
-        return NextResponse.json({ error: 'Channel details not found' }, { status: 404 });
+        return NextResponse.json({ error: 'No se encontraron los detalles del canal' }, { status: 404 });
       }
 
       const uploadsPlaylistId = channelRes.data.items[0].contentDetails.relatedPlaylists.uploads;
 
-      // Fetch uploads playlist items
+      // Obtener los elementos de la lista de reproducción de subidas
       const playlistRes = await youtube.playlistItems.list({
         part: 'snippet',
         playlistId: uploadsPlaylistId,
         maxResults: 20
       });
 
-      videos = (playlistRes.data.items || []).map(item => ({
-        id: item.snippet.resourceId.videoId,
-        title: item.snippet.title,
-        description: item.snippet.description,
-        thumbnail: item.snippet.thumbnails?.medium?.url || item.snippet.thumbnails?.default?.url || '',
-        publishedAt: item.snippet.publishedAt
-      }));
+      videoIds = (playlistRes.data.items || []).map(item => item.snippet.resourceId.videoId).filter(Boolean);
+    }
+
+    // Función auxiliar para parsear la duración ISO 8601 de YouTube (ej. PT1M15S)
+    const parseDurationToSeconds = (duration) => {
+      if (!duration) return 0;
+      const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+      if (!match) return 0;
+      const hours = parseInt(match[1] || 0, 10);
+      const minutes = parseInt(match[2] || 0, 10);
+      const seconds = parseInt(match[3] || 0, 10);
+      return (hours * 3600) + (minutes * 60) + seconds;
+    };
+
+    if (videoIds.length > 0) {
+      // Realizar una única consulta por lotes para traer snippets y detalles de contenido (incluyendo duración)
+      const videoDetailsRes = await youtube.videos.list({
+        part: 'snippet,contentDetails',
+        id: videoIds.join(',')
+      });
+
+      videos = (videoDetailsRes.data.items || []).map(item => {
+        const durationStr = item.contentDetails?.duration || '';
+        const durationSeconds = parseDurationToSeconds(durationStr);
+        // YouTube considera Shorts a los videos de menos de 60 segundos
+        const isShort = durationSeconds > 0 && durationSeconds <= 60;
+
+        return {
+          id: item.id,
+          title: item.snippet.title,
+          description: item.snippet.description,
+          thumbnail: item.snippet.thumbnails?.medium?.url || item.snippet.thumbnails?.default?.url || '',
+          publishedAt: item.snippet.publishedAt,
+          tags: item.snippet.tags ? item.snippet.tags.join(', ') : '',
+          isShort: isShort
+        };
+      });
     }
 
     return NextResponse.json(videos);
