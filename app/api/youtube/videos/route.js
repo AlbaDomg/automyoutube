@@ -3,6 +3,26 @@ import prisma from '@/lib/db';
 import { getOAuth2Client } from '@/lib/youtube';
 import { google } from 'googleapis';
 
+function extractVideoId(query) {
+  if (!query) return null;
+  const trimmed = query.trim();
+
+  // Expresión regular para varias formas de URLs de YouTube
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=|shorts\/)([^#\&\?]*).*/;
+  const match = trimmed.match(regExp);
+
+  if (match && match[2].length === 11) {
+    return match[2];
+  }
+
+  // Si no es URL, pero tiene 11 caracteres y es un ID de video válido
+  if (trimmed.length === 11 && /^[a-zA-Z0-9_-]{11}$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  return null;
+}
+
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -48,16 +68,11 @@ export async function GET(request) {
     let videoIds = [];
 
     if (q) {
-      // Buscar videos del usuario según la consulta
-      const searchRes = await youtube.search.list({
-        part: 'snippet',
-        forMine: true,
-        type: 'video',
-        q: q,
-        maxResults: 20
-      });
-
-      videoIds = (searchRes.data.items || []).map(item => item.id.videoId).filter(Boolean);
+      const targetVideoId = extractVideoId(q);
+      if (!targetVideoId) {
+        return NextResponse.json({ error: 'El formato de ID o URL de video de YouTube no es válido.' }, { status: 400 });
+      }
+      videoIds = [targetVideoId];
     } else {
       // Obtener la lista de reproducción de subidas del canal
       const channelRes = await youtube.channels.list({
@@ -100,6 +115,11 @@ export async function GET(request) {
       });
 
       videos = (videoDetailsRes.data.items || []).map(item => {
+        // Si buscamos por un ID específico (q está presente), verificar que pertenece a este canal
+        if (q && item.snippet?.channelId !== channel.id) {
+          return null;
+        }
+
         const durationStr = item.contentDetails?.duration || '';
         const durationSeconds = parseDurationToSeconds(durationStr);
         // YouTube considera Shorts a los videos de menos de 60 segundos
@@ -114,7 +134,16 @@ export async function GET(request) {
           tags: item.snippet.tags ? item.snippet.tags.join(', ') : '',
           isShort: isShort
         };
-      });
+      }).filter(Boolean);
+
+      // Si buscamos por ID y la lista final está vacía
+      if (q && videos.length === 0) {
+        if (!videoDetailsRes.data.items || videoDetailsRes.data.items.length === 0) {
+          return NextResponse.json({ error: 'No se encontró ningún video con ese ID en YouTube.' }, { status: 404 });
+        } else {
+          return NextResponse.json({ error: 'El video no pertenece a este canal de YouTube.' }, { status: 403 });
+        }
+      }
     }
 
     return NextResponse.json(videos);

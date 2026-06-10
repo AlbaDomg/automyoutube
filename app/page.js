@@ -8,7 +8,7 @@ function generateUUID() {
   if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
     return window.crypto.randomUUID();
   }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
     const r = Math.random() * 16 | 0;
     const v = c === 'x' ? r : (r & 0x3 | 0x8);
     return v.toString(16);
@@ -79,7 +79,7 @@ export default function Dashboard() {
   const [extractedThumbnail, setExtractedThumbnail] = useState(null);
 
   // Pestañas (Tabs)
-  const [activeTab, setActiveTab] = useState("upload");
+  const [activeTab, setActiveTab] = useState("optimize");
 
   // Estado de optimización de videos de YouTube
   const [youtubeVideos, setYoutubeVideos] = useState([]);
@@ -92,11 +92,329 @@ export default function Dashboard() {
   const [newThumbnailBase64, setNewThumbnailBase64] = useState(null);
   const [updatingYoutubeVideo, setUpdatingYoutubeVideo] = useState(false);
 
+  // Estados del generador automático de miniaturas (Estilo TVG)
+  const [thumbnailText, setThumbnailText] = useState("");
+  const [programLogoBase64, setProgramLogoBase64] = useState(null); // Logo del programa (Hora Galega o subido)
+  const [customBgBase64, setCustomBgBase64] = useState(null); // Captura del video personalizada para el fondo
+  const [isGeneratingThumbnail, setIsGeneratingThumbnail] = useState(false);
+  const canvasRef = useRef(null);
+  const [isAutoThumbnailEnabled, setIsAutoThumbnailEnabled] = useState(false);
+  const templateImageRef = useRef(null);
+  const defaultProgramLogoCanvasRef = useRef(null);
+
+  // Estados del sistema de tareas
+  const [tasks, setTasks] = useState([]);
+  const [loadingTasks, setLoadingTasks] = useState(false);
+  const [activeTask, setActiveTask] = useState(null);
+  const [newTaskForm, setNewTaskForm] = useState({
+    youtubeId: "",
+    title: "",
+    description: "",
+    dueDate: "",
+  });
+
+  // Helper para cargar imágenes de forma asíncrona en promesas
+  const loadImage = (src) => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => resolve(img);
+      img.onerror = (err) => reject(err);
+      img.src = src;
+    });
+  };
+
+  // Función para limpiar todos los estados relacionados con el generador de miniaturas
+  const handleResetThumbnailStates = () => {
+    setThumbnailText("");
+    setProgramLogoBase64(null);
+    setCustomBgBase64(null);
+    setIsAutoThumbnailEnabled(false);
+    setNewThumbnailBase64(null);
+  };
+
+  // Precargar y procesar los recursos de la plantilla
+  useEffect(() => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.src = "/template_thumbnail.png";
+    img.onload = () => {
+      templateImageRef.current = img;
+      console.log("[Thumbnail Generator] Plantilla cargada.");
+
+      try {
+        // Extraer y transparentar el logotipo del programa por defecto ("Hora Galega")
+        const progCanvas = document.createElement("canvas");
+        progCanvas.width = 400;
+        progCanvas.height = 172;
+        const progCtx = progCanvas.getContext("2d");
+        progCtx.drawImage(img, 0, 0, 400, 172, 0, 0, 400, 172);
+
+        const progImgData = progCtx.getImageData(0, 0, 400, 172);
+        const progData = progImgData.data;
+        for (let i = 0; i < progData.length; i += 4) {
+          const r = progData[i];
+          const g = progData[i + 1];
+          const b = progData[i + 2];
+          // Umbral de color blanco para volver transparente
+          if (r > 240 && g > 240 && b > 240) {
+            progData[i + 3] = 0;
+          }
+        }
+        progCtx.putImageData(progImgData, 0, 0);
+        defaultProgramLogoCanvasRef.current = progCanvas;
+        console.log("[Thumbnail Generator] Logotipo por defecto procesado con éxito.");
+      } catch (err) {
+        console.error("[Thumbnail Generator] Error al procesar recursos de plantilla:", err);
+      }
+    };
+  }, []);
+
+  // Función para dibujar y componer la miniatura en el canvas
+  const generateAutoThumbnail = async () => {
+    if (!isAutoThumbnailEnabled || !selectedYoutubeVideo) return;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    setIsGeneratingThumbnail(true);
+    try {
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("No se pudo obtener el contexto 2D del canvas");
+
+      // Dimensiones de lienzo estándar para YouTube (1280x720)
+      canvas.width = 1280;
+      canvas.height = 720;
+
+      // 1. Dibujar Imagen de Fondo
+      let bgImg = null;
+      if (customBgBase64) {
+        bgImg = await loadImage(customBgBase64);
+      } else if (selectedYoutubeVideo.thumbnail) {
+        // Carga de la miniatura a través de nuestro bypass de CORS local
+        const proxiedUrl = `/api/youtube/thumbnail-proxy?url=${encodeURIComponent(selectedYoutubeVideo.thumbnail)}`;
+        bgImg = await loadImage(proxiedUrl);
+      }
+
+      if (bgImg) {
+        const canvasRatio = canvas.width / canvas.height;
+        const imgRatio = bgImg.width / bgImg.height;
+        let sx, sy, sw, sh;
+
+        if (imgRatio > canvasRatio) {
+          sh = bgImg.height;
+          sw = sh * canvasRatio;
+          sx = (bgImg.width - sw) / 2;
+          sy = 0;
+        } else {
+          sw = bgImg.width;
+          sh = sw / canvasRatio;
+          sx = 0;
+          sy = (bgImg.height - sh) / 2;
+        }
+
+        ctx.drawImage(bgImg, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+      } else {
+        // Fondo degradado por si falla
+        const grad = ctx.createLinearGradient(0, 0, 1280, 720);
+        grad.addColorStop(0, "#1e1b4b");
+        grad.addColorStop(1, "#311042");
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, 1280, 720);
+      }
+
+      // 2. Dibujar Logotipo de la Cadena (TVG) arriba a la derecha (tal cual es)
+      if (templateImageRef.current) {
+        const dw = 280;
+        const dh = 280;
+
+        ctx.save();
+        // Crear clipping triangular en la esquina superior derecha
+        ctx.beginPath();
+        ctx.moveTo(1280 - dw, 0);
+        ctx.lineTo(1280, 0);
+        ctx.lineTo(1280, dh);
+        ctx.closePath();
+        ctx.clip();
+
+        // Dibujar el banner original de la plantilla en la esquina superior derecha
+        ctx.drawImage(templateImageRef.current, 800, 0, 224, 224, 1280 - dw, 0, dw, dh);
+        ctx.restore();
+      }
+
+      // 3. Dibujar Logotipo del Programa arriba a la izquierda
+      let progImg = null;
+      if (programLogoBase64) {
+        progImg = await loadImage(programLogoBase64);
+      } else if (defaultProgramLogoCanvasRef.current) {
+        progImg = defaultProgramLogoCanvasRef.current;
+      }
+
+      if (progImg) {
+        const maxW = 380;
+        const maxH = 160;
+        let dw = progImg.width;
+        let dh = progImg.height;
+
+        if (dw > maxW) {
+          dh = (maxW / dw) * dh;
+          dw = maxW;
+        }
+        if (dh > maxH) {
+          dw = (maxH / dh) * dw;
+          dh = maxH;
+        }
+
+        // Dibujar en la esquina superior izquierda con margen
+        const dx = 40;
+        const dy = 40;
+        ctx.drawImage(progImg, dx, dy, dw, dh);
+      }
+
+      // 4. Dibujar Frase SEO en Gallego abajo a la izquierda (4 palabras)
+      if (thumbnailText) {
+        const words = thumbnailText.trim().toUpperCase().split(/\s+/);
+        let line1 = "";
+        let line2 = "";
+
+        if (words.length >= 4) {
+          line1 = words.slice(0, Math.ceil(words.length / 2)).join(" ");
+          line2 = words.slice(Math.ceil(words.length / 2)).join(" ");
+        } else {
+          line1 = words.slice(0, 2).join(" ");
+          line2 = words.slice(2).join(" ");
+        }
+
+        ctx.save();
+        ctx.font = "bold 86px Impact, Arial Black, sans-serif";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "alphabetic";
+
+        // Configuración de sombra
+        ctx.shadowColor = "rgba(0, 0, 0, 0.9)";
+        ctx.shadowBlur = 15;
+        ctx.shadowOffsetX = 5;
+        ctx.shadowOffsetY = 5;
+
+        // Configuración de contorno (stroke)
+        ctx.strokeStyle = "#000000";
+        ctx.lineWidth = 14;
+        ctx.lineJoin = "round";
+
+        const textX = 60;
+        const line2Y = 720 - 65;
+        const line1Y = line2Y - 95;
+
+        if (line1) {
+          ctx.fillStyle = "#ffffff";
+          ctx.strokeText(line1, textX, line1Y);
+          ctx.fillText(line1, textX, line1Y);
+        }
+
+        if (line2) {
+          ctx.fillStyle = "#f97316"; // Naranja
+          ctx.strokeText(line2, textX, line2Y);
+          ctx.fillText(line2, textX, line2Y);
+        }
+        ctx.restore();
+      }
+
+      // 5. Exportar a base64 para guardarlo en la cola de subidas/actualizaciones
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
+      setNewThumbnailBase64(dataUrl);
+    } catch (err) {
+      console.error("[Thumbnail Generator] Error al componer canvas:", err);
+    } finally {
+      setIsGeneratingThumbnail(false);
+    }
+  };
+
+  // Efecto para redibujar automáticamente el lienzo cuando cambien los elementos del generador
+  useEffect(() => {
+    if (isAutoThumbnailEnabled && selectedYoutubeVideo) {
+      const timer = setTimeout(() => {
+        generateAutoThumbnail();
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [thumbnailText, programLogoBase64, customBgBase64, isAutoThumbnailEnabled, selectedYoutubeVideo]);
+
+  const fetchTasks = async () => {
+    setLoadingTasks(true);
+    try {
+      const res = await fetch("/api/tasks");
+      if (res.ok) {
+        const data = await res.json();
+        setTasks(data);
+      }
+    } catch (err) {
+      console.error("Error fetching tasks:", err);
+    } finally {
+      setLoadingTasks(false);
+    }
+  };
+
+  const handleCreateTask = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newTaskForm)
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Fallo al crear la tarea");
+      }
+      alert("¡Tarea creada con éxito!");
+      setNewTaskForm({ youtubeId: "", title: "", description: "", dueDate: "" });
+      fetchTasks();
+    } catch (err) {
+      alert("Error al crear tarea: " + err.message);
+    }
+  };
+
+  const handleWorkOnTask = async (task) => {
+    setActiveTask(task);
+    setActiveTab("optimize");
+    setSearchQuery(task.youtubeId);
+
+    // Ejecutar la búsqueda de video automáticamente
+    setLoadingYoutubeVideos(true);
+    try {
+      const res = await fetch(`/api/youtube/videos?q=${encodeURIComponent(task.youtubeId)}`);
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Fallo al buscar el video");
+      }
+      const data = await res.json();
+      if (data.length > 0) {
+        const video = data[0];
+        setSelectedYoutubeVideo(video);
+        setUpdateForm({
+          title: video.title || "",
+          description: video.description || "",
+          tags: video.tags || "",
+          isScheduled: false,
+          scheduledAt: ""
+        });
+        setOptimizationSuggestions(null);
+      } else {
+        alert("No se encontró el video en tu canal de YouTube.");
+      }
+    } catch (err) {
+      alert("Error al cargar la tarea en el editor: " + err.message);
+    } finally {
+      setLoadingYoutubeVideos(false);
+    }
+  };
+
   // Comprobar estado de conexión, configuración y obtener la cola de videos
   useEffect(() => {
     fetchConfig();
     fetchChannel();
     fetchVideos();
+    fetchTasks();
   }, []);
 
   useEffect(() => {
@@ -104,6 +422,12 @@ export default function Dashboard() {
       fetchYoutubeVideos();
     }
   }, [activeTab, channel.connected]);
+
+  useEffect(() => {
+    if (activeTab === "tasks") {
+      fetchTasks();
+    }
+  }, [activeTab]);
 
   // Consultar el estado de la base de datos si hay tareas activas (subiendo o analizando)
   useEffect(() => {
@@ -298,6 +622,10 @@ export default function Dashboard() {
         isScheduled: false,
         scheduledAt: ""
       });
+      if (data.suggestions.thumbnailText) {
+        setThumbnailText(data.suggestions.thumbnailText);
+        setIsAutoThumbnailEnabled(true);
+      }
     } catch (err) {
       alert("Error al optimizar con IA: " + err.message);
     } finally {
@@ -327,7 +655,7 @@ export default function Dashboard() {
               const targetHeight = 720;
               canvas.width = targetWidth;
               canvas.height = targetHeight;
-              
+
               const ctx = canvas.getContext("2d");
               if (!ctx) {
                 console.warn("[Thumbnail] No se pudo obtener el contexto 2d del canvas.");
@@ -338,7 +666,7 @@ export default function Dashboard() {
               const imgRatio = img.width / img.height;
               const targetRatio = targetWidth / targetHeight;
               let drawWidth, drawHeight, drawX, drawY;
-              
+
               if (imgRatio > targetRatio) {
                 drawHeight = img.height;
                 drawWidth = img.height * targetRatio;
@@ -350,9 +678,9 @@ export default function Dashboard() {
                 drawX = 0;
                 drawY = (img.height - drawHeight) / 2;
               }
-              
+
               ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight, 0, 0, targetWidth, targetHeight);
-              
+
               // Exportar como JPEG con calidad 0.8 para asegurar un tamaño de archivo inferior a 250kb,
               // evitando el límite de 1MB de Tunnelmole que causa el error 413 Payload Too Large.
               const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
@@ -403,7 +731,8 @@ export default function Dashboard() {
       }
       setSelectedYoutubeVideo(null);
       setOptimizationSuggestions(null);
-      setNewThumbnailBase64(null);
+      handleResetThumbnailStates();
+      fetchTasks();
       fetchYoutubeVideos(searchQuery);
     } catch (err) {
       alert("Error al guardar cambios en YouTube: " + err.message);
@@ -522,9 +851,9 @@ export default function Dashboard() {
   const startChunkedUpload = async (file) => {
     const uploadId = generateUUID();
     // Ajustar dinámicamente el tamaño del fragmento según si el usuario accede localmente o a través de un túnel
-    const isLocal = typeof window !== "undefined" && 
+    const isLocal = typeof window !== "undefined" &&
       (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" || window.location.hostname.startsWith("192.168."));
-    
+
     // Configuración optimizada de tamaño y concurrencia:
     // - Local: 5MB por fragmento y concurrencia de 6 (máxima velocidad)
     // - Túnel (Tunnelmole/móvil): 400KB por fragmento y concurrencia de 2 (máxima estabilidad en redes externas y túneles)
@@ -925,10 +1254,12 @@ export default function Dashboard() {
       {channel.connected && (
         <div className={styles.tabsContainer}>
           <button
-            onClick={() => setActiveTab("upload")}
-            className={`${styles.tabButton} ${activeTab === "upload" ? styles.tabActive : ""}`}
+            disabled
+            title="Sección deshabilitada temporalmente"
+            className={`${styles.tabButton} ${styles.tabDisabled}`}
+            style={{ opacity: 0.5, cursor: "not-allowed" }}
           >
-            Subir y Programar Video
+            🔒 Subir y Programar Video (Deshabilitado)
           </button>
           <button
             onClick={() => setActiveTab("optimize")}
@@ -936,10 +1267,16 @@ export default function Dashboard() {
           >
             Optimizar Videos Existentes
           </button>
+          <button
+            onClick={() => setActiveTab("tasks")}
+            className={`${styles.tabButton} ${activeTab === "tasks" ? styles.tabActive : ""}`}
+          >
+            📋 Gestión de Tareas
+          </button>
         </div>
       )}
 
-      {activeTab === "upload" ? (
+      {activeTab === "upload" && (
         /* Rejilla Principal */
         <div className={styles.dashboardGrid}>
           {/* Columna Izquierda: Subida / Formulario */}
@@ -1150,7 +1487,7 @@ export default function Dashboard() {
                       {uploadState.errorMessage}
                     </p>
                   </div>
-                  
+
                   {/* Botones de acción dinámicos según el tipo de fallo (Subida vs Análisis) */}
                   <div style={{ display: "flex", gap: "1rem", justifyContent: "center", width: "100%", flexWrap: "wrap", marginTop: "1.5rem" }}>
                     {uploadState.videoId ? (
@@ -1474,7 +1811,9 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
-      ) : (
+      )}
+
+      {activeTab === "optimize" && (
         /* Diseño de Optimización de Videos Existentes */
         <div className={styles.mainCol}>
           <div className={styles.card}>
@@ -1520,7 +1859,7 @@ export default function Dashboard() {
                         setSelectedYoutubeVideo(video);
                         setUpdateForm({ title: video.title, description: video.description, tags: video.tags || "", isScheduled: false, scheduledAt: "" });
                         setOptimizationSuggestions(null);
-                        setNewThumbnailBase64(null);
+                        handleResetThumbnailStates();
                       }}
                       className={`${styles.youtubeVideoCard} ${selectedYoutubeVideo?.id === video.id ? styles.youtubeVideoCardActive : ""}`}
                     >
@@ -1529,9 +1868,31 @@ export default function Dashboard() {
                         <h4 style={{ fontSize: "0.85rem", fontWeight: "600", color: "var(--text-primary)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", height: "2.4rem", lineHeight: "1.2rem" }}>
                           {video.title}
                         </h4>
-                        <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.25rem", display: "block" }}>
-                          {new Date(video.publishedAt).toLocaleDateString()}
-                        </span>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.5rem" }}>
+                          <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                            {new Date(video.publishedAt).toLocaleDateString()}
+                          </span>
+                          <a
+                            href={`https://studio.youtube.com/video/${video.id}/edit`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={styles.ytDirectLink}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            Editar en YT
+                            <svg
+                              width="12"
+                              height="12"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2.5"
+                              style={{ marginLeft: "0.15rem" }}
+                            >
+                              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3" />
+                            </svg>
+                          </a>
+                        </div>
                       </div>
                     </div>
 
@@ -1542,13 +1903,65 @@ export default function Dashboard() {
                           <button type="button" onClick={() => {
                             setSelectedYoutubeVideo(null);
                             setOptimizationSuggestions(null);
-                            setNewThumbnailBase64(null);
+                            handleResetThumbnailStates();
                           }} className={styles.closeBtn}>✕</button>
                         </div>
 
                         <div className={styles.inlineEditContent}>
                           {/* Columna Izquierda: Detalles visuales y sugerencias de IA */}
                           <div className={styles.inlineEditColLeft}>
+                            {activeTask && activeTask.youtubeId === selectedYoutubeVideo.id && (
+                              <div style={{
+                                border: "1px solid #10b981",
+                                borderRadius: "8px",
+                                padding: "0.85rem",
+                                marginBottom: "1rem",
+                                background: "rgba(16, 185, 129, 0.05)"
+                              }}>
+                                <h4 style={{ fontSize: "0.85rem", color: "#10b981", margin: "0 0 0.5rem 0", display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                                  📋 Tarea Pendiente Enlazada
+                                </h4>
+                                <div style={{ fontSize: "0.8rem", color: "var(--text-primary)", marginBottom: "0.5rem" }}>
+                                  <strong>Título Requerido:</strong>
+                                  <div style={{ background: "rgba(0,0,0,0.2)", padding: "0.4rem", borderRadius: "4px", marginTop: "0.25rem", wordBreak: "break-word" }}>
+                                    {activeTask.title}
+                                  </div>
+                                </div>
+                                <div style={{ fontSize: "0.8rem", color: "var(--text-primary)", marginBottom: "0.75rem" }}>
+                                  <strong>Descripción Requerida:</strong>
+                                  <div style={{ background: "rgba(0,0,0,0.2)", padding: "0.4rem", borderRadius: "4px", marginTop: "0.25rem", whiteSpace: "pre-wrap", maxHeight: "120px", overflowY: "auto", wordBreak: "break-word" }}>
+                                    {activeTask.description}
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setUpdateForm({
+                                      ...updateForm,
+                                      title: activeTask.title,
+                                      description: activeTask.description
+                                    });
+                                  }}
+                                  style={{
+                                    width: "100%",
+                                    padding: "0.5rem",
+                                    background: "#10b981",
+                                    color: "#fff",
+                                    border: "none",
+                                    borderRadius: "6px",
+                                    cursor: "pointer",
+                                    fontWeight: "600",
+                                    fontSize: "0.8rem",
+                                    display: "flex",
+                                    justifyContent: "center",
+                                    alignItems: "center",
+                                    gap: "0.25rem"
+                                  }}
+                                >
+                                  📋 Aplicar Datos de Tarea al Editor
+                                </button>
+                              </div>
+                            )}
                             <div className={styles.selectedVideoPreview}>
                               <img src={selectedYoutubeVideo.thumbnail} alt="Selected thumbnail" className={styles.selectedVideoThumbnail} />
                               <div className={styles.selectedVideoInfo}>
@@ -1627,14 +2040,167 @@ export default function Dashboard() {
                               />
                             </div>
 
-                            <div className={styles.inputGroup}>
-                              <label>Nueva Portada / Miniatura (Opcional)</label>
-                              <input
-                                type="file"
-                                accept="image/*"
-                                onChange={handleNewThumbnailSelect}
-                                style={{ background: "transparent", border: "none", padding: 0 }}
-                              />
+                            {/* SECCIÓN MINIATURA AUTOMÁTICA */}
+                            <div style={{
+                              border: "1px solid var(--border-color)",
+                              borderRadius: "12px",
+                              padding: "1rem",
+                              marginTop: "1.5rem",
+                              marginBottom: "1.5rem",
+                              background: "rgba(255,255,255,0.02)"
+                            }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+                                <span style={{ fontWeight: "600", color: "var(--text-primary)", fontSize: "0.9rem" }}>
+                                  🎨 Generar miniatura estilo TVG (Automática)
+                                </span>
+                                <label className={styles.switch} style={{ position: "relative", display: "inline-block", width: "44px", height: "24px" }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={isAutoThumbnailEnabled}
+                                    onChange={(e) => {
+                                      setIsAutoThumbnailEnabled(e.target.checked);
+                                      if (!e.target.checked) {
+                                        setNewThumbnailBase64(null);
+                                      }
+                                    }}
+                                    style={{ opacity: 0, width: 0, height: 0 }}
+                                  />
+                                  <span style={{
+                                    position: "absolute",
+                                    cursor: "pointer",
+                                    top: 0, left: 0, right: 0, bottom: 0,
+                                    backgroundColor: isAutoThumbnailEnabled ? "#10b981" : "#4b5563",
+                                    transition: "0.3s",
+                                    borderRadius: "24px"
+                                  }}>
+                                    <span style={{
+                                      position: "absolute",
+                                      content: "''",
+                                      height: "18px", width: "18px",
+                                      left: isAutoThumbnailEnabled ? "22px" : "3px",
+                                      bottom: "3px",
+                                      backgroundColor: "white",
+                                      transition: "0.3s",
+                                      borderRadius: "50%"
+                                    }} />
+                                  </span>
+                                </label>
+                              </div>
+
+                              {isAutoThumbnailEnabled ? (
+                                <div style={{ display: "flex", flexDirection: "column", gap: "1rem", marginTop: "1rem" }}>
+                                  {/* Preview */}
+                                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5rem" }}>
+                                    <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", alignSelf: "flex-start" }}>Previsualización en tiempo real (1280x720):</span>
+                                    <div style={{ position: "relative", width: "100%", aspectRatio: "16/9", overflow: "hidden", borderRadius: "8px", border: "1px solid var(--border-color)", background: "#000" }}>
+                                      {newThumbnailBase64 ? (
+                                        <img src={newThumbnailBase64} alt="Auto-thumbnail preview" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                      ) : (
+                                        <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: "0.8rem" }}>
+                                          {isGeneratingThumbnail ? "Generando portada..." : "Cargando previsualización..."}
+                                        </div>
+                                      )}
+                                      {isGeneratingThumbnail && (
+                                        <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "0.8rem" }}>
+                                          Procesando canvas...
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* SEO Text Input */}
+                                  <div className={styles.inputGroup} style={{ margin: 0 }}>
+                                    <label style={{ fontSize: "0.8rem" }}>Frase SEO en Gallego (4 palabras)</label>
+                                    <input
+                                      type="text"
+                                      value={thumbnailText}
+                                      onChange={(e) => setThumbnailText(e.target.value)}
+                                      placeholder="Ej: GRAN CONCURSO HORA GALEGA"
+                                      style={{ padding: "0.5rem", borderRadius: "6px", border: "1px solid var(--border-color)", background: "var(--bg-card)", color: "var(--text-primary)" }}
+                                    />
+                                    <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
+                                      Las primeras 2 palabras saldrán en <span style={{ color: "#fff", fontWeight: "bold" }}>Blanco</span>, las siguientes 2 en <span style={{ color: "#f97316", fontWeight: "bold" }}>Naranja</span>.
+                                    </p>
+                                  </div>
+
+                                  {/* Custom background input */}
+                                  <div className={styles.inputGroup} style={{ margin: 0 }}>
+                                    <label style={{ fontSize: "0.8rem", display: "flex", justifyContent: "space-between" }}>
+                                      <span>Imagen de Fondo Personalizada</span>
+                                      {customBgBase64 && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setCustomBgBase64(null)}
+                                          style={{ border: "none", background: "none", color: "#ef4444", fontSize: "0.75rem", cursor: "pointer", padding: 0 }}
+                                        >
+                                          Restaurar Original
+                                        </button>
+                                      )}
+                                    </label>
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      onChange={(e) => {
+                                        const file = e.target.files[0];
+                                        if (file) {
+                                          const reader = new FileReader();
+                                          reader.onload = (event) => setCustomBgBase64(event.target.result);
+                                          reader.readAsDataURL(file);
+                                        }
+                                      }}
+                                      style={{ background: "transparent", border: "none", padding: 0, fontSize: "0.8rem" }}
+                                    />
+                                  </div>
+
+                                  {/* Custom program logo input */}
+                                  <div className={styles.inputGroup} style={{ margin: 0 }}>
+                                    <label style={{ fontSize: "0.8rem", display: "flex", justifyContent: "space-between" }}>
+                                      <span>Logotipo del Programa Personalizado (PNG)</span>
+                                      {programLogoBase64 && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setProgramLogoBase64(null)}
+                                          style={{ border: "none", background: "none", color: "#ef4444", fontSize: "0.75rem", cursor: "pointer", padding: 0 }}
+                                        >
+                                          Restaurar Default
+                                        </button>
+                                      )}
+                                    </label>
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      onChange={(e) => {
+                                        const file = e.target.files[0];
+                                        if (file) {
+                                          const reader = new FileReader();
+                                          reader.onload = (event) => setProgramLogoBase64(event.target.result);
+                                          reader.readAsDataURL(file);
+                                        }
+                                      }}
+                                      style={{ background: "transparent", border: "none", padding: 0, fontSize: "0.8rem" }}
+                                    />
+                                  </div>
+                                </div>
+                              ) : (
+                                <div style={{ marginTop: "0.5rem" }}>
+                                  <label style={{ display: "block", fontSize: "0.8rem", marginBottom: "0.25rem", color: "var(--text-muted)" }}>
+                                    Sube un archivo de imagen convencional para usar como miniatura:
+                                  </label>
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={handleNewThumbnailSelect}
+                                    style={{ background: "transparent", border: "none", padding: 0 }}
+                                  />
+                                  {newThumbnailBase64 && (
+                                    <div style={{ marginTop: "0.5rem", position: "relative" }}>
+                                      <img src={newThumbnailBase64} alt="New preview" style={{ width: "100%", maxWidth: "160px", borderRadius: "8px", border: "1px solid var(--border-color)" }} />
+                                      <button type="button" onClick={() => setNewThumbnailBase64(null)} style={{ position: "absolute", top: "-5px", left: "145px", background: "#ef4444", color: "#fff", border: "none", borderRadius: "50%", width: "20px", height: "20px", cursor: "pointer", fontSize: "10px", padding: 0 }}>✕</button>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
                               {selectedYoutubeVideo?.isShort && (
                                 <div style={{ fontSize: "0.75rem", color: "var(--warning, #f59e0b)", marginTop: "0.5rem", display: "flex", gap: "0.25rem", alignItems: "center" }}>
                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ flexShrink: 0 }}>
@@ -1645,12 +2211,8 @@ export default function Dashboard() {
                                   <span>YouTube no permite portadas personalizadas para Shorts (videos de menos de 60s) desde la API o la web de Studio de escritorio.</span>
                                 </div>
                               )}
-                              {newThumbnailBase64 && (
-                                <div style={{ marginTop: "0.5rem", position: "relative" }}>
-                                  <img src={newThumbnailBase64} alt="New preview" style={{ width: "100%", maxWidth: "160px", borderRadius: "8px", border: "1px solid var(--border-color)" }} />
-                                  <button type="button" onClick={() => setNewThumbnailBase64(null)} style={{ position: "absolute", top: "-5px", left: "145px", background: "#ef4444", color: "#fff", border: "none", borderRadius: "50%", width: "20px", height: "20px", cursor: "pointer", fontSize: "10px", padding: 0 }}>✕</button>
-                                </div>
-                              )}
+
+                              <canvas ref={canvasRef} style={{ display: "none" }} />
                             </div>
 
                             <div className={styles.inputGroup} style={{ flexDirection: "row", alignItems: "center", gap: "0.5rem", marginTop: "1rem" }}>
@@ -1684,7 +2246,7 @@ export default function Dashboard() {
                                 onClick={() => {
                                   setSelectedYoutubeVideo(null);
                                   setOptimizationSuggestions(null);
-                                  setNewThumbnailBase64(null);
+                                  handleResetThumbnailStates();
                                 }}
                                 className={styles.btnCancel}
                                 style={{ flex: 1 }}
@@ -1708,6 +2270,221 @@ export default function Dashboard() {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === "tasks" && (
+        <div className={styles.tasksLayout}>
+          {/* Formulario de creación de tareas en la izquierda */}
+          <div className={styles.tasksLeftCol}>
+            <div className={styles.card}>
+              <div className={styles.cardTitle}>Nuevo Video Pendiente</div>
+              <form onSubmit={handleCreateTask} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                <div className={styles.inputGroup}>
+                  <label htmlFor="taskYoutubeId">ID del Vídeo de YouTube</label>
+                  <input
+                    type="text"
+                    id="taskYoutubeId"
+                    value={newTaskForm.youtubeId}
+                    onChange={(e) => setNewTaskForm({ ...newTaskForm, youtubeId: e.target.value })}
+                    placeholder="Ej: vMLRoF6R3KE"
+                    required
+                  />
+                  <span className={styles.configOverlayInfo}>
+                  </span>
+                </div>
+                <div className={styles.inputGroup}>
+                  <label htmlFor="taskTitle">Título de Referencia</label>
+                  <input
+                    type="text"
+                    id="taskTitle"
+                    value={newTaskForm.title}
+                    onChange={(e) => setNewTaskForm({ ...newTaskForm, title: e.target.value })}
+                    placeholder="Introduce el título de referencia para el vídeo"
+                    required
+                  />
+                </div>
+                <div className={styles.inputGroup}>
+                  <label htmlFor="taskDescription">Descripción de Referencia</label>
+                  <textarea
+                    id="taskDescription"
+                    rows="4"
+                    value={newTaskForm.description}
+                    onChange={(e) => setNewTaskForm({ ...newTaskForm, description: e.target.value })}
+                    placeholder="Introduce la descripción de referencia para el vídeo"
+                    required
+                  />
+                </div>
+                <div className={styles.inputGroup}>
+                  <label htmlFor="taskDueDate">Fecha Límite de Entrega (Opcional)</label>
+                  <input
+                    type="date"
+                    id="taskDueDate"
+                    value={newTaskForm.dueDate}
+                    onChange={(e) => setNewTaskForm({ ...newTaskForm, dueDate: e.target.value })}
+                  />
+                </div>
+                <button type="submit" className={styles.btnSubmit} style={{ marginTop: "0.5rem" }}>
+                  Crear Video Pendiente
+                </button>
+              </form>
+            </div>
+          </div>
+
+          {/* Listado de tareas (Realizar vs Realizadas) en la derecha */}
+          <div className={styles.tasksRightCol}>
+            <div className={styles.card}>
+              <div className={styles.cardTitle} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span>Videos Pendientes</span>
+                <button onClick={fetchTasks} className={styles.refreshBtn} title="Actualizar lista">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
+                  </svg>
+                </button>
+              </div>
+
+              {loadingTasks ? (
+                <div className={styles.emptyState}>Cargando videos...</div>
+              ) : tasks.filter(t => t.status === "PENDING").length === 0 ? (
+                <div className={styles.emptyState}>No hay videos pendientes. ¡Buen trabajo!</div>
+              ) : (
+                <div className={styles.tasksList}>
+                  {tasks.filter(t => t.status === "PENDING").map(task => (
+                    <div key={task.id} className={styles.taskCardPending}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem" }}>
+                        <h4 className={styles.taskCardTitle}>{task.title}</h4>
+                        <div style={{ display: "flex", gap: "0.5rem" }}>
+                          <button
+                            onClick={() => handleWorkOnTask(task)}
+                            className={styles.btnWorkOnTask}
+                            title="Editar este video"
+                          >
+                            Editar Video
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (confirm("¿Estás seguro de que deseas eliminar esta tarea?")) {
+                                try {
+                                  const res = await fetch(`/api/tasks?id=${task.id}`, { method: 'DELETE' });
+                                  if (res.ok) {
+                                    fetchTasks();
+                                  } else {
+                                    alert("No se pudo eliminar la tarea");
+                                  }
+                                } catch (err) {
+                                  console.error(err);
+                                }
+                              }
+                            }}
+                            className={styles.taskActionBtnDelete}
+                            title="Eliminar tarea"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className={styles.taskCardDetails}>
+                        <p className={styles.taskCardDesc}>{task.description}</p>
+                        <div className={styles.taskCardMetaGrid}>
+                          <div><strong>ID YouTube:</strong> <code style={{ color: "var(--primary)" }}>{task.youtubeId}</code></div>
+                          {task.uploadDate && (
+                            <div><strong>Subido a YT:</strong> {formatDate(task.uploadDate)}</div>
+                          )}
+                          <div>
+                            <strong>Fecha Límite:</strong>{" "}
+                            {task.dueDate ? (
+                              <span style={{ color: new Date(task.dueDate) < new Date() ? "#ef4444" : "inherit" }}>
+                                {new Date(task.dueDate).toLocaleDateString("es-ES")}
+                              </span>
+                            ) : (
+                              <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}>Sin límite</span>
+                            )}
+                            <button
+                              onClick={() => {
+                                const newDate = prompt("Introduce la nueva fecha límite (AAAA-MM-DD) o déjala vacía para eliminarla:", task.dueDate ? new Date(task.dueDate).toISOString().substring(0, 10) : "");
+                                if (newDate !== null) {
+                                  fetch("/api/tasks", {
+                                    method: "PATCH",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ id: task.id, dueDate: newDate || null })
+                                  }).then(res => {
+                                    if (res.ok) fetchTasks();
+                                    else alert("Error al actualizar la fecha límite");
+                                  });
+                                }
+                              }}
+                              className={styles.editDueDateBtn}
+                              title="Editar fecha límite"
+                            >
+                              ✏️
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className={styles.card} style={{ marginTop: "1.5rem" }}>
+              <div className={styles.cardTitle}>Videos Editados(Completados)</div>
+              {loadingTasks ? (
+                <div className={styles.emptyState}>Cargando videos...</div>
+              ) : tasks.filter(t => t.status === "COMPLETED").length === 0 ? (
+                <div className={styles.emptyState}>No hay videos completados todavía.</div>
+              ) : (
+                <div className={styles.tasksList}>
+                  {tasks.filter(t => t.status === "COMPLETED").map(task => (
+                    <div key={task.id} className={styles.taskCardCompleted}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem" }}>
+                        <h4 className={styles.taskCardTitle} style={{ color: "var(--text-muted)", textDecoration: "line-through" }}>
+                          {task.title}
+                        </h4>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                          <span className={styles.taskBadgeCompleted}>Completada</span>
+                          <button
+                            onClick={async () => {
+                              if (confirm("¿Estás seguro de que deseas eliminar esta tarea?")) {
+                                try {
+                                  const res = await fetch(`/api/tasks?id=${task.id}`, { method: 'DELETE' });
+                                  if (res.ok) {
+                                    fetchTasks();
+                                  } else {
+                                    alert("No se pudo eliminar la tarea");
+                                  }
+                                } catch (err) {
+                                  console.error(err);
+                                }
+                              }
+                            }}
+                            className={styles.taskActionBtnDelete}
+                            title="Eliminar tarea"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className={styles.taskCardDetails}>
+                        <p className={styles.taskCardDesc} style={{ color: "var(--text-muted)" }}>{task.description}</p>
+                        <div className={styles.taskCardMetaGrid} style={{ color: "var(--text-muted)" }}>
+                          <div><strong>ID YouTube:</strong> <code>{task.youtubeId}</code></div>
+                          {task.uploadDate && (
+                            <div><strong>Subido a YT:</strong> {formatDate(task.uploadDate)}</div>
+                          )}
+                          <div>
+                            <strong>Editado el:</strong> {formatDate(task.completedAt || task.updatedAt)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

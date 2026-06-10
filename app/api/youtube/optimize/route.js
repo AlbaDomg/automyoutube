@@ -34,7 +34,8 @@ async function callGeminiWithRetry(fn, maxRetries = 3, delayMs = 3000) {
 
 export async function POST(request) {
   try {
-    const { youtubeVideoId, language = 'Spanish' } = await request.json();
+    const { youtubeVideoId } = await request.json();
+    const language = 'Galician'; // Forzado a gallego siempre
 
     if (!youtubeVideoId) {
       return NextResponse.json({ error: 'Missing youtubeVideoId parameter' }, { status: 400 });
@@ -100,7 +101,7 @@ export async function POST(request) {
     const ai = new GoogleGenAI({ apiKey });
 
     const prompt = `
-Analyze the following metadata of an existing YouTube video and optimize it for a professional, high-CTR, and SEO-optimized YouTube upload in the following language: ${language}.
+Analyze the following metadata of an existing YouTube video and optimize it for a professional, high-CTR, and SEO-optimized YouTube upload in the following language: ${language}. CRITICAL: You MUST generate all title options, the description, hashtags, and SEO tags strictly in ${language}. Do not use Spanish or English.
 
 Current Title: ${currentTitle}
 Current Description: ${currentDescription}
@@ -109,13 +110,17 @@ Current Tags: ${currentTags}
 Generate the following:
 1. Three options for an attractive title (optimized for high CTR and SEO) in ${language}. CRITICAL: Each title option MUST be under 100 characters in length (YouTube API limit).
 2. An engaging description (including key topics, call to action, and placeholder timestamps if applicable) in ${language}.
-3. Relevant hashtags (all starting with the '#' symbol, e.g. ["#keyword1", "#keyword2"]) in ${language}.
+3. Relevant hashtags (all starting with the '#' symbol, e.g. ["#keyword1", "#keyword2"]) in ${language} to be appended to the video description.
+4. A list of 10-15 highly relevant SEO tags/keywords (WITHOUT the '#' symbol, e.g. ["keyword1", "keyword2", "keyword3"]) in ${language} for the video tags field.
+5. A high-impact SEO phrase of exactly 4 words in ${language} to print on the video thumbnail.
 
 Respond in JSON format with the following keys:
 {
   "titles": ["Title 1", "Title 2", "Title 3"],
   "description": "Suggested description...",
-  "tags": ["#tag1", "#tag2", "#tag3"]
+  "hashtags": ["#tag1", "#tag2", "#tag3"],
+  "tags": ["seo tag 1", "seo tag 2", "seo tag 3"],
+  "thumbnailText": "Exactly four word phrase"
 }
 `;
 
@@ -172,8 +177,8 @@ Respond in JSON format with the following keys:
     }
 
     const suggestedDescription = metadata.description || '';
-    const hashtagsString = metadata.tags && metadata.tags.length > 0
-      ? '\n\n' + metadata.tags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ')
+    const hashtagsString = metadata.hashtags && metadata.hashtags.length > 0
+      ? '\n\n' + metadata.hashtags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ')
       : '';
     const finalDescription = suggestedDescription + hashtagsString;
 
@@ -187,7 +192,8 @@ Respond in JSON format with the following keys:
       suggestions: {
         titles: metadata.titles || [currentTitle],
         description: finalDescription,
-        tags: metadata.tags || []
+        tags: metadata.tags || [],
+        thumbnailText: metadata.thumbnailText || ''
       }
     });
 

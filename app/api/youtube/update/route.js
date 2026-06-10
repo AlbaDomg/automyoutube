@@ -150,6 +150,23 @@ export async function POST(request) {
       }
     }
 
+    // 4. Autocompletar la tarea si existe en la base de datos
+    try {
+      await prisma.videoTask.updateMany({
+        where: {
+          youtubeId: youtubeVideoId,
+          status: 'PENDING'
+        },
+        data: {
+          status: 'COMPLETED',
+          completedAt: new Date()
+        }
+      });
+      console.log(`[Update Video API] Automatically completed matching VideoTask for youtubeVideoId: ${youtubeVideoId}`);
+    } catch (taskError) {
+      console.error('[Update Video API] Error autocompleting VideoTask:', taskError.message);
+    }
+
     return NextResponse.json({ success: true, message: 'YouTube video updated successfully' });
   } catch (error) {
     console.error('Error updating YouTube video:', error);

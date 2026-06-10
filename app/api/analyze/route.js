@@ -36,7 +36,7 @@ export async function POST(request) {
   try {
     const body = await request.json();
     videoId = body.videoId;
-    const language = body.language || 'Spanish';
+    const language = 'Galician'; // Forzado a gallego siempre
 
     if (!videoId) {
       return NextResponse.json({ error: 'Missing videoId' }, { status: 400 });
@@ -101,16 +101,20 @@ export async function POST(request) {
     console.log('[Gemini API] File is active. Generating titles, description and tags...');
 
     const prompt = `
-Analyze this video and generate metadata for a YouTube upload in the following language: ${language}.
+Analyze this video and generate metadata for a YouTube upload in the following language: ${language}. CRITICAL: You MUST generate all title options, the description, hashtags, and SEO tags strictly in ${language}. Do not use Spanish or English.
 1. Three options for title (optimized for high CTR and SEO) in ${language}. CRITICAL: Each title option MUST be under 100 characters in length (YouTube API limit).
 2. A compelling description including key topics and estimated timestamps if applicable in ${language}.
-3. Relevant hashtags (all starting with the '#' symbol, e.g. ["#keyword1", "#keyword2"]) in ${language}.
+3. Relevant hashtags (all starting with the '#' symbol, e.g. ["#keyword1", "#keyword2"]) in ${language} to be appended to the video description.
+4. A list of 10-15 highly relevant SEO tags/keywords (WITHOUT the '#' symbol, e.g. ["keyword1", "keyword2", "keyword3"]) in ${language} for the video tags field.
+5. A high-impact SEO phrase of exactly 4 words in ${language} to print on the video thumbnail.
 
 Respond in JSON format with the following keys:
 {
   "titles": ["Title 1", "Title 2", "Title 3"],
   "description": "Suggested description...",
-  "tags": ["#tag1", "#tag2", "#tag3"]
+  "hashtags": ["#tag1", "#tag2", "#tag3"],
+  "tags": ["seo tag 1", "seo tag 2", "seo tag 3"],
+  "thumbnailText": "Exactly four word phrase"
 }
 `;
 
@@ -186,8 +190,8 @@ Respond in JSON format with the following keys:
 
     const suggestedTitle = metadata.titles?.[0] || 'Untitled Video';
     const suggestedDescription = metadata.description || '';
-    const hashtagsString = metadata.tags && metadata.tags.length > 0
-      ? '\n\n' + metadata.tags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ')
+    const hashtagsString = metadata.hashtags && metadata.hashtags.length > 0
+      ? '\n\n' + metadata.hashtags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ')
       : '';
     const finalDescription = suggestedDescription + hashtagsString;
     const tags = metadata.tags ? metadata.tags.join(', ') : '';
@@ -216,7 +220,8 @@ Respond in JSON format with the following keys:
       video: updatedVideo,
       titles: metadata.titles || [suggestedTitle],
       description: finalDescription,
-      tags: metadata.tags || []
+      tags: metadata.tags || [],
+      thumbnailText: metadata.thumbnailText || ''
     });
   } catch (error) {
     console.error('Error during video analysis:', error);
