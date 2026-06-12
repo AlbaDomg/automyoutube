@@ -120,24 +120,23 @@ export async function POST(request) {
       console.warn('[PDF Analyze API] Error al consultar video en YouTube:', ytError.message);
     }
 
-    // 2. Procesar el archivo PDF (cargar desde FormData o desde el servidor si ya existe)
+    // 2. Procesar el archivo PDF (cargar desde FormData o desde la base de datos si ya existe)
     let pdfBase64 = "";
     if (file) {
       const arrayBuffer = await file.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
+      pdfBase64 = buffer.toString('base64');
       
-      const activeFilePath = path.join(process.cwd(), 'public', 'active_reference.pdf');
-      fs.writeFileSync(activeFilePath, buffer);
-      
+      // Guardar nombre y contenido base64 del PDF en la base de datos para entornos Serverless
       await setConfig('ACTIVE_PDF_NAME', file.name);
-      pdfBase64 = buffer.toString('base64');
+      await setConfig('ACTIVE_PDF_BASE64', pdfBase64);
     } else {
-      const activeFilePath = path.join(process.cwd(), 'public', 'active_reference.pdf');
-      if (!fs.existsSync(activeFilePath)) {
-        return NextResponse.json({ error: 'No hay ningún PDF de referencia guardado en el servidor. Sube uno primero.' }, { status: 400 });
+      // Leer el PDF guardado directamente desde la base de datos
+      const dbPdfBase64 = await getConfig('ACTIVE_PDF_BASE64');
+      if (!dbPdfBase64) {
+        return NextResponse.json({ error: 'No hay ningún PDF de referencia guardado. Sube uno primero.' }, { status: 400 });
       }
-      const buffer = fs.readFileSync(activeFilePath);
-      pdfBase64 = buffer.toString('base64');
+      pdfBase64 = dbPdfBase64;
     }
 
     // 3. Inicializar Gemini
