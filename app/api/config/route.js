@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { NextResponse } from 'next/server';
 import { getConfig, setConfig } from '@/lib/config';
 
@@ -22,11 +24,14 @@ export async function GET() {
       youtubeClientSecret && youtubeClientSecret !== 'YOUR_YOUTUBE_CLIENT_SECRET'
     );
 
+    const activePdfName = await getConfig('ACTIVE_PDF_NAME') || '';
+
     return NextResponse.json({
       GEMINI_API_KEY: maskValue(geminiKey),
       YOUTUBE_CLIENT_ID: maskValue(youtubeClientId),
       YOUTUBE_CLIENT_SECRET: maskValue(youtubeClientSecret),
-      isConfigured
+      isConfigured,
+      activePdfName
     });
   } catch (error) {
     console.error('Error reading configuration status:', error);

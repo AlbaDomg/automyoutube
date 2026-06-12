@@ -5,9 +5,28 @@ import { google } from 'googleapis';
 import fs from 'fs';
 import path from 'path';
 
-export async function POST(request) {
+function extractYoutubeId(input) {
+  if (!input) return "";
+  const trimmed = input.trim();
   try {
-    const { youtubeVideoId, title, description, tags, thumbnail, scheduledAt } = await request.json();
+    const urlPattern = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|user\/[^\/]+\/|embed\/|watch\?(?:.*&)?v=)|youtu\.be\/|youtube\.com\/live\/)([a-zA-Z0-9_-]{11})/;
+    const match = trimmed.match(urlPattern);
+    if (match && match[1]) {
+      return match[1];
+    }
+  } catch (e) {}
+  const cleanIdPattern = /^([a-zA-Z0-9_-]{11})/;
+  const match = trimmed.match(cleanIdPattern);
+  if (match && match[1]) {
+    return match[1];
+  }
+  return trimmed;
+}
+
+export async function POST(request) {
+  try { // Force recompilation of stale Next.js cache
+    let { youtubeVideoId, title, description, tags, thumbnail, scheduledAt } = await request.json();
+    youtubeVideoId = extractYoutubeId(youtubeVideoId);
 
     if (!youtubeVideoId) {
       return NextResponse.json({ error: 'Missing youtubeVideoId parameter' }, { status: 400 });
@@ -22,6 +41,38 @@ export async function POST(request) {
     }
 
     if (scheduledAt) {
+      // 1. Delete previous scheduled updates for this video to avoid conflicts & orphaned files
+      try {
+        const existingScheduled = await prisma.video.findMany({
+          where: {
+            youtubeId: youtubeVideoId,
+            status: 'SCHEDULED',
+            filePath: 'YOUTUBE_UPDATE'
+          }
+        });
+        const uploadsDir = path.join(process.cwd(), 'uploads');
+        for (const oldUpdate of existingScheduled) {
+          const oldThumbPath = path.join(uploadsDir, `${oldUpdate.id}-thumbnail.jpg`);
+          if (fs.existsSync(oldThumbPath)) {
+            try {
+              fs.unlinkSync(oldThumbPath);
+              console.log(`[Update Video API] Deleted old scheduled custom thumbnail: ${oldThumbPath}`);
+            } catch (unlinkErr) {
+              console.warn(`[Update Video API] Failed to delete old scheduled thumbnail:`, unlinkErr.message);
+            }
+          }
+        }
+        await prisma.video.deleteMany({
+          where: {
+            youtubeId: youtubeVideoId,
+            status: 'SCHEDULED',
+            filePath: 'YOUTUBE_UPDATE'
+          }
+        });
+      } catch (cleanupErr) {
+        console.error('[Update Video API] Error cleaning up previous scheduled updates:', cleanupErr.message);
+      }
+
       // Create scheduled update entry in db
       const cleanedTags = tags ? tags.split(',').map(t => t.trim().replace(/^#/, '')).filter(Boolean).join(', ') : '';
       const newVideoUpdate = await prisma.video.create({
@@ -49,6 +100,26 @@ export async function POST(request) {
         const tempThumbPath = path.join(uploadsDir, `${newVideoUpdate.id}-thumbnail.jpg`);
         fs.writeFileSync(tempThumbPath, buffer);
         console.log(`[Update Video API] Saved scheduled custom thumbnail at ${tempThumbPath}`);
+      }
+
+      // 2. Actualizar el estado de la tarea (VideoTask) a 'SCHEDULED'
+      try {
+        await prisma.videoTask.updateMany({
+          where: {
+            youtubeId: youtubeVideoId,
+            status: {
+              in: ['PENDING', 'PENDIENTE_SINCRONIZACION']
+            }
+          },
+          data: {
+            status: 'SCHEDULED',
+            title: title || '',
+            description: description || ''
+          }
+        });
+        console.log(`[Update Video API] Updated VideoTask status to SCHEDULED for youtubeVideoId: ${youtubeVideoId}`);
+      } catch (taskError) {
+        console.error('[Update Video API] Error setting VideoTask to SCHEDULED:', taskError.message);
       }
 
       console.log(`[Update Video API] Successfully scheduled metadata update for YouTube video ${youtubeVideoId} at ${scheduledAt}`);
@@ -102,10 +173,17 @@ export async function POST(request) {
       finalTitle = finalTitle.substring(0, 100);
     }
 
+    const socialBlock = `\n\nPodes ver o programa completo en tvg.gal/horagalega\n\n🔔 Subscríbete á canle oficial da Televisión de Galicia en YouTube: https://www.youtube.com/tvg\n\n🌐 Visita a nosa páxina web: https://agalega.gal/\n\n📲 E tamén podes seguirnos en todas as nosas redes sociais:\nFacebook: https://www.facebook.com/televisiondegalicia\nTwitter: https://x.com/tvgalicia\nInstagram: https://www.instagram.com/tvgalicia\nTikTok: https://www.tiktok.com/@tvgalicia`;
+
+    let finalDescription = description || currentSnippet.description || '';
+    if (finalDescription && !finalDescription.includes("tvg.gal/horagalega")) {
+      finalDescription = finalDescription.trim() + socialBlock;
+    }
+
     const updatedSnippet = {
       ...currentSnippet,
       title: finalTitle,
-      description: description || currentSnippet.description,
+      description: finalDescription,
       tags: tags ? tags.split(',').map(t => t.trim().replace(/^#/, '')).filter(Boolean) : currentSnippet.tags
     };
 
@@ -119,6 +197,7 @@ export async function POST(request) {
     });
 
     // 3. Upload custom thumbnail if provided
+    let thumbnailError = null;
     if (thumbnail) {
       const uploadsDir = path.join(process.cwd(), 'uploads');
       if (!fs.existsSync(uploadsDir)) {
@@ -140,8 +219,9 @@ export async function POST(request) {
           }
         });
         console.log('[Update Video API] Custom thumbnail uploaded successfully!');
-      } catch (thumbError) {
-        console.warn('[Update Video API] Failed to upload custom thumbnail (your channel might need phone verification):', thumbError.message);
+      } catch (thumbErr) {
+        thumbnailError = thumbErr.message;
+        console.warn('[Update Video API] Failed to upload custom thumbnail (your channel might need phone verification):', thumbErr.message);
         // We do not fail the request if ONLY the thumbnail upload fails (often due to channel verification)
       } finally {
         if (fs.existsSync(tempThumbPath)) {
@@ -155,11 +235,15 @@ export async function POST(request) {
       await prisma.videoTask.updateMany({
         where: {
           youtubeId: youtubeVideoId,
-          status: 'PENDING'
+          status: {
+            in: ['PENDING', 'PENDIENTE_SINCRONIZACION']
+          }
         },
         data: {
           status: 'COMPLETED',
-          completedAt: new Date()
+          completedAt: new Date(),
+          title: title || '',
+          description: description || ''
         }
       });
       console.log(`[Update Video API] Automatically completed matching VideoTask for youtubeVideoId: ${youtubeVideoId}`);
@@ -167,7 +251,11 @@ export async function POST(request) {
       console.error('[Update Video API] Error autocompleting VideoTask:', taskError.message);
     }
 
-    return NextResponse.json({ success: true, message: 'YouTube video updated successfully' });
+    return NextResponse.json({ 
+      success: true, 
+      message: 'YouTube video updated successfully',
+      thumbnailError: thumbnailError
+    });
   } catch (error) {
     console.error('Error updating YouTube video:', error);
     return NextResponse.json({ error: error.message || 'Failed to update YouTube video' }, { status: 500 });

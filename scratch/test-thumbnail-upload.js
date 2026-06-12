@@ -18,7 +18,7 @@ async function getOAuth2Client() {
 }
 
 async function main() {
-  const youtubeVideoId = '2V7N_WbNJcU'; // Video ID from your database
+  const youtubeVideoId = 'eEh2hXqkg5E'; // Video ID from your database
   
   try {
     const channel = await prisma.channel.findFirst({

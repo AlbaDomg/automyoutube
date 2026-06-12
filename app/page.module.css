@@ -674,7 +674,7 @@
 }
 
 
-.historyActionBtn, .historyActionBtnDelete {
+.historyActionBtn {
   background: transparent;
   border: 1px solid var(--border-color);
   color: var(--text-muted);
@@ -686,6 +686,23 @@
   justify-content: center;
   cursor: pointer;
   transition: all 0.2s ease;
+}
+
+.historyActionBtnDelete {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  font-weight: bold;
 }
 
 .historyActionBtn:hover {
@@ -1341,6 +1358,7 @@
   justify-content: center;
   cursor: pointer;
   transition: all 0.2s ease;
+  flex-shrink: 0;
   font-size: 0.85rem;
   font-weight: bold;
 }
@@ -1381,6 +1399,25 @@
 @media (max-width: 1024px) {
   .tasksLayout {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.pulseProgressBar {
+  height: 100%;
+  width: 35%;
+  background: linear-gradient(135deg, #a855f7 0%, #ec4899 100%);
+  border-radius: 3px;
+  position: absolute;
+  left: 0;
+  animation: pulseProgressAnimation 1.8s infinite ease-in-out;
+}
+
+@keyframes pulseProgressAnimation {
+  0% {
+    left: -35%;
+  }
+  100% {
+    left: 100%;
   }
 }
 

@@ -40,14 +40,15 @@ model Video {
 }
 
 model VideoTask {
-  id          String    @id @default(uuid())
-  youtubeId   String    @unique
-  title       String
-  description String
-  uploadDate  DateTime?
-  dueDate     DateTime?
-  completedAt DateTime?
-  status      String    @default("PENDING") // PENDING, COMPLETED
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id            String    @id @default(uuid())
+  youtubeId     String    @unique
+  title         String
+  description   String
+  thumbnailText String?
+  uploadDate    DateTime?
+  dueDate       DateTime?
+  completedAt   DateTime?
+  status        String    @default("PENDING") // PENDING, COMPLETED
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 }

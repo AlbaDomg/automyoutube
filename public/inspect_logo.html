@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Inspect TVG Logo Mask with Flood Fill</title>
+</head>
+<body>
+  <h3>TVG Logo Masked with Connected Component Extraction</h3>
+  <canvas id="canvas" style="border: 1px solid black; max-width: 500px;"></canvas>
+  <div id="output" style="font-family: monospace; white-space: pre; margin-top: 20px;">Analyzing...</div>
+  <script>
+    const img = new Image();
+    img.src = '/tvg_logo.png';
+    img.onload = () => {
+      const canvas = document.getElementById('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+
+      const width = img.width;
+      const height = img.height;
+      const imgData = ctx.getImageData(0, 0, width, height);
+      const data = imgData.data;
+
+      // We will perform a Breadth-First Search (BFS) to find the connected component of white pixels
+      // starting from a seed pixel that we know is on the G logo (e.g. x=520, y=330).
+      const visited = new Uint8Array(width * height);
+      const queue = [];
+
+      // Seed pixel: (520, 330)
+      const seedX = 520;
+      const seedY = 330;
+      const seedIdx = seedY * width + seedX;
+      
+      // Check if seed is white
+      const seedR = data[seedIdx * 4];
+      const seedG = data[seedIdx * 4 + 1];
+      const seedB = data[seedIdx * 4 + 2];
+      
+      console.log(`Seed pixel color: RGB(${seedR}, ${seedG}, ${seedB})`);
+
+      // Add to queue
+      queue.push(seedX, seedY);
+      visited[seedIdx] = 1;
+
+      const isWhite = (r, g, b) => r > 240 && g > 240 && b > 240;
+
+      let head = 0;
+      while (head < queue.length) {
+        const cx = queue[head++];
+        const cy = queue[head++];
+
+        // Check 4 neighbors
+        const neighbors = [
+          {x: cx + 1, y: cy},
+          {x: cx - 1, y: cy},
+          {x: cx, y: cy + 1},
+          {x: cx, y: cy - 1}
+        ];
+
+        neighbors.forEach(n => {
+          if (n.x >= 0 && n.x < width && n.y >= 0 && n.y < height) {
+            const nIdx = n.y * width + n.x;
+            if (!visited[nIdx]) {
+              const r = data[nIdx * 4];
+              const g = data[nIdx * 4 + 1];
+              const b = data[nIdx * 4 + 2];
+              if (isWhite(r, g, b)) {
+                visited[nIdx] = 1;
+                queue.push(n.x, n.y);
+              }
+            }
+          }
+        });
+      }
+
+      // Now, apply the mask
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const idx = (y * width + x) * 4;
+          
+          let keep = false;
+          if (x >= (y + 115)) {
+            // Keep the diagonal teal banner
+            keep = true;
+          } else {
+            // Keep only the connected white G logo pixels
+            const pixelIdx = y * width + x;
+            if (visited[pixelIdx]) {
+              keep = true;
+            }
+          }
+
+          if (!keep) {
+            data[idx + 3] = 0; // Make transparent
+          }
+        }
+      }
+
+      ctx.putImageData(imgData, 0, 0);
+      document.getElementById('output').textContent = `Mask applied. G logo component size: ${queue.length / 2} pixels.`;
+    };
+  </script>
+</body>
+</html>

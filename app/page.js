@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, Fragment } from "react";
 import styles from "./page.module.css";
 
-// Ayudante para generar un UUID aleatorio, con soporte para navegadores antiguos/contextos no seguros
+// Helper para generar UUIDs en contextos de red no seguros
 function generateUUID() {
   if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
     return window.crypto.randomUUID();
@@ -13,6 +13,25 @@ function generateUUID() {
     const v = c === 'x' ? r : (r & 0x3 | 0x8);
     return v.toString(16);
   });
+}
+
+// Helper para extraer ID de video de YouTube limpio
+function extractYoutubeId(input) {
+  if (!input) return "";
+  const trimmed = input.trim();
+  try {
+    const urlPattern = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|user\/[^\/]+\/|embed\/|watch\?(?:.*&)?v=)|youtu\.be\/|youtube\.com\/live\/)([a-zA-Z0-9_-]{11})/;
+    const match = trimmed.match(urlPattern);
+    if (match && match[1]) {
+      return match[1];
+    }
+  } catch (e) {}
+  const cleanIdPattern = /^([a-zA-Z0-9_-]{11})/;
+  const match = trimmed.match(cleanIdPattern);
+  if (match && match[1]) {
+    return match[1];
+  }
+  return trimmed;
 }
 
 export default function Dashboard() {
@@ -35,85 +54,53 @@ export default function Dashboard() {
   });
   const [savingConfig, setSavingConfig] = useState(false);
 
-  // Estado de subida/análisis
-  const [uploadState, setUploadState] = useState({
-    file: null,
-    status: "idle", // inactivo, subiendo, analizando, listo, éxito, error
-    progress: 0,
-    speed: "",
-    videoId: "",
-    errorMessage: "",
-  });
+  // Selección de Video, Carga de PDF e Índice
+  const [youtubeId, setYoutubeId] = useState("");
+  const [pdfFile, setPdfFile] = useState(null);
+  const [savedPdfName, setSavedPdfName] = useState("");
+  const [videoIndex, setVideoIndex] = useState(1);
+  const [isAnalyzingPdf, setIsAnalyzingPdf] = useState(false);
+  const [autoIncrement, setAutoIncrement] = useState(true);
 
-  // Estado del formulario de metadatos
-  const [metadata, setMetadata] = useState({
-    selectedTitle: "",
-    titlesOptions: [],
-    description: "",
-    tags: "",
-    isScheduled: false,
-    scheduledAt: "",
-  });
-
-  // Estado de la cola/historial de videos
-  const [videosList, setVideosList] = useState([]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const fileInputRef = useRef(null);
-  const [deletingVideoId, setDeletingVideoId] = useState(null);
-  const deleteTimeoutRef = useRef(null);
-
-  // Estado del idioma
-  const [language, setLanguage] = useState("Spanish");
-
-  // Estado del modal de edición de video
-  const [editingVideo, setEditingVideo] = useState(null);
-  const [editForm, setEditForm] = useState({
+  // Estado de edición/actualización de YouTube
+  const [selectedYoutubeVideo, setSelectedYoutubeVideo] = useState(null);
+  const [updateForm, setUpdateForm] = useState({
     title: "",
     description: "",
     tags: "",
-    status: "",
     isScheduled: false,
-    scheduledAt: "",
+    scheduledAt: ""
   });
-  const [isUpdatingVideo, setIsUpdatingVideo] = useState(false);
-  const [extractedThumbnail, setExtractedThumbnail] = useState(null);
-
-  // Pestañas (Tabs)
-  const [activeTab, setActiveTab] = useState("optimize");
-
-  // Estado de optimización de videos de YouTube
-  const [youtubeVideos, setYoutubeVideos] = useState([]);
-  const [loadingYoutubeVideos, setLoadingYoutubeVideos] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedYoutubeVideo, setSelectedYoutubeVideo] = useState(null);
-  const [optimizingVideo, setOptimizingVideo] = useState(false);
-  const [optimizationSuggestions, setOptimizationSuggestions] = useState(null);
-  const [updateForm, setUpdateForm] = useState({ title: "", description: "", tags: "", isScheduled: false, scheduledAt: "" });
-  const [newThumbnailBase64, setNewThumbnailBase64] = useState(null);
   const [updatingYoutubeVideo, setUpdatingYoutubeVideo] = useState(false);
+  const [loadingYoutubeVideo, setLoadingYoutubeVideo] = useState(false);
 
-  // Estados del generador automático de miniaturas (Estilo TVG)
-  const [thumbnailText, setThumbnailText] = useState("");
-  const [programLogoBase64, setProgramLogoBase64] = useState(null); // Logo del programa (Hora Galega o subido)
-  const [customBgBase64, setCustomBgBase64] = useState(null); // Captura del video personalizada para el fondo
-  const [isGeneratingThumbnail, setIsGeneratingThumbnail] = useState(false);
-  const canvasRef = useRef(null);
-  const [isAutoThumbnailEnabled, setIsAutoThumbnailEnabled] = useState(false);
-  const templateImageRef = useRef(null);
-  const defaultProgramLogoCanvasRef = useRef(null);
+  // Sugerencias de la IA (Títulos/Miniatura)
+  const [optimizationSuggestions, setOptimizationSuggestions] = useState(null);
+  const [isGeneratingSeoPhrase, setIsGeneratingSeoPhrase] = useState(false);
 
-  // Estados del sistema de tareas
+  // Estado de la cola de actualizaciones programadas locales
+  const [scheduledUpdates, setScheduledUpdates] = useState([]);
+
+  // Listado de tareas (VideoTask)
   const [tasks, setTasks] = useState([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
-  const [activeTask, setActiveTask] = useState(null);
-  const [newTaskForm, setNewTaskForm] = useState({
-    youtubeId: "",
-    title: "",
-    description: "",
-    dueDate: "",
-  });
 
-  // Helper para cargar imágenes de forma asíncrona en promesas
+  // Estados del generador de miniaturas (Estilo TVG)
+  const [thumbnailText, setThumbnailText] = useState("");
+  const [programLogosCatalog, setProgramLogosCatalog] = useState([]);
+  const [selectedProgramLogo, setSelectedProgramLogo] = useState("default");
+  const [customBgBase64, setCustomBgBase64] = useState(null);
+const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
+  const [isAutoThumbnailEnabled, setIsAutoThumbnailEnabled] = useState(false);
+  const [newThumbnailBase64, setNewThumbnailBase64] = useState(null);
+  const [isGeneratingThumbnail, setIsGeneratingThumbnail] = useState(false);
+
+  const canvasRef = useRef(null);
+  const templateImageRef = useRef(null);
+  const defaultProgramLogoCanvasRef = useRef(null);
+  const pdfInputRef = useRef(null);
+
+  // Helper para cargar imágenes de forma asíncrona en canvas
   const loadImage = (src) => {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -124,16 +111,16 @@ export default function Dashboard() {
     });
   };
 
-  // Función para limpiar todos los estados relacionados con el generador de miniaturas
+  // Restablecer estados del generador de miniatura
   const handleResetThumbnailStates = () => {
     setThumbnailText("");
-    setProgramLogoBase64(null);
+    setSelectedProgramLogo("default");
     setCustomBgBase64(null);
     setIsAutoThumbnailEnabled(false);
     setNewThumbnailBase64(null);
   };
 
-  // Precargar y procesar los recursos de la plantilla
+  // Precargar plantilla original de TVG ("Hora Galega")
   useEffect(() => {
     const img = new Image();
     img.crossOrigin = "anonymous";
@@ -143,7 +130,6 @@ export default function Dashboard() {
       console.log("[Thumbnail Generator] Plantilla cargada.");
 
       try {
-        // Extraer y transparentar el logotipo del programa por defecto ("Hora Galega")
         const progCanvas = document.createElement("canvas");
         progCanvas.width = 400;
         progCanvas.height = 172;
@@ -156,21 +142,61 @@ export default function Dashboard() {
           const r = progData[i];
           const g = progData[i + 1];
           const b = progData[i + 2];
-          // Umbral de color blanco para volver transparente
+          // Volver transparente el fondo blanco del logotipo
           if (r > 240 && g > 240 && b > 240) {
             progData[i + 3] = 0;
           }
         }
         progCtx.putImageData(progImgData, 0, 0);
         defaultProgramLogoCanvasRef.current = progCanvas;
-        console.log("[Thumbnail Generator] Logotipo por defecto procesado con éxito.");
+        console.log("[Thumbnail Generator] Logotipo por defecto procesado.");
       } catch (err) {
-        console.error("[Thumbnail Generator] Error al procesar recursos de plantilla:", err);
+        console.error("[Thumbnail Generator] Error procesando plantilla:", err);
       }
     };
   }, []);
 
-  // Función para dibujar y componer la miniatura en el canvas
+  const fetchProgramLogosCatalog = async () => {
+    try {
+      const res = await fetch("/api/program-logos", { cache: "no-store" });
+      const data = await res.json();
+      if (data.logos) {
+        setProgramLogosCatalog(data.logos);
+      }
+    } catch (err) {
+      console.error("Error fetching program logos catalog:", err);
+    }
+  };
+
+  // Cargar catálogo de logotipos al cargar la página
+  useEffect(() => {
+    fetchProgramLogosCatalog();
+  }, []);
+
+  // Cargar preferencia de logotipo persistida en localStorage al seleccionar un vídeo
+  useEffect(() => {
+    if (selectedYoutubeVideo) {
+      const cleanId = extractYoutubeId(selectedYoutubeVideo.id || selectedYoutubeVideo.youtubeId);
+      if (cleanId) {
+        const saved = localStorage.getItem(`prog_logo_${cleanId}`);
+        setSelectedProgramLogo(saved || "default");
+      } else {
+        setSelectedProgramLogo("default");
+      }
+    }
+  }, [selectedYoutubeVideo]);
+
+  // Persistir la selección de logotipo en localStorage ante cambios
+  useEffect(() => {
+    if (selectedYoutubeVideo && selectedProgramLogo) {
+      const cleanId = extractYoutubeId(selectedYoutubeVideo.id || selectedYoutubeVideo.youtubeId);
+      if (cleanId) {
+        localStorage.setItem(`prog_logo_${cleanId}`, selectedProgramLogo);
+      }
+    }
+  }, [selectedProgramLogo, selectedYoutubeVideo]);
+
+  // Dibujar y componer la miniatura estilo TVG en el canvas
   const generateAutoThumbnail = async () => {
     if (!isAutoThumbnailEnabled || !selectedYoutubeVideo) return;
 
@@ -180,9 +206,8 @@ export default function Dashboard() {
     setIsGeneratingThumbnail(true);
     try {
       const ctx = canvas.getContext("2d");
-      if (!ctx) throw new Error("No se pudo obtener el contexto 2D del canvas");
+      if (!ctx) throw new Error("Contexto 2D no disponible");
 
-      // Dimensiones de lienzo estándar para YouTube (1280x720)
       canvas.width = 1280;
       canvas.height = 720;
 
@@ -191,7 +216,6 @@ export default function Dashboard() {
       if (customBgBase64) {
         bgImg = await loadImage(customBgBase64);
       } else if (selectedYoutubeVideo.thumbnail) {
-        // Carga de la miniatura a través de nuestro bypass de CORS local
         const proxiedUrl = `/api/youtube/thumbnail-proxy?url=${encodeURIComponent(selectedYoutubeVideo.thumbnail)}`;
         bgImg = await loadImage(proxiedUrl);
       }
@@ -212,10 +236,8 @@ export default function Dashboard() {
           sx = 0;
           sy = (bgImg.height - sh) / 2;
         }
-
         ctx.drawImage(bgImg, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
       } else {
-        // Fondo degradado por si falla
         const grad = ctx.createLinearGradient(0, 0, 1280, 720);
         grad.addColorStop(0, "#1e1b4b");
         grad.addColorStop(1, "#311042");
@@ -223,31 +245,112 @@ export default function Dashboard() {
         ctx.fillRect(0, 0, 1280, 720);
       }
 
-      // 2. Dibujar Logotipo de la Cadena (TVG) arriba a la derecha (tal cual es)
-      if (templateImageRef.current) {
-        const dw = 280;
-        const dh = 280;
+      // 2. Logotipo de la cadena (esquina superior derecha en corte diagonal usando /tvg_logo.png)
+      try {
+        const tvgLogoImg = await loadImage("/tvg_logo.png");
+        const lw = tvgLogoImg.width;
+        const lh = tvgLogoImg.height;
 
+        // Crear lienzo temporal para aplicar la máscara de transparencia
+        const tempCanvas = document.createElement("canvas");
+        tempCanvas.width = lw;
+        tempCanvas.height = lh;
+        const tempCtx = tempCanvas.getContext("2d");
+        if (tempCtx) {
+          tempCtx.drawImage(tvgLogoImg, 0, 0);
+          const imgData = tempCtx.getImageData(0, 0, lw, lh);
+          const data = imgData.data;
+
+          // Extraer la forma exacta del logotipo G mediante BFS (flood fill)
+          // Empezamos en un pixel que está garantizado dentro de la 'G' blanca (x=520, y=330)
+          const visited = new Uint8Array(lw * lh);
+          const queue = [520, 330];
+          visited[330 * lw + 520] = 1;
+
+          const isWhitePixel = (r, g, b) => r >= 250 && g >= 250 && b >= 250;
+          let head = 0;
+
+          while (head < queue.length) {
+            const cx = queue[head++];
+            const cy = queue[head++];
+
+            const neighbors = [
+              { x: cx + 1, y: cy },
+              { x: cx - 1, y: cy },
+              { x: cx, y: cy + 1 },
+              { x: cx, y: cy - 1 }
+            ];
+
+            for (let i = 0; i < neighbors.length; i++) {
+              const n = neighbors[i];
+              // Restringimos x >= 420 para evitar fugas hacia la cuadrícula de fondo izquierda
+              if (n.x >= 420 && n.x < lw && n.y >= 0 && n.y < lh) {
+                const nIdx = n.y * lw + n.x;
+                if (!visited[nIdx]) {
+                  const r = data[nIdx * 4];
+                  const g = data[nIdx * 4 + 1];
+                  const b = data[nIdx * 4 + 2];
+                  if (isWhitePixel(r, g, b)) {
+                    visited[nIdx] = 1;
+                    queue.push(n.x, n.y);
+                  }
+                }
+              }
+            }
+          }
+
+          // Aplicar la máscara
+          for (let y = 0; y < lh; y++) {
+            for (let x = 0; x < lw; x++) {
+              const idx = (y * lw + x) * 4;
+
+              let keep = false;
+              if (x >= (y + 115)) {
+                keep = true;
+              } else {
+                const pixelIdx = y * lw + x;
+                if (visited[pixelIdx]) {
+                  keep = true;
+                }
+              }
+
+              if (!keep) {
+                data[idx + 3] = 0; // Hacer transparente
+              }
+            }
+          }
+          tempCtx.putImageData(imgData, 0, 0);
+        }
+
+        // Dibujar el logotipo de la cadena en la esquina superior derecha con sombra paralela
         ctx.save();
-        // Crear clipping triangular en la esquina superior derecha
-        ctx.beginPath();
-        ctx.moveTo(1280 - dw, 0);
-        ctx.lineTo(1280, 0);
-        ctx.lineTo(1280, dh);
-        ctx.closePath();
-        ctx.clip();
-
-        // Dibujar el banner original de la plantilla en la esquina superior derecha
-        ctx.drawImage(templateImageRef.current, 800, 0, 224, 224, 1280 - dw, 0, dw, dh);
+        ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
+        ctx.shadowBlur = 10;
+        ctx.shadowOffsetX = -4;
+        ctx.shadowOffsetY = 4;
+        
+        // Dibujamos el logotipo TVG enmascarado
+        // Ancho y alto de 192px en la esquina para que coincida perfectamente con la diagonal 1110px a 1280px y alto 170px
+        ctx.drawImage(tempCanvas, 1280 - 192, 0, 192, 192);
         ctx.restore();
+      } catch (err) {
+        console.error("[Thumbnail Generator] Error cargando o procesando tvg_logo.png:", err);
       }
 
-      // 3. Dibujar Logotipo del Programa arriba a la izquierda
+      // 3. Logotipo del programa (esquina superior izquierda)
       let progImg = null;
-      if (programLogoBase64) {
-        progImg = await loadImage(programLogoBase64);
-      } else if (defaultProgramLogoCanvasRef.current) {
-        progImg = defaultProgramLogoCanvasRef.current;
+      if (selectedProgramLogo === "none") {
+        // No dibujar logotipo de programa
+      } else if (selectedProgramLogo === "default") {
+        if (defaultProgramLogoCanvasRef.current) {
+          progImg = defaultProgramLogoCanvasRef.current;
+        }
+      } else if (selectedProgramLogo) {
+        try {
+          progImg = await loadImage(`/program_logos/${selectedProgramLogo}`);
+        } catch (err) {
+          console.error("[Thumbnail Generator] Error cargando logo del catálogo:", err);
+        }
       }
 
       if (progImg) {
@@ -264,39 +367,26 @@ export default function Dashboard() {
           dw = (maxH / dh) * dw;
           dh = maxH;
         }
-
-        // Dibujar en la esquina superior izquierda con margen
-        const dx = 40;
-        const dy = 40;
-        ctx.drawImage(progImg, dx, dy, dw, dh);
+        ctx.drawImage(progImg, 40, 40, dw, dh);
       }
 
-      // 4. Dibujar Frase SEO en Gallego abajo a la izquierda (4 palabras)
+      // 4. Frase SEO en Gallego abajo a la izquierda (máx 4 palabras)
       if (thumbnailText) {
         const words = thumbnailText.trim().toUpperCase().split(/\s+/);
-        let line1 = "";
-        let line2 = "";
-
-        if (words.length >= 4) {
-          line1 = words.slice(0, Math.ceil(words.length / 2)).join(" ");
-          line2 = words.slice(Math.ceil(words.length / 2)).join(" ");
-        } else {
-          line1 = words.slice(0, 2).join(" ");
-          line2 = words.slice(2).join(" ");
-        }
+        // Dividir estrictamente en 2 palabras para el título (arriba, blanco) y las restantes/2 para el subtítulo (abajo, naranja)
+        const line1 = words.slice(0, 2).join(" ");
+        const line2 = words.slice(2).join(" ");
 
         ctx.save();
         ctx.font = "bold 86px Impact, Arial Black, sans-serif";
         ctx.textAlign = "left";
         ctx.textBaseline = "alphabetic";
 
-        // Configuración de sombra
         ctx.shadowColor = "rgba(0, 0, 0, 0.9)";
         ctx.shadowBlur = 15;
         ctx.shadowOffsetX = 5;
         ctx.shadowOffsetY = 5;
 
-        // Configuración de contorno (stroke)
         ctx.strokeStyle = "#000000";
         ctx.lineWidth = 14;
         ctx.lineJoin = "round";
@@ -312,24 +402,23 @@ export default function Dashboard() {
         }
 
         if (line2) {
-          ctx.fillStyle = "#f97316"; // Naranja
+          ctx.fillStyle = "#f97316";
           ctx.strokeText(line2, textX, line2Y);
           ctx.fillText(line2, textX, line2Y);
         }
         ctx.restore();
       }
 
-      // 5. Exportar a base64 para guardarlo en la cola de subidas/actualizaciones
       const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
       setNewThumbnailBase64(dataUrl);
     } catch (err) {
-      console.error("[Thumbnail Generator] Error al componer canvas:", err);
+      console.error("[Thumbnail Generator] Error renderizando canvas:", err);
     } finally {
       setIsGeneratingThumbnail(false);
     }
   };
 
-  // Efecto para redibujar automáticamente el lienzo cuando cambien los elementos del generador
+  // Renderizar miniatura automáticamente ante cambios
   useEffect(() => {
     if (isAutoThumbnailEnabled && selectedYoutubeVideo) {
       const timer = setTimeout(() => {
@@ -337,126 +426,123 @@ export default function Dashboard() {
       }, 300);
       return () => clearTimeout(timer);
     }
-  }, [thumbnailText, programLogoBase64, customBgBase64, isAutoThumbnailEnabled, selectedYoutubeVideo]);
+  }, [thumbnailText, selectedProgramLogo, customBgBase64, isAutoThumbnailEnabled, selectedYoutubeVideo]);
 
-  const fetchTasks = async () => {
-    setLoadingTasks(true);
+  // Carga inicial de datos
+  useEffect(() => {
+    fetchConfig();
+    fetchChannel();
+    fetchTasks();
+    fetchScheduledUpdates();
+  }, []);
+
+  // Cargar preferencia de autoincremento desde localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem("autoIncrementVideoIndex");
+      if (saved !== null) {
+        setAutoIncrement(saved === "true");
+      }
+    }
+  }, []);
+
+  // Guardar preferencia de autoincremento en localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem("autoIncrementVideoIndex", autoIncrement.toString());
+    }
+  }, [autoIncrement]);
+
+  // Recarga automática para actualizaciones programadas y listado de tareas
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchScheduledUpdates();
+      fetchTasks(true);
+    }, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+
+
+  const fetchConfig = async () => {
     try {
-      const res = await fetch("/api/tasks");
+      const res = await fetch("/api/config", { cache: "no-store" });
+      const data = await res.json();
+      setConfig(data);
+      if (data.activePdfName) {
+        setSavedPdfName(data.activePdfName);
+      }
+    } catch (err) {
+      console.error("Error al obtener la configuración:", err);
+    }
+  };
+
+  const fetchChannel = async () => {
+    try {
+      const res = await fetch("/api/channel", { cache: "no-store" });
+      const data = await res.json();
+      setChannel(data);
+    } catch (err) {
+      console.error("Error al obtener estado del canal:", err);
+    } finally {
+      setLoadingChannel(false);
+    }
+  };
+
+  const fetchTasks = async (silent = false) => {
+    if (!silent) setLoadingTasks(true);
+    try {
+      const res = await fetch("/api/tasks", { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
         setTasks(data);
       }
     } catch (err) {
-      console.error("Error fetching tasks:", err);
+      console.error("Error al obtener tareas:", err);
     } finally {
-      setLoadingTasks(false);
+      if (!silent) setLoadingTasks(false);
     }
   };
 
-  const handleCreateTask = async (e) => {
-    e.preventDefault();
+  const fetchScheduledUpdates = async () => {
     try {
-      const res = await fetch("/api/tasks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newTaskForm)
-      });
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || "Fallo al crear la tarea");
-      }
-      alert("¡Tarea creada con éxito!");
-      setNewTaskForm({ youtubeId: "", title: "", description: "", dueDate: "" });
-      fetchTasks();
-    } catch (err) {
-      alert("Error al crear tarea: " + err.message);
-    }
-  };
-
-  const handleWorkOnTask = async (task) => {
-    setActiveTask(task);
-    setActiveTab("optimize");
-    setSearchQuery(task.youtubeId);
-
-    // Ejecutar la búsqueda de video automáticamente
-    setLoadingYoutubeVideos(true);
-    try {
-      const res = await fetch(`/api/youtube/videos?q=${encodeURIComponent(task.youtubeId)}`);
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || "Fallo al buscar el video");
-      }
-      const data = await res.json();
-      if (data.length > 0) {
-        const video = data[0];
-        setSelectedYoutubeVideo(video);
-        setUpdateForm({
-          title: video.title || "",
-          description: video.description || "",
-          tags: video.tags || "",
-          isScheduled: false,
-          scheduledAt: ""
-        });
-        setOptimizationSuggestions(null);
-      } else {
-        alert("No se encontró el video en tu canal de YouTube.");
+      const res = await fetch("/api/videos", { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        setScheduledUpdates(data.filter(v => v.status === "SCHEDULED" || v.status === "UPLOADING"));
       }
     } catch (err) {
-      alert("Error al cargar la tarea en el editor: " + err.message);
-    } finally {
-      setLoadingYoutubeVideos(false);
+      console.error("Error al obtener cola de actualizaciones programadas:", err);
     }
   };
 
-  // Comprobar estado de conexión, configuración y obtener la cola de videos
-  useEffect(() => {
-    fetchConfig();
-    fetchChannel();
-    fetchVideos();
-    fetchTasks();
-  }, []);
-
-  useEffect(() => {
-    if (activeTab === "optimize" && channel.connected) {
-      fetchYoutubeVideos();
-    }
-  }, [activeTab, channel.connected]);
-
-  useEffect(() => {
-    if (activeTab === "tasks") {
-      fetchTasks();
-    }
-  }, [activeTab]);
-
-  // Consultar el estado de la base de datos si hay tareas activas (subiendo o analizando)
-  useEffect(() => {
-    const hasActiveTasks = videosList.some(
-      (v) => v.status === "UPLOADING" || v.status === "ANALYZING"
-    );
-
-    if (hasActiveTasks || uploadState.status === "analyzing" || uploadState.status === "uploading") {
-      const interval = setInterval(() => {
-        fetchVideos();
-        // Si estamos esperando un análisis específico en la sesión actual, comprobar su estado
-        if (uploadState.videoId && (uploadState.status === "analyzing" || uploadState.status === "uploading")) {
-          checkCurrentVideoStatus(uploadState.videoId);
+  // Buscar un video específico en YouTube por ID
+  const fetchYoutubeVideoById = async (id) => {
+    const cleanId = extractYoutubeId(id);
+    if (!cleanId) return;
+    setYoutubeId(cleanId);
+    setLoadingYoutubeVideo(true);
+    try {
+      const res = await fetch(`/api/youtube/videos?q=${encodeURIComponent(cleanId)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.length > 0) {
+          handleSelectVideo(data[0]);
+        } else {
+          alert("No se encontró el video con ese ID en tu canal de YouTube.");
         }
-      }, 2000); // Consulta cada 2 segundos por tareas activas para mantener fluida la barra de progreso
-      return () => clearInterval(interval);
-    }
-  }, [videosList, uploadState.status, uploadState.videoId]);
-
-  const fetchConfig = async () => {
-    try {
-      const res = await fetch("/api/config");
-      const data = await res.json();
-      setConfig(data);
+      } else {
+        alert("Fallo al buscar el video.");
+      }
     } catch (err) {
-      console.error("Error fetching config:", err);
+      console.error("Error al buscar video:", err);
+      alert("Error de red al consultar el video.");
+    } finally {
+      setLoadingYoutubeVideo(false);
     }
   };
 
+  // Guardar configuración
   const handleSaveConfig = async (e) => {
     e.preventDefault();
     setSavingConfig(true);
@@ -467,238 +553,197 @@ export default function Dashboard() {
         body: JSON.stringify(configInput),
       });
 
-      if (!res.ok) {
-        throw new Error("Fallo al guardar la configuración.");
-      }
+      if (!res.ok) throw new Error("Error al guardar.");
 
-      alert("Configuración guardada correctamente.");
+      alert("Configuración guardada.");
       setShowSettings(false);
       setConfigInput({ GEMINI_API_KEY: "", YOUTUBE_CLIENT_ID: "", YOUTUBE_CLIENT_SECRET: "" });
       await fetchConfig();
-      await fetchChannel(); // Volver a obtener la conexión del canal en caso de que cambien las credenciales
+      await fetchChannel();
     } catch (err) {
-      alert("Error al guardar: " + err.message);
+      alert("Error: " + err.message);
     } finally {
       setSavingConfig(false);
     }
   };
 
-  const fetchChannel = async () => {
-    try {
-      const res = await fetch("/api/channel");
-      const data = await res.json();
-      setChannel(data);
-    } catch (err) {
-      console.error("Error fetching channel:", err);
-    } finally {
-      setLoadingChannel(false);
-    }
-  };
-
-  const fetchVideos = async () => {
-    try {
-      const res = await fetch("/api/videos");
-      const data = await res.json();
-      setVideosList(data);
-    } catch (err) {
-      console.error("Error fetching videos queue:", err);
-    }
-  };
-
-  const handleDeleteVideo = async (id) => {
-    if (deletingVideoId !== id) {
-      setDeletingVideoId(id);
-      if (deleteTimeoutRef.current) clearTimeout(deleteTimeoutRef.current);
-      deleteTimeoutRef.current = setTimeout(() => {
-        setDeletingVideoId(null);
-      }, 4000); // 4 segundos para hacer clic de nuevo para confirmar
-      return;
-    }
-
-    // Segundo clic: realizar la eliminación desde la aplicación local
-    setDeletingVideoId(null);
-    if (deleteTimeoutRef.current) clearTimeout(deleteTimeoutRef.current);
-
-    try {
-      const res = await fetch(`/api/videos?id=${id}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Error al eliminar el video");
+  // Desconectar canal
+  const disconnectChannel = async () => {
+    if (window.confirm("¿Estás seguro de que deseas desconectar el canal?")) {
+      try {
+        const res = await fetch("/api/channel", { method: "DELETE" });
+        if (res.ok) {
+          setChannel({ connected: false, channel: null });
+        }
+      } catch (err) {
+        alert("Error al desconectar.");
       }
-      fetchVideos();
-    } catch (err) {
-      alert("Error: " + err.message);
     }
   };
 
-  const handleEditVideo = (video) => {
-    setEditingVideo(video);
-    setEditForm({
+  // Seleccionar video e inicializar formulario
+  const handleSelectVideo = (video) => {
+    setSelectedYoutubeVideo(video);
+    setYoutubeId(video.id);
+    
+    // Buscar si ya hay una actualización programada para este video
+    const scheduledUpdate = scheduledUpdates.find(u => u.youtubeId === video.id);
+    
+    setUpdateForm({
       title: video.title || "",
       description: video.description || "",
       tags: video.tags || "",
-      status: video.status || "DRAFT",
-      isScheduled: !!video.scheduledAt,
-      scheduledAt: video.scheduledAt ? new Date(video.scheduledAt).toISOString().substring(0, 16) : "",
+      isScheduled: !!scheduledUpdate,
+      scheduledAt: scheduledUpdate && scheduledUpdate.scheduledAt 
+        ? toLocalDateTimeString(scheduledUpdate.scheduledAt) 
+        : ""
     });
-  };
-
-  const handleUpdateVideo = async (e) => {
-    e.preventDefault();
-    if (!editingVideo) return;
-    setIsUpdatingVideo(true);
-    try {
-      const res = await fetch(`/api/videos?id=${editingVideo.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: editForm.title,
-          description: editForm.description,
-          tags: editForm.tags,
-          status: editForm.status,
-          scheduledAt: editForm.isScheduled ? editForm.scheduledAt : null,
-        }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Error al actualizar los datos del video");
-      }
-
-      alert("Video actualizado con éxito.");
-      setEditingVideo(null);
-      fetchVideos();
-    } catch (err) {
-      alert("Error: " + err.message);
-    } finally {
-      setIsUpdatingVideo(false);
-    }
-  };
-
-  const fetchYoutubeVideos = async (q = "") => {
-    setLoadingYoutubeVideos(true);
-    try {
-      const url = q ? `/api/youtube/videos?q=${encodeURIComponent(q)}` : "/api/youtube/videos";
-      const res = await fetch(url);
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Fallo al obtener videos de YouTube");
-      }
-      const data = await res.json();
-      setYoutubeVideos(data);
-    } catch (err) {
-      console.error("Error fetching YouTube videos:", err);
-      if (channel.connected) {
-        alert("Error al cargar videos de YouTube: " + err.message);
-      }
-    } finally {
-      setLoadingYoutubeVideos(false);
-    }
-  };
-
-  const handleOptimizeVideo = async (videoId) => {
-    setOptimizingVideo(true);
     setOptimizationSuggestions(null);
+    handleResetThumbnailStates();
+  };
+
+  // Cargar una tarea pendiente en el editor
+  const handleWorkOnTask = async (task) => {
+    setYoutubeId(task.youtubeId);
+    setLoadingYoutubeVideo(true);
     try {
-      const res = await fetch("/api/youtube/optimize", {
+      const res = await fetch(`/api/youtube/videos?q=${encodeURIComponent(task.youtubeId)}`);
+      if (!res.ok) throw new Error("Fallo al buscar el video");
+      const data = await res.json();
+      if (data.length > 0) {
+        const video = data[0];
+        setSelectedYoutubeVideo(video);
+        
+        // Buscar si ya hay una actualización programada para este video
+        const scheduledUpdate = scheduledUpdates.find(u => u.youtubeId === task.youtubeId);
+        
+        setUpdateForm({
+          title: task.title || video.title || "",
+          description: task.description || video.description || "",
+          tags: video.tags || "",
+          isScheduled: !!scheduledUpdate,
+          scheduledAt: scheduledUpdate && scheduledUpdate.scheduledAt 
+            ? toLocalDateTimeString(scheduledUpdate.scheduledAt) 
+            : ""
+        });
+        setOptimizationSuggestions(null);
+        handleResetThumbnailStates();
+        
+        // Cargar miniatura automática con la frase SEO guardada o el fallback por defecto
+        setThumbnailText(task.thumbnailText || (task.title ? task.title.split(/\s+/).slice(0, 4).join(" ") : ""));
+        setIsAutoThumbnailEnabled(true);
+      } else {
+        alert("No se encontró el video de la tarea en YouTube.");
+      }
+    } catch (err) {
+      alert("Error al cargar el video: " + err.message);
+    } finally {
+      setLoadingYoutubeVideo(false);
+    }
+  };
+
+  // Analizar el PDF con Gemini e iniciar tarea PENDIENTE_SINCRONIZACION
+  const handleAnalyzePdf = async (e) => {
+    e.preventDefault();
+    const cleanYoutubeId = extractYoutubeId(youtubeId);
+    if (!pdfFile && !savedPdfName) {
+      alert("Por favor, sube un archivo PDF de referencia.");
+      return;
+    }
+    if (!cleanYoutubeId) {
+      alert("Por favor, introduce o selecciona un ID de video de YouTube.");
+      return;
+    }
+    setYoutubeId(cleanYoutubeId);
+
+    setIsAnalyzingPdf(true);
+    try {
+      // 1. Intentar buscar el video en YouTube primero de forma segura para obtener info básica
+      let videoInfo = null;
+      try {
+        const ytRes = await fetch(`/api/youtube/videos?q=${encodeURIComponent(cleanYoutubeId)}`);
+        if (ytRes.ok) {
+          const ytData = await ytRes.json();
+          if (ytData && ytData.length > 0) {
+            videoInfo = ytData[0];
+          }
+        }
+      } catch (ytErr) {
+        console.warn("YouTube video check failed:", ytErr.message);
+      }
+
+      // 2. Analizar el PDF
+      const formData = new FormData();
+      if (pdfFile) {
+        formData.append("file", pdfFile);
+      }
+      formData.append("youtubeVideoId", cleanYoutubeId);
+      formData.append("videoIndex", videoIndex.toString());
+
+      const res = await fetch("/api/youtube/analyze-pdf", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ youtubeVideoId: videoId, language: language }),
+        body: formData
       });
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || "Fallo al optimizar el video");
+        throw new Error(data.error || "Fallo al procesar el documento");
       }
 
       const data = await res.json();
-      setOptimizationSuggestions(data.suggestions);
+      alert("¡Documento analizado con éxito! Datos volcados de forma literal en el editor en estado 'Pendiente de Sincronización'.");
+      
+      if (data.activePdfName) {
+        setSavedPdfName(data.activePdfName);
+      }
+
+      // Establecer video seleccionado y abrir el editor (fallback si no se recuperó información de YouTube)
+      const finalVideoInfo = videoInfo || {
+        id: cleanYoutubeId,
+        title: `Video (${cleanYoutubeId})`,
+        description: "",
+        tags: "",
+        thumbnail: ""
+      };
+      setSelectedYoutubeVideo(finalVideoInfo);
+
+      const scheduledUpdate = scheduledUpdates.find(u => u.youtubeId === finalVideoInfo.id);
+
+      // Rellenar editor con la transcripción/metadatos sugeridos (Títulos/Descripciones literales)
       setUpdateForm({
-        title: data.suggestions.titles[0] || data.current.title || "",
-        description: data.suggestions.description || data.current.description || "",
-        tags: data.suggestions.tags.join(', ') || data.current.tags || "",
-        isScheduled: false,
-        scheduledAt: ""
+        title: data.suggestions.titles[0] || finalVideoInfo.title || "",
+        description: data.suggestions.description || finalVideoInfo.description || "",
+        tags: data.suggestions.tags.join(', ') || finalVideoInfo.tags || "",
+        isScheduled: !!scheduledUpdate,
+        scheduledAt: scheduledUpdate && scheduledUpdate.scheduledAt 
+          ? toLocalDateTimeString(scheduledUpdate.scheduledAt) 
+          : ""
       });
+
+      setOptimizationSuggestions(data.suggestions);
+
       if (data.suggestions.thumbnailText) {
         setThumbnailText(data.suggestions.thumbnailText);
         setIsAutoThumbnailEnabled(true);
+      } else {
+        handleResetThumbnailStates();
+      }
+
+      // Actualizar listado de tareas pendientes
+      fetchTasks();
+
+      // Autoincrementar si la opción está activada
+      if (autoIncrement) {
+        setVideoIndex((prev) => Math.min(prev + 1, 10));
       }
     } catch (err) {
-      alert("Error al optimizar con IA: " + err.message);
+      alert("Error: " + err.message);
     } finally {
-      setOptimizingVideo(false);
+      setIsAnalyzingPdf(false);
     }
   };
 
-  const handleNewThumbnailSelect = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        // Establecer el estado con el archivo original de inmediato para asegurar que la miniatura
-        // se renderice en la interfaz al instante sin depender de la carga asíncrona de la imagen.
-        setNewThumbnailBase64(event.target.result);
-
-        try {
-          const img = new Image();
-          img.onerror = () => {
-            console.warn("[Thumbnail] Fallo al cargar el objeto Image, se usará el archivo original.");
-          };
-          img.onload = () => {
-            try {
-              const canvas = document.createElement("canvas");
-              // Las miniaturas de YouTube deben ser de 1280x720 (16:9)
-              const targetWidth = 1280;
-              const targetHeight = 720;
-              canvas.width = targetWidth;
-              canvas.height = targetHeight;
-
-              const ctx = canvas.getContext("2d");
-              if (!ctx) {
-                console.warn("[Thumbnail] No se pudo obtener el contexto 2d del canvas.");
-                return;
-              }
-
-              // Dibujar la imagen recortándola y escalándola para llenar el lienzo de 1280x720 (object-fit: cover)
-              const imgRatio = img.width / img.height;
-              const targetRatio = targetWidth / targetHeight;
-              let drawWidth, drawHeight, drawX, drawY;
-
-              if (imgRatio > targetRatio) {
-                drawHeight = img.height;
-                drawWidth = img.height * targetRatio;
-                drawX = (img.width - drawWidth) / 2;
-                drawY = 0;
-              } else {
-                drawWidth = img.width;
-                drawHeight = img.width / targetRatio;
-                drawX = 0;
-                drawY = (img.height - drawHeight) / 2;
-              }
-
-              ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight, 0, 0, targetWidth, targetHeight);
-
-              // Exportar como JPEG con calidad 0.8 para asegurar un tamaño de archivo inferior a 250kb,
-              // evitando el límite de 1MB de Tunnelmole que causa el error 413 Payload Too Large.
-              const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
-              setNewThumbnailBase64(dataUrl);
-              console.log("[Thumbnail] Imagen comprimida correctamente en segundo plano.");
-            } catch (canvasErr) {
-              console.error("[Thumbnail] Error procesando compresión con canvas:", canvasErr);
-            }
-          };
-          img.src = event.target.result;
-        } catch (err) {
-          console.error("[Thumbnail] Error en el flujo de compresión de imagen:", err);
-        }
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
+  // Guardar cambios en YouTube y marcar tarea como completada (realizada)
   const handleSaveYoutubeVideoChanges = async (e) => {
     e.preventDefault();
     if (!selectedYoutubeVideo) return;
@@ -719,368 +764,75 @@ export default function Dashboard() {
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || "Fallo al guardar cambios");
+        throw new Error(data.error || "Fallo al guardar los cambios");
       }
 
       const responseData = await res.json();
       if (responseData.scheduled) {
         alert("¡Actualización de video programada con éxito!");
-        fetchVideos(); // Actualizar la lista de la cola
       } else {
-        alert("¡Video actualizado en YouTube con éxito!");
+        if (responseData.thumbnailError) {
+          alert(`¡Video actualizado en YouTube con éxito, pero la miniatura no se pudo subir!\n\nDetalle: ${responseData.thumbnailError}\n\nNota: Asegúrate de que tu canal esté verificado con número de teléfono en YouTube para permitir la subida de miniaturas personalizadas.`);
+        } else {
+          alert("¡Video sincronizado y actualizado en YouTube con éxito!");
+        }
       }
+
       setSelectedYoutubeVideo(null);
       setOptimizationSuggestions(null);
+      setYoutubeId("");
+      setPdfFile(null);
       handleResetThumbnailStates();
       fetchTasks();
-      fetchYoutubeVideos(searchQuery);
+      fetchScheduledUpdates();
     } catch (err) {
-      alert("Error al guardar cambios en YouTube: " + err.message);
+      alert("Error al guardar cambios: " + err.message);
     } finally {
       setUpdatingYoutubeVideo(false);
     }
   };
 
-  const checkCurrentVideoStatus = async (id) => {
-    try {
-      const res = await fetch(`/api/videos?id=${id}`);
-      if (!res.ok) return;
-      const video = await res.json();
-
-      if (video.status === "READY" && uploadState.status === "analyzing") {
-        setUploadState((prev) => ({ ...prev, status: "ready" }));
-        setMetadata({
-          selectedTitle: video.title || "",
-          titlesOptions: [video.title].filter(Boolean), // El backend almacena el título principal
-          description: video.description || "",
-          tags: video.tags || "",
-          isScheduled: false,
-          scheduledAt: "",
-        });
-      } else if (video.status === "FAILED") {
-        setUploadState((prev) => ({
-          ...prev,
-          status: "error",
-          errorMessage: video.errorMessage || "El análisis del video falló.",
-        }));
-      }
-    } catch (err) {
-      console.error("Error checking video status:", err);
-    }
-  };
-
-  const disconnectChannel = async () => {
-    if (window.confirm("¿Estás seguro de que deseas desconectar el canal de YouTube de la empresa?")) {
-      try {
-        const res = await fetch("/api/channel", { method: "DELETE" });
-        if (res.ok) {
-          setChannel({ connected: false, channel: null });
-        }
-      } catch (err) {
-        alert("Error al desconectar el canal");
-      }
-    }
-  };
-
-  // Controladores de arrastrar y soltar
-  const handleDragOver = (e) => {
-    e.preventDefault();
-  };
-
-  const handleFileDrop = (e) => {
-    e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith("video/")) {
-      startChunkedUpload(file);
-    } else {
-      alert("Por favor, selecciona un archivo de video válido.");
-    }
-  };
-
-  const handleFileSelect = (e) => {
+  // Compresión manual para miniatura de portada subida
+  const handleNewThumbnailSelect = (e) => {
     const file = e.target.files[0];
     if (file) {
-      startChunkedUpload(file);
-    }
-  };
-
-  const triggerFileSelect = () => {
-    fileInputRef.current?.click();
-  };
-
-  const extractThumbnail = (file) => {
-    return new Promise((resolve) => {
-      const video = document.createElement("video");
-      video.preload = "metadata";
-      video.muted = true;
-      video.playsInline = true;
-      video.src = URL.createObjectURL(file);
-
-      video.onloadedmetadata = () => {
-        video.currentTime = Math.min(3, video.duration / 2);
-      };
-
-      video.onseeked = () => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setNewThumbnailBase64(event.target.result);
         try {
-          const canvas = document.createElement("canvas");
-          const scale = Math.min(1, 640 / video.videoWidth);
-          canvas.width = video.videoWidth * scale;
-          canvas.height = video.videoHeight * scale;
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement("canvas");
+            canvas.width = 1280;
+            canvas.height = 720;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) return;
 
-          const ctx = canvas.getContext("2d");
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imgRatio = img.width / img.height;
+            const targetRatio = 1280 / 720;
+            let drawWidth, drawHeight, drawX, drawY;
 
-          const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
-          resolve(dataUrl);
-        } catch (err) {
-          console.error("Failed to draw video frame:", err);
-          resolve(null);
-        } finally {
-          URL.revokeObjectURL(video.src);
-        }
-      };
-
-      video.onerror = () => {
-        console.error("Error loading video for thumbnail extraction");
-        resolve(null);
-      };
-    });
-  };
-
-  // Implementación de subida fragmentada
-  const startChunkedUpload = async (file) => {
-    const uploadId = generateUUID();
-    // Ajustar dinámicamente el tamaño del fragmento según si el usuario accede localmente o a través de un túnel
-    const isLocal = typeof window !== "undefined" &&
-      (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" || window.location.hostname.startsWith("192.168."));
-
-    // Configuración optimizada de tamaño y concurrencia:
-    // - Local: 5MB por fragmento y concurrencia de 6 (máxima velocidad)
-    // - Túnel (Tunnelmole/móvil): 400KB por fragmento y concurrencia de 2 (máxima estabilidad en redes externas y túneles)
-    const chunkSize = isLocal ? 5 * 1024 * 1024 : 400 * 1024;
-    const limit = isLocal ? 6 : 2;
-    const totalChunks = Math.ceil(file.size / chunkSize);
-
-    setUploadState({
-      file,
-      status: "uploading",
-      progress: 0,
-      speed: "Calculando...",
-      videoId: "",
-      errorMessage: "",
-    });
-
-    let extractedThumbBase64 = null;
-    try {
-      extractedThumbBase64 = await extractThumbnail(file);
-      setExtractedThumbnail(extractedThumbBase64);
-    } catch (thumbErr) {
-      console.error("Error extracting thumbnail:", thumbErr);
-    }
-
-    const startTime = Date.now();
-    let uploadedBytes = 0;
-    let completedTriggered = false;
-
-    // Crear un arreglo con los índices de todos los fragmentos
-    const chunkIndices = Array.from({ length: totalChunks }, (_, i) => i);
-
-    // Función interna para subir un fragmento específico con reintentos
-    const uploadChunkTask = async (chunkIndex) => {
-      const start = chunkIndex * chunkSize;
-      const end = Math.min(start + chunkSize, file.size);
-      const chunk = file.slice(start, end);
-
-      const formData = new FormData();
-      formData.append("chunk", chunk);
-      formData.append("fileName", file.name);
-      formData.append("uploadId", uploadId);
-      formData.append("chunkIndex", chunkIndex.toString());
-      formData.append("totalChunks", totalChunks.toString());
-
-      let attempts = 0;
-      const maxAttempts = 3;
-      let res;
-      let data;
-
-      while (attempts < maxAttempts) {
-        try {
-          res = await fetch("/api/upload/chunk", {
-            method: "POST",
-            body: formData,
-          });
-
-          if (!res.ok) {
-            throw new Error(`El servidor respondió con código ${res.status}`);
-          }
-
-          data = await res.json();
-          break; // Salir del bucle si la subida fue exitosa
-        } catch (fetchErr) {
-          attempts++;
-          if (attempts >= maxAttempts) {
-            throw new Error(`El fragmento ${chunkIndex + 1} falló tras ${maxAttempts} intentos: ${fetchErr.message}`);
-          }
-          console.warn(`Intento ${attempts} fallido para el fragmento ${chunkIndex + 1}. Reintentando en 1s...`);
-          await new Promise((resolve) => setTimeout(resolve, 1000)); // Esperar 1 segundo antes de reintentar
-        }
-      }
-
-      uploadedBytes += end - start;
-      const progressPercent = Math.round((uploadedBytes / file.size) * 100);
-
-      // Cálculo de velocidad de subida
-      const timeElapsed = (Date.now() - startTime) / 1000; // segundos
-      const speedMB = uploadedBytes / (1024 * 1024) / timeElapsed; // MB/s
-
-      setUploadState((prev) => ({
-        ...prev,
-        progress: progressPercent,
-        speed: `${speedMB.toFixed(1)} MB/s`,
-      }));
-
-      // Si el servidor confirma que todos los fragmentos han sido recibidos y ensamblados
-      if (data && data.completed) {
-        if (!completedTriggered) {
-          completedTriggered = true;
-
-          // Subir la miniatura extraída si está disponible
-          if (extractedThumbBase64) {
-            try {
-              await fetch("/api/upload/thumbnail", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ videoId: data.videoId, thumbnail: extractedThumbBase64 }),
-              });
-              console.log("Miniatura extraída subida con éxito al backend.");
-            } catch (upThumbErr) {
-              console.error("Fallo al subir la miniatura extraída al backend:", upThumbErr);
+            if (imgRatio > targetRatio) {
+              drawHeight = img.height;
+              drawWidth = img.height * targetRatio;
+              drawX = (img.width - drawWidth) / 2;
+              drawY = 0;
+            } else {
+              drawWidth = img.width;
+              drawHeight = img.width / targetRatio;
+              drawX = 0;
+              drawY = (img.height - drawHeight) / 2;
             }
-          }
-
-          setUploadState((prev) => ({
-            ...prev,
-            status: "analyzing",
-            videoId: data.videoId,
-          }));
-
-          // Iniciar el análisis automatizado con Gemini
-          triggerAnalysis(data.videoId, language);
+            ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight, 0, 0, 1280, 720);
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
+            setNewThumbnailBase64(dataUrl);
+          };
+          img.src = event.target.result;
+        } catch (err) {
+          console.error("Error al procesar miniatura subida:", err);
         }
-      }
-    };
-
-    // Ejecutor de subida con límite de concurrencia (Promise Pool)
-    const runPool = async () => {
-      const pool = [];
-      for (const index of chunkIndices) {
-        // Ejecutar la tarea de subida y registrarla en el pool activo
-        const promise = uploadChunkTask(index).then(() => {
-          // Eliminar del pool una vez que la promesa se resuelva
-          pool.splice(pool.indexOf(promise), 1);
-        });
-        pool.push(promise);
-
-        // Si alcanzamos el límite de concurrencia, esperamos a que al menos una termine
-        if (pool.length >= limit) {
-          await Promise.race(pool);
-        }
-      }
-      // Esperar a que todos los fragmentos restantes en el pool finalicen
-      await Promise.all(pool);
-    };
-
-    try {
-      await runPool();
-
-      // Control adicional por si todos terminaron pero no se recibió completed en el cliente por algún fallo de red
-      if (!completedTriggered) {
-        throw new Error("La subida finalizó pero el servidor no confirmó el ensamblado del video.");
-      }
-    } catch (err) {
-      if (!completedTriggered) {
-        setUploadState((prev) => ({
-          ...prev,
-          status: "error",
-          errorMessage: err.message || "Error al subir el video.",
-        }));
-        fetchVideos();
-      }
-    }
-  };
-
-  const triggerAnalysis = async (videoId, lang = language) => {
-    try {
-      const res = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ videoId, language: lang }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "El análisis falló.");
-      }
-
-      const data = await res.json();
-      setUploadState((prev) => ({ ...prev, status: "ready" }));
-      setMetadata({
-        selectedTitle: data.titles[0] || "",
-        titlesOptions: data.titles || [],
-        description: data.description || "",
-        tags: data.tags || "",
-        isScheduled: false,
-        scheduledAt: "",
-      });
-      fetchVideos();
-    } catch (err) {
-      setUploadState((prev) => ({
-        ...prev,
-        status: "error",
-        errorMessage: err.message || "Error al analizar el video con IA.",
-      }));
-      fetchVideos();
-    }
-  };
-
-  const handleSubmitMetadata = async (e) => {
-    e.preventDefault();
-    if (!uploadState.videoId) return;
-
-    setIsSubmitting(true);
-
-    try {
-      const res = await fetch("/api/upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          videoId: uploadState.videoId,
-          title: metadata.selectedTitle,
-          description: metadata.description,
-          tags: metadata.tags,
-          scheduledAt: metadata.isScheduled ? metadata.scheduledAt : null,
-        }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Fallo al iniciar programación");
-      }
-
-      setUploadState({
-        file: null,
-        status: "success",
-        progress: 0,
-        speed: "",
-        videoId: "",
-        errorMessage: "",
-      });
-
-      fetchVideos();
-    } catch (err) {
-      alert("Error al programar el video: " + err.message);
-    } finally {
-      setIsSubmitting(false);
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -1096,63 +848,37 @@ export default function Dashboard() {
     });
   };
 
-  const getStatusText = (status) => {
-    switch (status) {
-      case "DRAFT": return "Borrador";
-      case "ANALYZING": return "Analizando con IA...";
-      case "READY": return "Listo para Programar";
-      case "UPLOADING": return "Subiendo a YouTube...";
-      case "SCHEDULED": return "Programado";
-      case "COMPLETED": return "Publicado";
-      case "FAILED": return "Fallido";
-      default: return status;
-    }
-  };
-
-  const getStatusBadgeClass = (status) => {
-    switch (status) {
-      case "DRAFT": return styles.badgeDraft;
-      case "ANALYZING": return styles.badgeAnalyzing;
-      case "READY": return styles.badgeReady;
-      case "UPLOADING": return styles.badgeUploading;
-      case "SCHEDULED": return styles.badgeScheduled;
-      case "COMPLETED": return styles.badgeCompleted;
-      case "FAILED": return styles.badgeFailed;
-      default: return "";
-    }
+  const toLocalDateTimeString = (date) => {
+    if (!date) return "";
+    const d = new Date(date);
+    const pad = (n) => n.toString().padStart(2, '0');
+    const year = d.getFullYear();
+    const month = pad(d.getMonth() + 1);
+    const day = pad(d.getDate());
+    const hours = pad(d.getHours());
+    const minutes = pad(d.getMinutes());
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
   };
 
   return (
     <div className={styles.container}>
-      {/* Header Section */}
+      {/* Header */}
       <header className={styles.header}>
         <div className={styles.titleSection}>
           <h1>AutomYouTube</h1>
-          <p>Sube, optimiza y programa videos de larga y corta duración optimizados con Gemini IA</p>
+          <p>Gestión y Sincronización Automática de Videos</p>
         </div>
 
         <div className={styles.headerActions}>
-          {/* Botón de Configuración */}
           <button
             onClick={() => {
-              setConfigInput({
-                GEMINI_API_KEY: "",
-                YOUTUBE_CLIENT_ID: "",
-                YOUTUBE_CLIENT_SECRET: "",
-              });
+              setConfigInput({ GEMINI_API_KEY: "", YOUTUBE_CLIENT_ID: "", YOUTUBE_CLIENT_SECRET: "" });
               setShowSettings(true);
             }}
             className={styles.btnSettingsToggle}
-            title="Configuración de Credenciales"
+            title="Credenciales"
           >
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="3" />
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
             </svg>
@@ -1163,25 +889,39 @@ export default function Dashboard() {
           ) : channel.connected ? (
             <div className={styles.channelCard}>
               {channel.channel.thumbnail && (
-                <img
-                  src={channel.channel.thumbnail}
-                  alt={channel.channel.title}
-                  className={styles.channelAvatar}
-                />
+                <img src={channel.channel.thumbnail} alt={channel.channel.title} className={styles.channelAvatar} />
               )}
               <div className={styles.channelInfo}>
                 <span className={styles.channelName}>{channel.channel.title}</span>
                 <span className={styles.channelStatus}>Conectado</span>
               </div>
-              <button onClick={disconnectChannel} className={styles.disconnectBtn}>
-                Desconectar
-              </button>
+              <a
+                href={`https://studio.youtube.com/channel/${channel.channel.id}/videos`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={styles.connectBtn}
+                style={{
+                  width: "auto",
+                  padding: "0.4rem 0.8rem",
+                  fontSize: "0.8rem",
+                  background: "var(--bg-card)",
+                  border: "1px solid var(--border-color)",
+                  textDecoration: "none",
+                  color: "var(--text-primary)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.25rem"
+                }}
+              >
+                🎥 Ver Studio
+              </a>
+              <button onClick={disconnectChannel} className={styles.disconnectBtn}>Desconectar</button>
             </div>
           ) : (
             <button
               onClick={() => {
                 if (!config.isConfigured) {
-                  alert("Por favor, configura las credenciales de YouTube primero.");
+                  alert("Configura las credenciales OAuth primero.");
                   setShowSettings(true);
                   return;
                 }
@@ -1189,1305 +929,795 @@ export default function Dashboard() {
               }}
               className={styles.connectBtn}
             >
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4" />
-                <path d="M9 18c-4.51 2-5-2-7-2" />
-              </svg>
-              Conectar Canal
+              Conectar Canal de YouTube
             </button>
           )}
         </div>
       </header>
 
-      {/* Banner de Advertencias y Configuración */}
-      {!config.isConfigured && (
-        <div className={styles.warningBanner}>
-          <div className={styles.warningContent}>
-            <div className={styles.warningIcon}>
-              <svg
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                <line x1="12" y1="9" x2="12" y2="13" />
-                <line x1="12" y1="17" x2="12.01" y2="17" />
-              </svg>
-            </div>
-            <div className={styles.warningText}>
-              <h4>Credenciales no configuradas</h4>
-              <p>
-                Para subir y analizar videos, necesitas ingresar tu API Key de Gemini y tus
-                claves OAuth de Google Cloud Console.
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={() => {
-              setConfigInput({
-                GEMINI_API_KEY: "",
-                YOUTUBE_CLIENT_ID: "",
-                YOUTUBE_CLIENT_SECRET: "",
-              });
-              setShowSettings(true);
-            }}
-            className={styles.btnConfig}
-          >
-            Configurar Ahora
-          </button>
-        </div>
-      )}
-
-      {/* Selector de Pestañas */}
-      {channel.connected && (
-        <div className={styles.tabsContainer}>
-          <button
-            disabled
-            title="Sección deshabilitada temporalmente"
-            className={`${styles.tabButton} ${styles.tabDisabled}`}
-            style={{ opacity: 0.5, cursor: "not-allowed" }}
-          >
-            🔒 Subir y Programar Video (Deshabilitado)
-          </button>
-          <button
-            onClick={() => setActiveTab("optimize")}
-            className={`${styles.tabButton} ${activeTab === "optimize" ? styles.tabActive : ""}`}
-          >
-            Optimizar Videos Existentes
-          </button>
-          <button
-            onClick={() => setActiveTab("tasks")}
-            className={`${styles.tabButton} ${activeTab === "tasks" ? styles.tabActive : ""}`}
-          >
-            📋 Gestión de Tareas
-          </button>
-        </div>
-      )}
-
-      {activeTab === "upload" && (
-        /* Rejilla Principal */
-        <div className={styles.dashboardGrid}>
-          {/* Columna Izquierda: Subida / Formulario */}
-          <div className={styles.mainCol}>
-            {/* Tarjeta de Subida */}
-            {uploadState.status === "idle" && (
-              <div className={styles.card} style={{ position: "relative" }}>
-                <div className={styles.cardTitle}>Subir Nuevo Video</div>
-
-                {!config.isConfigured && (
-                  <div className={styles.lockedOverlay}>
-                    <svg
-                      width="40"
-                      height="40"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="#94a3b8"
-                      strokeWidth="2"
-                      style={{ marginBottom: "1rem" }}
-                    >
-                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                    </svg>
-                    <h3 style={{ fontSize: "1.1rem", marginBottom: "0.5rem" }}>Carga Deshabilitada</h3>
-                    <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem", maxWidth: "300px", marginBottom: "1rem" }}>
-                      Debes configurar las credenciales en el botón superior antes de poder subir videos.
-                    </p>
-                    <button
-                      onClick={() => setShowSettings(true)}
-                      className={styles.btnConfig}
-                    >
-                      Ingresar Credenciales
-                    </button>
-                  </div>
-                )}
-
-                <div
-                  className={styles.uploadArea}
-                  onDragOver={handleDragOver}
-                  onDrop={handleFileDrop}
-                  onClick={triggerFileSelect}
-                >
-                  <div className={styles.uploadIcon}>
-                    <svg
-                      width="48"
-                      height="48"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                      <polyline points="17 8 12 3 7 8" />
-                      <line x1="12" y1="3" x2="12" y2="15" />
-                    </svg>
-                  </div>
-                  <div className={styles.uploadText}>
-                    <h3>Arrastra y suelta tu video aquí</h3>
-                    <p>o haz clic para explorar tus archivos locales</p>
-                  </div>
+      {/* Dashboard Grid */}
+      <div className={styles.dashboardGrid}>
+        {/* Columna Izquierda: Sincronización, PDF Editor e Inline Form */}
+        <div className={styles.mainCol}>
+          
+          {/* Tarjeta de Selección y Carga */}
+          <div className={styles.card}>
+            <div className={styles.cardTitle}>Editor de Videos</div>
+            
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              {/* Selector de Video por ID directo */}
+              <div className={styles.inputGroup}>
+                <label>ID Video YouTube</label>
+                <div style={{ display: "flex", gap: "0.5rem" }}>
                   <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleFileSelect}
-                    accept="video/*"
-                    style={{ display: "none" }}
-                    disabled={!config.isConfigured}
+                    type="text"
+                    value={youtubeId}
+                    onChange={(e) => setYoutubeId(e.target.value)}
+                    style={{ flex: 1 }}
                   />
-                </div>
-
-                {/* Selección de Idioma */}
-                <div className={styles.inputGroup} style={{ marginTop: "1.25rem" }}>
-                  <label htmlFor="languageSelect">Idioma para los Metadatos (Títulos, Descripción y Tags)</label>
-                  <select
-                    id="languageSelect"
-                    value={language}
-                    onChange={(e) => setLanguage(e.target.value)}
-                  >
-                    <option value="Spanish" style={{ background: "var(--bg-surface-solid)", color: "var(--text-primary)" }}>Español</option>
-                    <option value="English" style={{ background: "var(--bg-surface-solid)", color: "var(--text-primary)" }}>Inglés</option>
-                    <option value="German" style={{ background: "var(--bg-surface-solid)", color: "var(--text-primary)" }}>Alemán</option>
-                    <option value="French" style={{ background: "var(--bg-surface-solid)", color: "var(--text-primary)" }}>Francés</option>
-                  </select>
-                </div>
-              </div>
-            )}
-
-            {/* Tarjeta de progreso de subida */}
-            {uploadState.status === "uploading" && (
-              <div className={styles.card}>
-                <div className={styles.cardTitle}>Subiendo al Servidor Local</div>
-                <div className={styles.progressContainer}>
-                  <div className={styles.progressHeader}>
-                    <span>Subiendo {uploadState.file?.name}</span>
-                    <span>{uploadState.progress}%</span>
-                  </div>
-                  <div className={styles.progressBarOuter}>
-                    <div
-                      className={styles.progressBarInner}
-                      style={{ width: `${uploadState.progress}%` }}
-                    ></div>
-                  </div>
-                  <div
-                    className={styles.progressHeader}
-                    style={{ marginTop: "0.5rem", fontSize: "0.8rem" }}
-                  >
-                    <span>Velocidad: {uploadState.speed}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Tarjeta de estado de análisis de IA */}
-            {uploadState.status === "analyzing" && (
-              <div className={styles.card}>
-                <div className={styles.analyzingContainer}>
-                  <div className={styles.pulseGlow}>
-                    <svg
-                      width="24"
-                      height="24"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-                    </svg>
-                  </div>
-                  <div className={styles.uploadText}>
-                    <h3>Gemini IA está analizando tu video...</h3>
-                    <p>
-                      Procesando el contenido visual y auditivo para sugerir títulos,
-                      descripción y hashtags óptimos. Esto puede tomar unos minutos para videos largos.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Estado de éxito */}
-            {uploadState.status === "success" && (
-              <div className={styles.card}>
-                <div className={styles.analyzingContainer} style={{ padding: "2rem 1rem" }}>
-                  <div
-                    className={styles.pulseGlow}
-                    style={{ background: "rgba(16, 185, 129, 0.15)", color: "var(--success)" }}
-                  >
-                    <svg
-                      width="28"
-                      height="28"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h3 style={{ color: "var(--success)" }}>¡Video Programado con Éxito!</h3>
-                    <p style={{ marginTop: "0.5rem" }}>
-                      El proceso de subida y programación se ha iniciado en segundo plano.
-                      Puedes ver el progreso en la cola de la derecha.
-                    </p>
-                  </div>
                   <button
-                    onClick={() => setUploadState({ ...uploadState, status: "idle" })}
+                    onClick={() => fetchYoutubeVideoById(youtubeId)}
+                    disabled={loadingYoutubeVideo || !youtubeId}
                     className={styles.btnSubmit}
-                    style={{ maxWidth: "200px", marginTop: "1rem" }}
+                    style={{ width: "auto", whiteSpace: "nowrap" }}
                   >
-                    Subir Otro Video
+                    {loadingYoutubeVideo ? "Buscando..." : "Buscar Video"}
                   </button>
                 </div>
               </div>
-            )}
 
-            {/* Estado de error */}
-            {uploadState.status === "error" && (
-              <div className={styles.card}>
-                <div className={styles.analyzingContainer} style={{ padding: "2rem 1rem" }}>
-                  <div
-                    className={styles.pulseGlow}
-                    style={{ background: "rgba(239, 68, 68, 0.15)", color: "var(--error)" }}
-                  >
-                    <svg
-                      width="28"
-                      height="28"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <line x1="18" y1="6" x2="6" y2="18" />
-                      <line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h3 style={{ color: "var(--error)" }}>Ocurrió un error</h3>
-                    <p className={styles.errorText} style={{ marginTop: "0.5rem" }}>
-                      {uploadState.errorMessage}
-                    </p>
-                  </div>
-
-                  {/* Botones de acción dinámicos según el tipo de fallo (Subida vs Análisis) */}
-                  <div style={{ display: "flex", gap: "1rem", justifyContent: "center", width: "100%", flexWrap: "wrap", marginTop: "1.5rem" }}>
-                    {uploadState.videoId ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setUploadState((prev) => ({ ...prev, status: "analyzing", errorMessage: "" }));
-                            triggerAnalysis(uploadState.videoId, language);
-                          }}
-                          className={styles.btnSubmit}
-                          style={{ width: "auto", minWidth: "160px" }}
-                        >
-                          Reintentar Análisis
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setUploadState({ ...uploadState, status: "idle", videoId: "" })}
-                          className={styles.btnCancel}
-                          style={{ width: "auto", minWidth: "160px" }}
-                        >
-                          Subir Otro Video
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setUploadState({ ...uploadState, status: "idle" })}
-                        className={styles.btnSubmit}
-                        style={{ width: "auto", minWidth: "180px" }}
-                      >
-                        Reintentar Subida
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Formulario de Metadatos (Se muestra cuando el estado es 'ready') */}
-            {uploadState.status === "ready" && (
-              <form onSubmit={handleSubmitMetadata} className={styles.card}>
-                <div className={styles.cardTitle}>Configurar y Programar Video</div>
-
-                {extractedThumbnail && (
-                  <div className={styles.inputGroup}>
-                    <label>Miniatura de Portada Generada</label>
-                    <img
-                      src={extractedThumbnail}
-                      alt="Miniatura de Portada"
-                      style={{
-                        width: "100%",
-                        maxWidth: "320px",
-                        borderRadius: "12px",
-                        border: "1px solid var(--border-color)",
-                        marginTop: "0.25rem",
-                        boxShadow: "0 4px 12px rgba(0,0,0,0.3)"
-                      }}
-                    />
-                  </div>
-                )}
-
-                {/* Sugerencias de Título */}
-                {metadata.titlesOptions.length > 0 && (
-                  <div className={styles.titlesSuggestionGroup}>
-                    <div className={styles.suggestionTitleLabel}>
-                      <svg
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                      >
-                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                      </svg>
-                      Títulos sugeridos por Gemini IA (Haz clic para seleccionar):
-                    </div>
-                    {metadata.titlesOptions.map((titleOpt, index) => (
-                      <button
-                        key={index}
-                        type="button"
-                        className={`${styles.titleSuggestionCard} ${metadata.selectedTitle === titleOpt ? styles.titleSuggestionActive : ""
-                          }`}
-                        onClick={() => setMetadata({ ...metadata, selectedTitle: titleOpt })}
-                      >
-                        {titleOpt}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {/* Campos Editables */}
-                <div className={styles.inputGroup}>
-                  <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
-                    <span>Título Final</span>
-                    <span style={{ fontSize: "0.75rem", fontWeight: "normal", color: metadata.selectedTitle.length >= 90 ? "#ef4444" : "var(--text-muted, #94a3b8)" }}>
-                      {metadata.selectedTitle.length}/100
-                    </span>
-                  </label>
-                  <textarea
-                    rows="2"
-                    required
-                    maxLength={100}
-                    value={metadata.selectedTitle}
-                    onChange={(e) => setMetadata({ ...metadata, selectedTitle: e.target.value })}
-                    placeholder="Introduce el título del video"
-                    style={{ resize: "none" }}
-                  />
-                </div>
-
-                <div className={styles.inputGroup}>
-                  <label>Descripción</label>
-                  <textarea
-                    rows="8"
-                    required
-                    value={metadata.description}
-                    onChange={(e) => setMetadata({ ...metadata, description: e.target.value })}
-                    placeholder="Introduce la descripción del video"
-                  />
-                </div>
-
-                <div className={styles.inputGroup}>
-                  <label>Etiquetas (Separadas por comas)</label>
-                  <textarea
-                    rows="2"
-                    value={metadata.tags}
-                    onChange={(e) => setMetadata({ ...metadata, tags: e.target.value })}
-                    placeholder="ia, youtube, tecnologia, automatizacion"
-                    style={{ resize: "none" }}
-                  />
-                </div>
-
-                {/* Detalles de Programación */}
-                <div className={styles.inputGroup} style={{ flexDirection: "row", alignItems: "center", gap: "0.5rem" }}>
+              {/* Índice de Vídeo en el PDF (Autocalculado y Manual) */}
+              <div className={styles.inputGroup} style={{ marginTop: "0.5rem" }}>
+                <label htmlFor="videoIndexSelect">Selecciona nº de video</label>
+                <select
+                  id="videoIndexSelect"
+                  value={videoIndex}
+                  disabled={!pdfFile && !savedPdfName}
+                  onChange={(e) => setVideoIndex(parseInt(e.target.value))}
+                  style={{ 
+                    background: "var(--bg-surface-solid)", 
+                    color: "var(--text-primary)", 
+                    padding: "0.5rem", 
+                    borderRadius: "6px",
+                    opacity: (!pdfFile && !savedPdfName) ? 0.5 : 1,
+                    cursor: (!pdfFile && !savedPdfName) ? "not-allowed" : "default"
+                  }}
+                >
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => (
+                    <option key={num} value={num} style={{ background: "var(--bg-surface-solid)", color: "var(--text-primary)" }}>
+                      Vídeo {num} {num === 1 ? "(Letizia / Mantilla)" : num === 2 ? "(Aviso Mos / Gasóleo)" : num === 3 ? "(Mantemento Bateas)" : ""}
+                    </option>
+                  ))}
+                </select>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.5rem" }}>
                   <input
                     type="checkbox"
-                    id="scheduleToggle"
-                    checked={metadata.isScheduled}
-                    onChange={(e) => setMetadata({ ...metadata, isScheduled: e.target.checked })}
-                    style={{ width: "18px", height: "18px", cursor: "pointer" }}
+                    id="autoIncrementToggle"
+                    checked={autoIncrement}
+                    onChange={(e) => setAutoIncrement(e.target.checked)}
+                    style={{ cursor: "pointer" }}
                   />
-                  <label htmlFor="scheduleToggle" style={{ cursor: "pointer", textTransform: "none" }}>
-                    Programar publicación para una fecha futura
+                  <label htmlFor="autoIncrementToggle" style={{ cursor: "pointer", fontSize: "0.8rem", color: "var(--text-muted)", userSelect: "none" }}>
+                    Autoincrementar número de vídeo tras copiar datos
                   </label>
                 </div>
+              </div>
 
-                {metadata.isScheduled && (
+              {/* Dropzone del PDF */}
+              <div className={styles.inputGroup} style={{ marginTop: "0.5rem" }}>
+                <label>Documento PDF de Referencia de la Empresa</label>
+                <div
+                  className={styles.uploadArea}
+                  style={{ padding: "1.5rem", border: "2px dashed var(--border-color)", borderRadius: "8px", textAlign: "center", cursor: "pointer", background: "rgba(255,255,255,0.01)" }}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const file = e.dataTransfer.files[0];
+                    if (file && file.type === "application/pdf") {
+                      setPdfFile(file);
+                    } else {
+                      alert("Por favor, sube un archivo PDF válido.");
+                    }
+                  }}
+                  onClick={() => pdfInputRef.current?.click()}
+                >
+                  <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>📄</div>
+                  <p style={{ margin: 0, fontSize: "0.85rem", fontWeight: "500" }}>
+                    {pdfFile 
+                      ? `PDF Seleccionado: ${pdfFile.name}` 
+                      : savedPdfName 
+                        ? `PDF Activo Guardado: ${savedPdfName}` 
+                        : "Arrastra tu documento PDF de referencia aquí o haz clic para explorar"
+                    }
+                  </p>
+                </div>
+                <input
+                  type="file"
+                  ref={pdfInputRef}
+                  accept="application/pdf"
+                  onChange={(e) => {
+                    const file = e.target.files[0];
+                    if (file) setPdfFile(file);
+                  }}
+                  style={{ display: "none" }}
+                />
+              </div>
+
+              {/* Botón de Acción de Análisis */}
+              <button
+                type="button"
+                onClick={handleAnalyzePdf}
+                disabled={isAnalyzingPdf || (!pdfFile && !savedPdfName) || !youtubeId}
+                className={styles.btnSubmit}
+                style={{ background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)", opacity: (isAnalyzingPdf || (!pdfFile && !savedPdfName) || !youtubeId) ? 0.6 : 1 }}
+              >
+                {isAnalyzingPdf ? "Procesando y copiando datos..." : "⚡ Copiar Datos del PDF al Editor"}
+              </button>
+            </div>
+          </div>
+
+          {/* Formulario de Edición (Si hay un video seleccionado) */}
+          {selectedYoutubeVideo && (
+            <form onSubmit={handleSaveYoutubeVideoChanges} className={styles.inlineEditPanel} style={{ display: "block", marginTop: "1.5rem" }}>
+              <div className={styles.inlineEditHeader}>
+                <div>
+                  <h3>✏️ Editor de YouTube</h3>
+                  <span style={{ fontSize: "0.8rem", color: "#a855f7", fontWeight: "600" }}>
+                    Vídeo seleccionado: {selectedYoutubeVideo.title.substring(0, 50)}...
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedYoutubeVideo(null);
+                    setYoutubeId("");
+                    handleResetThumbnailStates();
+                  }}
+                  className={styles.closeBtn}
+                >✕</button>
+              </div>
+
+              {/* Estado de "Pendiente de Sincronización" */}
+              <div style={{
+                border: "1px solid #a855f7",
+                borderRadius: "8px",
+                padding: "0.75rem",
+                marginBottom: "1rem",
+                background: "rgba(168, 85, 247, 0.05)",
+                fontSize: "0.85rem",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem"
+              }}>
+                <span style={{ fontSize: "1.1rem" }}>📋</span>
+                <div>
+                  <strong>Estado actual:</strong> Pendiente de sincronización.
+                  <span style={{ display: "block", fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                    Los datos correspondientes al Vídeo {videoIndex} del PDF se han copiado literalmente. Sincroniza para finalizar.
+                  </span>
+                </div>
+              </div>
+
+              <div className={styles.inlineEditContent}>
+                {/* Columna Izquierda: Sugerencias e Información */}
+                <div className={styles.inlineEditColLeft}>
+                  <div className={styles.selectedVideoPreview}>
+                    <img src={selectedYoutubeVideo.thumbnail} alt="Preview" className={styles.selectedVideoThumbnail} />
+                    <div className={styles.selectedVideoInfo}>
+                      <h5 style={{ fontSize: "0.85rem", margin: 0 }}>{selectedYoutubeVideo.title}</h5>
+                      <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>ID: {selectedYoutubeVideo.id}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Columna Derecha: Campos e Miniatura */}
+                <div className={styles.inlineEditColRight}>
                   <div className={styles.inputGroup}>
-                    <label>Fecha y Hora de Publicación</label>
-                    <input
-                      type="datetime-local"
-                      required={metadata.isScheduled}
-                      value={metadata.scheduledAt}
-                      onChange={(e) => setMetadata({ ...metadata, scheduledAt: e.target.value })}
+                    <label style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span>Título en YouTube (Copiar/Pegar literal)</span>
+                      <span style={{ fontSize: "0.75rem", color: updateForm.title.length >= 90 ? "#ef4444" : "var(--text-muted)" }}>
+                        {updateForm.title.length}/100
+                      </span>
+                    </label>
+                    <textarea
+                      rows="2"
+                      required
+                      maxLength={100}
+                      value={updateForm.title}
+                      onChange={(e) => setUpdateForm({ ...updateForm, title: e.target.value })}
+                      style={{ resize: "none" }}
                     />
                   </div>
-                )}
 
-                {/* Botones de Envío */}
-                <button type="submit" disabled={isSubmitting || !channel.connected} className={styles.btnSubmit}>
-                  {isSubmitting ? (
-                    <>Procesando...</>
-                  ) : (
-                    <>
-                      <svg
-                        width="18"
-                        height="18"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                      >
-                        <polyline points="22 2 11 13" />
-                        <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                      </svg>
-                      {metadata.isScheduled ? "Programar en YouTube" : "Subir Ahora"}
-                    </>
+                  <div className={styles.inputGroup}>
+                    <label>Descripción (Copiar/Pegar literal)</label>
+                    <textarea
+                      rows="8"
+                      required
+                      value={updateForm.description}
+                      onChange={(e) => setUpdateForm({ ...updateForm, description: e.target.value })}
+                    />
+                  </div>
+
+
+
+                  {/* Portada / Miniatura estilo TVG */}
+                  <div style={{
+                    border: "1px solid var(--border-color)",
+                    borderRadius: "12px",
+                    padding: "1rem",
+                    marginTop: "1rem",
+                    background: "rgba(255,255,255,0.01)"
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+                      <span style={{ fontWeight: "600", fontSize: "0.85rem" }}>
+                        🎨 Miniatura Automática estilo TVG
+                      </span>
+                      <label className={styles.switch} style={{ position: "relative", display: "inline-block", width: "40px", height: "20px" }}>
+                        <input
+                          type="checkbox"
+                          checked={isAutoThumbnailEnabled}
+                          onChange={(e) => {
+                            setIsAutoThumbnailEnabled(e.target.checked);
+                            if (!e.target.checked) setNewThumbnailBase64(null);
+                          }}
+                          style={{ opacity: 0, width: 0, height: 0 }}
+                        />
+                        <span style={{
+                          position: "absolute", cursor: "pointer",
+                          top: 0, left: 0, right: 0, bottom: 0,
+                          backgroundColor: isAutoThumbnailEnabled ? "#10b981" : "#4b5563",
+                          transition: "0.2s", borderRadius: "20px"
+                        }}>
+                          <span style={{
+                            position: "absolute", content: "''",
+                            height: "14px", width: "14px",
+                            left: isAutoThumbnailEnabled ? "22px" : "4px", bottom: "3px",
+                            backgroundColor: "white", transition: "0.2s", borderRadius: "50%"
+                          }} />
+                        </span>
+                      </label>
+                    </div>
+
+                    {isAutoThumbnailEnabled ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                        <div style={{ position: "relative", width: "100%", aspectRatio: "16/9", borderRadius: "6px", overflow: "hidden", border: "1px solid var(--border-color)", background: "#000" }}>
+                          {newThumbnailBase64 ? (
+                            <img src={newThumbnailBase64} alt="Preview" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          ) : (
+                            <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: "0.8rem" }}>
+                              {isGeneratingThumbnail ? "Componiendo lienzo..." : "Preparando canvas..."}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className={styles.inputGroup} style={{ margin: 0 }}>
+                          <label style={{ fontSize: "0.75rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <span>Texto SEO Gallego (4 palabras)</span>
+                            <button
+                              type="button"
+                              disabled={isGeneratingSeoPhrase}
+                              onClick={async () => {
+                                if (!updateForm.title) {
+                                  alert("Introduce un título primero para generar la frase SEO.");
+                                  return;
+                                }
+                                setIsGeneratingSeoPhrase(true);
+                                try {
+                                  const res = await fetch("/api/youtube/generate-seo-phrase", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ title: updateForm.title, description: updateForm.description })
+                                  });
+                                  if (res.ok) {
+                                    const data = await res.json();
+                                    if (data.thumbnailText) {
+                                      setThumbnailText(data.thumbnailText);
+                                    }
+                                  } else {
+                                    alert("Error al generar la frase SEO.");
+                                  }
+                                } catch (err) {
+                                  console.error(err);
+                                  alert("Error de red al conectar con Gemini.");
+                                } finally {
+                                  setIsGeneratingSeoPhrase(false);
+                                }
+                              }}
+                              className={styles.btnSubmit}
+                              style={{
+                                width: "auto",
+                                fontSize: "0.7rem",
+                                padding: "2px 8px",
+                                margin: 0,
+                                background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
+                                border: "none",
+                                opacity: isGeneratingSeoPhrase ? 0.6 : 1,
+                                cursor: isGeneratingSeoPhrase ? "not-allowed" : "pointer"
+                              }}
+                            >
+                              {isGeneratingSeoPhrase ? "Generando..." : "🪄 Generar con IA"}
+                            </button>
+                          </label>
+                          <input
+                            type="text"
+                            value={thumbnailText}
+                            onChange={(e) => setThumbnailText(e.target.value)}
+                            placeholder="Ej: GRAN CONCURSO HORA GALEGA"
+                          />
+                          {isGeneratingSeoPhrase && (
+                            <div style={{
+                              marginTop: "0.4rem",
+                              height: "4px",
+                              width: "100%",
+                              backgroundColor: "rgba(255,255,255,0.05)",
+                              borderRadius: "2px",
+                              overflow: "hidden",
+                              position: "relative"
+                            }}>
+                              <div className={styles.pulseProgressBar} />
+                            </div>
+                          )}
+                        </div>
+
+                        <div className={styles.inputGroup} style={{ margin: 0 }}>
+                          <label style={{ fontSize: "0.75rem", display: "flex", justifyContent: "space-between" }}>
+                            <span>Fondo Personalizado</span>
+                            {customBgBase64 && (
+                              <button type="button" onClick={() => setCustomBgBase64(null)} style={{ background: "none", border: "none", color: "#ef4444", fontSize: "0.7rem", cursor: "pointer", padding: 0 }}>Restaurar</button>
+                            )}
+                          </label>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const file = e.target.files[0];
+                              if (file) {
+                                const reader = new FileReader();
+                                reader.onload = (ev) => setCustomBgBase64(ev.target.result);
+                                reader.readAsDataURL(file);
+                              }
+                            }}
+                            style={{ background: "transparent", border: "none", fontSize: "0.8rem" }}
+                          />
+                        </div>
+
+                        <div className={styles.inputGroup} style={{ margin: 0 }}>
+                          <label style={{ fontSize: "0.75rem", display: "flex", justifyContent: "space-between" }}>
+                            <span>Logotipo de Programa (Catálogo)</span>
+                          </label>
+                          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                               <div style={{ position: "relative", display: "inline-block", flex: 1 }}>
+                                 <button
+                                   type="button"
+                                   className={styles.btnSubmit}
+                                   style={{
+                                     padding: "0.4rem 0.6rem",
+                                     fontSize: "0.75rem",
+                                     background: "var(--bg-surface-solid, #1e293b)",
+                                     color: "var(--text-primary, #f8fafc)",
+                                     border: "1px solid var(--border-color, #334155)",
+                                     borderRadius: "6px",
+                                     cursor: "pointer",
+                                     width: "100%",
+                                     display: "flex",
+                                     justifyContent: "space-between",
+                                     alignItems: "center"
+                                   }}
+                                   onClick={() => setLogoDropdownOpen(!logoDropdownOpen)}
+                                 >
+                                   {selectedProgramLogo === "default"
+                                     ? "Hora Galega (Por defecto)"
+                                     : selectedProgramLogo === "none"
+                                     ? "Ninguno (Sin logotipo)"
+                                     : selectedProgramLogo.replace(/\.[^/.]+$/, "").replace(/_/g, " ")}
+                                   <span style={{ marginLeft: "0.3rem" }}>▾</span>
+                                 </button>
+                                 {logoDropdownOpen && (
+                                   <ul
+                                     style={{
+                                       position: "absolute",
+                                       top: "100%",
+                                       left: 0,
+                                       right: 0,
+                                       marginTop: "0.2rem",
+                                       padding: "0.4rem",
+                                       background: "var(--bg-surface, #0f172a)",
+                                       border: "1px solid var(--border-color, #334155)",
+                                       borderRadius: "6px",
+                                       listStyle: "none",
+                                       maxHeight: "200px",
+                                       overflowY: "auto",
+                                       zIndex: 10,
+                                     }}
+                                   >
+                                     <li
+                                       key="default"
+                                       style={{ padding: "0.4rem", cursor: "pointer", borderRadius: "4px" }}
+                                       onClick={() => {
+                                         setSelectedProgramLogo("default");
+                                         setLogoDropdownOpen(false);
+                                       }}
+                                     >
+                                       Hora Galega (Por defecto)
+                                     </li>
+                                     <li
+                                       key="none"
+                                       style={{ padding: "0.4rem", cursor: "pointer", borderRadius: "4px" }}
+                                       onClick={() => {
+                                         setSelectedProgramLogo("none");
+                                         setLogoDropdownOpen(false);
+                                       }}
+                                     >
+                                       Ninguno (Sin logotipo)
+                                     </li>
+                                     {programLogosCatalog.map((logo) => (
+                                       <li
+                                         key={logo}
+                                         style={{
+                                           display: "flex",
+                                           justifyContent: "space-between",
+                                           alignItems: "center",
+                                           padding: "0.4rem",
+                                           borderRadius: "4px"
+                                         }}
+                                       >
+                                         <span
+                                           style={{ cursor: "pointer", flex: 1 }}
+                                           onClick={() => {
+                                             setSelectedProgramLogo(logo);
+                                             setLogoDropdownOpen(false);
+                                           }}
+                                         >
+                                           {logo.replace(/\.[^/.]+$/, "").replace(/_/g, " ")}
+                                         </span>
+                                         <button
+                                           type="button"
+                                           aria-label={`Eliminar ${logo}`}
+                                           style={{
+                                             background: "transparent",
+                                             border: "none",
+                                             color: "#ef4444",
+                                             cursor: "pointer",
+                                             fontSize: "0.9rem",
+                                             padding: "0 0.2rem"
+                                           }}
+                                           onClick={async (e) => {
+                                             e.stopPropagation();
+                                             if (!confirm(`¿Eliminar el logotipo "${logo}"?`)) return;
+                                             try {
+                                               const res = await fetch("/api/program-logos", {
+                                                 method: "DELETE",
+                                                 headers: { "Content-Type": "application/json" },
+                                                 body: JSON.stringify({ filename: logo }),
+                                               });
+                                               const data = await res.json();
+                                               if (data.success) {
+                                                 await fetchProgramLogosCatalog();
+                                                 if (selectedProgramLogo === logo) setSelectedProgramLogo("default");
+                                               } else {
+                                                 alert("Error al eliminar logotipo: " + data.error);
+                                               }
+                                             } catch (err) {
+                                               console.error("Error al eliminar logotipo:", err);
+                                             }
+                                           }}
+                                         >
+                                           ✖
+                                         </button>
+                                       </li>
+                                     ))}
+                                   </ul>
+                                 )}
+                               </div>
+                            <label
+                              className={styles.btnSubmit}
+                              style={{
+                                padding: "0.4rem 0.6rem",
+                                fontSize: "0.75rem",
+                                cursor: "pointer",
+                                display: "inline-block",
+                                textAlign: "center",
+                                whiteSpace: "nowrap",
+                                margin: 0,
+                                width: "auto",
+                                color: "#fff",
+                              }}
+                            >
+                              Subir Logo
+                              <input
+                                type="file"
+                                accept="image/png"
+                                onChange={async (e) => {
+                                  const file = e.target.files[0];
+                                  if (file) {
+                                    const formData = new FormData();
+                                    formData.append("file", file);
+                                    try {
+                                      const res = await fetch("/api/program-logos", {
+                                        method: "POST",
+                                        body: formData,
+                                      });
+                                      const data = await res.json();
+                                      if (data.success) {
+                                        await fetchProgramLogosCatalog();
+                                        setSelectedProgramLogo(data.filename);
+                                      } else {
+                                        alert("Error subiendo logotipo: " + data.error);
+                                      }
+                                    } catch (err) {
+                                      console.error("Error subiendo logotipo:", err);
+                                    }
+                                  }
+                                }}
+                                style={{ display: "none" }}
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <label style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Imagen convencional de portada:</label>
+                        <input type="file" accept="image/*" onChange={handleNewThumbnailSelect} style={{ background: "transparent", border: "none" }} />
+                        {newThumbnailBase64 && (
+                          <div style={{ marginTop: "0.5rem", position: "relative", width: "160px" }}>
+                            <img src={newThumbnailBase64} alt="Thumb" style={{ width: "100%", borderRadius: "6px" }} />
+                            <button type="button" onClick={() => setNewThumbnailBase64(null)} style={{ position: "absolute", top: "-5px", right: "-5px", background: "#ef4444", color: "#fff", border: "none", borderRadius: "50%", cursor: "pointer", width: "18px", height: "18px", fontSize: "10px" }}>✕</button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <canvas ref={canvasRef} style={{ display: "none" }} />
+                  </div>
+
+                  {/* Programación futura */}
+                  <div className={styles.inputGroup} style={{ flexDirection: "row", alignItems: "center", gap: "0.5rem", marginTop: "1rem" }}>
+                    <input
+                      type="checkbox"
+                      id="schedToggle"
+                      checked={updateForm.isScheduled}
+                      onChange={(e) => setUpdateForm({ ...updateForm, isScheduled: e.target.checked })}
+                    />
+                    <label htmlFor="schedToggle" style={{ cursor: "pointer", fontSize: "0.85rem" }}>
+                      Programar sincronización automática:
+                    </label>
+                  </div>
+
+                  {updateForm.isScheduled && (
+                    <div className={styles.inputGroup}>
+                      <label>Fecha y Hora</label>
+                      <input
+                        type="datetime-local"
+                        required={updateForm.isScheduled}
+                        value={updateForm.scheduledAt}
+                        onChange={(e) => setUpdateForm({ ...updateForm, scheduledAt: e.target.value })}
+                      />
+                    </div>
                   )}
-                </button>
-                {!channel.connected && (
-                  <p className={styles.errorText} style={{ marginTop: "0.5rem", textAlign: "center" }}>
-                    Debes conectar un canal de YouTube antes de subir/programar.
-                  </p>
-                )}
-              </form>
+
+                  <div className={styles.inlineEditActions} style={{ marginTop: "1rem" }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedYoutubeVideo(null);
+                        setYoutubeId("");
+                        handleResetThumbnailStates();
+                      }}
+                      className={styles.btnCancel}
+                      style={{ flex: 1 }}
+                    >Cancelar</button>
+                    <button
+                      type="submit"
+                      disabled={updatingYoutubeVideo}
+                      className={styles.btnSubmit}
+                      style={{ flex: 1.5 }}
+                    >
+                      {updatingYoutubeVideo ? "Sincronizando..." : updateForm.isScheduled ? "Programar Cambios" : "Guardar en YouTube"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </form>
+          )}
+
+          {/* Actualizaciones locales programadas activas */}
+          {scheduledUpdates.length > 0 && (
+            <div className={styles.card} style={{ marginTop: "1.5rem" }}>
+              <div className={styles.cardTitle}>Cola de Actualizaciones Programadas Locales</div>
+              <div className={styles.tasksList}>
+                {scheduledUpdates.map(update => (
+                  <div key={update.id} className={styles.taskCardPending} style={{ borderLeftColor: "#f59e0b" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <h4 style={{ fontSize: "0.85rem", margin: 0 }}>{update.title || "Actualización pendiente"}</h4>
+                      <span className={styles.statusBadge} style={{ background: "rgba(245, 158, 11, 0.15)", color: "#f59e0b", padding: "2px 8px", borderRadius: "12px", fontSize: "0.7rem" }}>
+                        {update.status === "SCHEDULED" ? "Programada" : "Aplicando..."}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.4rem" }}>
+                      <strong>ID YouTube:</strong> <code>{update.youtubeId}</code> | <strong>Ejecución:</strong> {formatDate(update.scheduledAt)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Columna Derecha: Tareas (Pendientes y Realizadas) */}
+        <div className={styles.sidebarCol}>
+          
+          {/* Pendientes de Sincronización */}
+          <div className={styles.card}>
+            <div className={styles.cardTitle} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span>Videos Pendientes</span>
+              <button onClick={fetchTasks} className={styles.refreshBtn} title="Actualizar">🔄</button>
+            </div>
+
+             {loadingTasks ? (
+              <div className={styles.emptyState}>Cargando...</div>
+            ) : tasks.filter(t => t.status === "PENDIENTE_SINCRONIZACION" || t.status === "PENDING" || t.status === "SCHEDULED").length === 0 ? (
+              <div className={styles.emptyState}>No hay videos pendientes de sincronización. ¡Buen trabajo!</div>
+            ) : (
+              <div className={styles.tasksList}>
+                {tasks.filter(t => t.status === "PENDIENTE_SINCRONIZACION" || t.status === "PENDING" || t.status === "SCHEDULED").map(task => {
+                  const isScheduled = task.status === "SCHEDULED";
+                  const scheduledUpdate = scheduledUpdates.find(u => u.youtubeId === task.youtubeId);
+                  const scheduledDateStr = scheduledUpdate ? formatDate(scheduledUpdate.scheduledAt) : null;
+
+                  return (
+                    <div key={task.id} className={styles.taskCardPending} style={isScheduled ? { borderLeftColor: "#f59e0b" } : undefined}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", flex: 1 }}>
+                          <h4 className={styles.taskCardTitle}>{task.title}</h4>
+                          {isScheduled ? (
+                            <span style={{
+                              background: "rgba(245, 158, 11, 0.15)",
+                              color: "#f59e0b",
+                              padding: "2px 8px",
+                              borderRadius: "12px",
+                              fontSize: "0.7rem",
+                              width: "fit-content",
+                              whiteSpace: "nowrap"
+                            }}>Programada</span>
+                          ) : (
+                            <span style={{
+                              background: "rgba(168, 85, 247, 0.15)",
+                              color: "#a855f7",
+                              padding: "2px 8px",
+                              borderRadius: "12px",
+                              fontSize: "0.7rem",
+                              width: "fit-content",
+                              whiteSpace: "nowrap"
+                            }}>Pendiente Sync</span>
+                          )}
+                        </div>
+                        <button
+                          onClick={async () => {
+                            const confirmMsg = isScheduled 
+                              ? "¿Deseas eliminar esta tarea y cancelar su sincronización programada?"
+                              : "¿Deseas eliminar esta tarea pendiente?";
+                            if (confirm(confirmMsg)) {
+                              try {
+                                const res = await fetch(`/api/tasks?id=${task.id}`, { method: 'DELETE' });
+                                if (res.ok) {
+                                  fetchTasks();
+                                  fetchScheduledUpdates();
+                                }
+                              } catch (err) {
+                                console.error(err);
+                              }
+                            }
+                          }}
+                          className={styles.taskActionBtnDelete}
+                          style={{ marginTop: "2px" }}
+                        >✕</button>
+                      </div>
+                      <p className={styles.taskCardDesc} style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{task.description}</p>
+                      
+                      {isScheduled && scheduledDateStr && (
+                        <div style={{ fontSize: "0.7rem", color: "#f59e0b", marginTop: "0.25rem", fontWeight: "500" }}>
+                          ⏰ Programado: {scheduledDateStr}
+                        </div>
+                      )}
+
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.5rem" }}>
+                        <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>ID: {task.youtubeId}</span>
+                        <button
+                          onClick={() => handleWorkOnTask(task)}
+                          className={styles.btnSubmit}
+                          style={{
+                            width: "auto",
+                            fontSize: "0.75rem",
+                            padding: "0.3rem 0.75rem",
+                            background: isScheduled ? "#f59e0b" : "#a855f7",
+                            border: "none"
+                          }}
+                        >
+                          Cargar en Editor
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
 
-          {/* Columna Derecha: Historial de Subida / Cola */}
-          <div className={styles.sidebarCol}>
-            <div className={styles.card}>
-              <div className={styles.cardTitle}>
-                Cola de Subida y Estado
-                <button onClick={fetchVideos} className={styles.refreshBtn} title="Actualizar lista">
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
-                  </svg>
-                </button>
-              </div>
-
-              <div className={styles.historyList}>
-                {videosList.length === 0 ? (
-                  <div className={styles.emptyState}>No hay videos registrados aún.</div>
-                ) : (
-                  videosList.map((video) => (
-                    <div key={video.id} className={styles.historyItem}>
-                      <div className={styles.historyItemContent}>
-                        <div className={styles.historyThumbnailContainer}>
-                          <img
-                            src={`/api/videos/thumbnail?id=${video.id}`}
-                            onError={(e) => {
-                              e.target.parentNode.style.display = "none";
-                            }}
-                            alt="Miniatura"
-                            className={styles.historyThumbnail}
-                          />
-                        </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div className={styles.historyHeader}>
-                            <span className={styles.historyFilename}>{video.filename}</span>
-                            <div className={styles.historyHeaderRight}>
-                              <span className={`${styles.statusBadge} ${getStatusBadgeClass(video.status)}`}>
-                                {getStatusText(video.status)}
-                              </span>
-                              <button onClick={() => handleEditVideo(video)} className={styles.historyActionBtn} title="Editar metadatos">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                                  <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                                </svg>
-                              </button>
-                              <button
-                                onClick={() => handleDeleteVideo(video.id)}
-                                className={deletingVideoId === video.id ? styles.historyActionBtnDeleteConfirm : styles.historyActionBtnDelete}
-                                title={deletingVideoId === video.id ? "Haz clic de nuevo para confirmar (no afectará a YouTube)" : "Eliminar de la cola (no afectará a YouTube)"}
-                              >
-                                {deletingVideoId === video.id ? (
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                    <polyline points="20 6 9 17 4 12" />
-                                  </svg>
-                                ) : (
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                                    <polyline points="3 6 5 6 21 6" />
-                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                                    <line x1="10" y1="11" x2="10" y2="17" />
-                                    <line x1="14" y1="11" x2="14" y2="17" />
-                                  </svg>
-                                )}
-                              </button>
-                            </div>
-                          </div>
-
-                          <div className={styles.historyTitle}>
-                            {video.title || "Procesando metadatos..."}
-                          </div>
-
-                          {video.errorMessage && (
-                            <div className={styles.errorText}>{video.errorMessage}</div>
-                          )}
-
-                          {video.status === "UPLOADING" && (
-                            <div className={styles.progressContainer} style={{ marginTop: "0.5rem" }}>
-                              <div className={styles.progressHeader} style={{ fontSize: "0.75rem", marginBottom: "0.25rem" }}>
-                                <span>Progreso de subida</span>
-                                <span>{video.uploadProgress || 0}%</span>
-                              </div>
-                              <div className={styles.progressBarOuter} style={{ height: "6px" }}>
-                                <div
-                                  className={styles.progressBarInner}
-                                  style={{
-                                    width: `${video.uploadProgress || 0}%`,
-                                    height: "100%"
-                                  }}
-                                ></div>
-                              </div>
-                            </div>
-                          )}
-
-                          <div className={styles.historyMeta}>
-                            <span>
-                              {video.scheduledAt
-                                ? `📅 Prog: ${formatDate(video.scheduledAt)}`
-                                : "🚀 Inmediato"}
-                            </span>
-                            {video.youtubeId ? (
-                              <a
-                                href={`https://studio.youtube.com/video/${video.youtubeId}/edit`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className={styles.youtubeLink}
-                              >
-                                Ver en Studio
-                                <svg
-                                  width="12"
-                                  height="12"
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="2"
-                                >
-                                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3" />
-                                </svg>
-                              </a>
-                            ) : (
-                              <span>ID: {video.id.substring(0, 8)}...</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {activeTab === "optimize" && (
-        /* Diseño de Optimización de Videos Existentes */
-        <div className={styles.mainCol}>
-          <div className={styles.card}>
-            <div className={styles.cardTitle}>Optimizar Videos Existentes en tu Canal</div>
-
-            <div className={styles.searchContainer}>
-              <input
-                type="text"
-                placeholder="Buscar video por título..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && fetchYoutubeVideos(searchQuery)}
-                style={{
-                  flex: 1,
-                  background: "rgba(0, 0, 0, 0.2)",
-                  border: "1px solid var(--border-color)",
-                  color: "var(--text-primary)",
-                  borderRadius: "8px",
-                  padding: "0.75rem 1rem",
-                  fontFamily: "inherit",
-                  fontSize: "0.95rem"
-                }}
-              />
-              <button
-                onClick={() => fetchYoutubeVideos(searchQuery)}
-                className={styles.btnSubmit}
-                style={{ width: "auto", padding: "0.75rem 1.5rem" }}
-              >
-                Buscar
-              </button>
-            </div>
-
-            {loadingYoutubeVideos ? (
-              <div className={styles.emptyState}>Cargando videos de tu canal...</div>
-            ) : youtubeVideos.length === 0 ? (
-              <div className={styles.emptyState}>No se encontraron videos.</div>
+          {/* Completadas */}
+          <div className={styles.card} style={{ marginTop: "1.5rem" }}>
+            <div className={styles.cardTitle}>Historial: Sincronizaciones Realizadas</div>
+            
+            {loadingTasks ? (
+              <div className={styles.emptyState}>Cargando tareas...</div>
+            ) : tasks.filter(t => t.status === "COMPLETED").length === 0 ? (
+              <div className={styles.emptyState}>No hay videos sincronizados recientemente.</div>
             ) : (
-              <div className={styles.youtubeVideosGrid}>
-                {youtubeVideos.map((video) => (
-                  <Fragment key={video.id}>
-                    <div
-                      onClick={() => {
-                        setSelectedYoutubeVideo(video);
-                        setUpdateForm({ title: video.title, description: video.description, tags: video.tags || "", isScheduled: false, scheduledAt: "" });
-                        setOptimizationSuggestions(null);
-                        handleResetThumbnailStates();
-                      }}
-                      className={`${styles.youtubeVideoCard} ${selectedYoutubeVideo?.id === video.id ? styles.youtubeVideoCardActive : ""}`}
-                    >
-                      <img src={video.thumbnail} alt={video.title} style={{ width: "100%", aspectRatio: "16/9", objectFit: "cover" }} />
-                      <div style={{ padding: "0.75rem" }}>
-                        <h4 style={{ fontSize: "0.85rem", fontWeight: "600", color: "var(--text-primary)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", height: "2.4rem", lineHeight: "1.2rem" }}>
-                          {video.title}
-                        </h4>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.5rem" }}>
-                          <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                            {new Date(video.publishedAt).toLocaleDateString()}
-                          </span>
-                          <a
-                            href={`https://studio.youtube.com/video/${video.id}/edit`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className={styles.ytDirectLink}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            Editar en YT
-                            <svg
-                              width="12"
-                              height="12"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2.5"
-                              style={{ marginLeft: "0.15rem" }}
-                            >
-                              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3" />
-                            </svg>
-                          </a>
-                        </div>
-                      </div>
+              <div className={styles.tasksList}>
+                {tasks.filter(t => t.status === "COMPLETED").map(task => (
+                  <div key={task.id} className={styles.taskCardCompleted}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
+                      <h4 className={styles.taskCardTitle} style={{ textDecoration: "line-through", color: "var(--text-muted)" }}>
+                        {task.title}
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const res = await fetch(`/api/tasks?id=${task.id}`, { method: 'DELETE' });
+                            if (res.ok) {
+                              fetchTasks();
+                            } else {
+                              alert("Error al eliminar la tarea del historial local.");
+                            }
+                          } catch (err) {
+                            console.error(err);
+                          }
+                        }}
+                        className={styles.historyActionBtnDelete}
+                      >✕</button>
                     </div>
-
-                    {selectedYoutubeVideo?.id === video.id && (
-                      <form onSubmit={handleSaveYoutubeVideoChanges} className={styles.inlineEditPanel}>
-                        <div className={styles.inlineEditHeader}>
-                          <h3>⚡ Optimizar Video con IA</h3>
-                          <button type="button" onClick={() => {
-                            setSelectedYoutubeVideo(null);
-                            setOptimizationSuggestions(null);
-                            handleResetThumbnailStates();
-                          }} className={styles.closeBtn}>✕</button>
-                        </div>
-
-                        <div className={styles.inlineEditContent}>
-                          {/* Columna Izquierda: Detalles visuales y sugerencias de IA */}
-                          <div className={styles.inlineEditColLeft}>
-                            {activeTask && activeTask.youtubeId === selectedYoutubeVideo.id && (
-                              <div style={{
-                                border: "1px solid #10b981",
-                                borderRadius: "8px",
-                                padding: "0.85rem",
-                                marginBottom: "1rem",
-                                background: "rgba(16, 185, 129, 0.05)"
-                              }}>
-                                <h4 style={{ fontSize: "0.85rem", color: "#10b981", margin: "0 0 0.5rem 0", display: "flex", alignItems: "center", gap: "0.25rem" }}>
-                                  📋 Tarea Pendiente Enlazada
-                                </h4>
-                                <div style={{ fontSize: "0.8rem", color: "var(--text-primary)", marginBottom: "0.5rem" }}>
-                                  <strong>Título Requerido:</strong>
-                                  <div style={{ background: "rgba(0,0,0,0.2)", padding: "0.4rem", borderRadius: "4px", marginTop: "0.25rem", wordBreak: "break-word" }}>
-                                    {activeTask.title}
-                                  </div>
-                                </div>
-                                <div style={{ fontSize: "0.8rem", color: "var(--text-primary)", marginBottom: "0.75rem" }}>
-                                  <strong>Descripción Requerida:</strong>
-                                  <div style={{ background: "rgba(0,0,0,0.2)", padding: "0.4rem", borderRadius: "4px", marginTop: "0.25rem", whiteSpace: "pre-wrap", maxHeight: "120px", overflowY: "auto", wordBreak: "break-word" }}>
-                                    {activeTask.description}
-                                  </div>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setUpdateForm({
-                                      ...updateForm,
-                                      title: activeTask.title,
-                                      description: activeTask.description
-                                    });
-                                  }}
-                                  style={{
-                                    width: "100%",
-                                    padding: "0.5rem",
-                                    background: "#10b981",
-                                    color: "#fff",
-                                    border: "none",
-                                    borderRadius: "6px",
-                                    cursor: "pointer",
-                                    fontWeight: "600",
-                                    fontSize: "0.8rem",
-                                    display: "flex",
-                                    justifyContent: "center",
-                                    alignItems: "center",
-                                    gap: "0.25rem"
-                                  }}
-                                >
-                                  📋 Aplicar Datos de Tarea al Editor
-                                </button>
-                              </div>
-                            )}
-                            <div className={styles.selectedVideoPreview}>
-                              <img src={selectedYoutubeVideo.thumbnail} alt="Selected thumbnail" className={styles.selectedVideoThumbnail} />
-                              <div className={styles.selectedVideoInfo}>
-                                <h5 style={{ fontSize: "0.85rem", color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, width: "100%" }}>{selectedYoutubeVideo.title}</h5>
-                                <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", wordBreak: "break-word", minWidth: 0, width: "100%" }}>{selectedYoutubeVideo.description}</p>
-                              </div>
-                            </div>
-
-                            <button
-                              type="button"
-                              disabled={optimizingVideo}
-                              onClick={() => handleOptimizeVideo(selectedYoutubeVideo.id)}
-                              className={styles.btnSubmit}
-                              style={{ background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)", boxShadow: "0 4px 15px rgba(168, 85, 247, 0.3)" }}
-                            >
-                              {optimizingVideo ? "Optimizando con Gemini..." : "⚡ Optimizar con Gemini IA"}
-                            </button>
-
-                            {optimizationSuggestions && (
-                              <div className={styles.titlesSuggestionGroup} style={{ marginTop: "0.5rem" }}>
-                                <div className={styles.suggestionTitleLabel}>
-                                  ✏️ Títulos sugeridos por la IA:
-                                </div>
-                                {optimizationSuggestions.titles.map((t, idx) => (
-                                  <button
-                                    key={idx}
-                                    type="button"
-                                    onClick={() => setUpdateForm({ ...updateForm, title: t })}
-                                    className={`${styles.titleSuggestionCard} ${updateForm.title === t ? styles.titleSuggestionActive : ""}`}
-                                    style={{ fontSize: "0.8rem", padding: "0.6rem 0.8rem" }}
-                                  >
-                                    {t}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Columna Derecha: Campos editables y acción de guardar */}
-                          <div className={styles.inlineEditColRight}>
-                            <div className={styles.inputGroup}>
-                              <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
-                                <span>Título Final en YouTube</span>
-                                <span style={{ fontSize: "0.75rem", fontWeight: "normal", color: updateForm.title.length >= 90 ? "#ef4444" : "var(--text-muted, #94a3b8)" }}>
-                                  {updateForm.title.length}/100
-                                </span>
-                              </label>
-                              <textarea
-                                rows="2"
-                                required
-                                maxLength={100}
-                                value={updateForm.title}
-                                onChange={(e) => setUpdateForm({ ...updateForm, title: e.target.value })}
-                                style={{ resize: "none" }}
-                              />
-                            </div>
-
-                            <div className={styles.inputGroup}>
-                              <label>Descripción</label>
-                              <textarea
-                                rows="6"
-                                required
-                                value={updateForm.description}
-                                onChange={(e) => setUpdateForm({ ...updateForm, description: e.target.value })}
-                              />
-                            </div>
-
-                            <div className={styles.inputGroup}>
-                              <label>Etiquetas (separadas por comas)</label>
-                              <textarea
-                                rows="2"
-                                value={updateForm.tags}
-                                onChange={(e) => setUpdateForm({ ...updateForm, tags: e.target.value })}
-                                placeholder="ia, youtube, optimizado"
-                                style={{ resize: "none" }}
-                              />
-                            </div>
-
-                            {/* SECCIÓN MINIATURA AUTOMÁTICA */}
-                            <div style={{
-                              border: "1px solid var(--border-color)",
-                              borderRadius: "12px",
-                              padding: "1rem",
-                              marginTop: "1.5rem",
-                              marginBottom: "1.5rem",
-                              background: "rgba(255,255,255,0.02)"
-                            }}>
-                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
-                                <span style={{ fontWeight: "600", color: "var(--text-primary)", fontSize: "0.9rem" }}>
-                                  🎨 Generar miniatura estilo TVG (Automática)
-                                </span>
-                                <label className={styles.switch} style={{ position: "relative", display: "inline-block", width: "44px", height: "24px" }}>
-                                  <input
-                                    type="checkbox"
-                                    checked={isAutoThumbnailEnabled}
-                                    onChange={(e) => {
-                                      setIsAutoThumbnailEnabled(e.target.checked);
-                                      if (!e.target.checked) {
-                                        setNewThumbnailBase64(null);
-                                      }
-                                    }}
-                                    style={{ opacity: 0, width: 0, height: 0 }}
-                                  />
-                                  <span style={{
-                                    position: "absolute",
-                                    cursor: "pointer",
-                                    top: 0, left: 0, right: 0, bottom: 0,
-                                    backgroundColor: isAutoThumbnailEnabled ? "#10b981" : "#4b5563",
-                                    transition: "0.3s",
-                                    borderRadius: "24px"
-                                  }}>
-                                    <span style={{
-                                      position: "absolute",
-                                      content: "''",
-                                      height: "18px", width: "18px",
-                                      left: isAutoThumbnailEnabled ? "22px" : "3px",
-                                      bottom: "3px",
-                                      backgroundColor: "white",
-                                      transition: "0.3s",
-                                      borderRadius: "50%"
-                                    }} />
-                                  </span>
-                                </label>
-                              </div>
-
-                              {isAutoThumbnailEnabled ? (
-                                <div style={{ display: "flex", flexDirection: "column", gap: "1rem", marginTop: "1rem" }}>
-                                  {/* Preview */}
-                                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5rem" }}>
-                                    <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", alignSelf: "flex-start" }}>Previsualización en tiempo real (1280x720):</span>
-                                    <div style={{ position: "relative", width: "100%", aspectRatio: "16/9", overflow: "hidden", borderRadius: "8px", border: "1px solid var(--border-color)", background: "#000" }}>
-                                      {newThumbnailBase64 ? (
-                                        <img src={newThumbnailBase64} alt="Auto-thumbnail preview" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                                      ) : (
-                                        <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: "0.8rem" }}>
-                                          {isGeneratingThumbnail ? "Generando portada..." : "Cargando previsualización..."}
-                                        </div>
-                                      )}
-                                      {isGeneratingThumbnail && (
-                                        <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "0.8rem" }}>
-                                          Procesando canvas...
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-
-                                  {/* SEO Text Input */}
-                                  <div className={styles.inputGroup} style={{ margin: 0 }}>
-                                    <label style={{ fontSize: "0.8rem" }}>Frase SEO en Gallego (4 palabras)</label>
-                                    <input
-                                      type="text"
-                                      value={thumbnailText}
-                                      onChange={(e) => setThumbnailText(e.target.value)}
-                                      placeholder="Ej: GRAN CONCURSO HORA GALEGA"
-                                      style={{ padding: "0.5rem", borderRadius: "6px", border: "1px solid var(--border-color)", background: "var(--bg-card)", color: "var(--text-primary)" }}
-                                    />
-                                    <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
-                                      Las primeras 2 palabras saldrán en <span style={{ color: "#fff", fontWeight: "bold" }}>Blanco</span>, las siguientes 2 en <span style={{ color: "#f97316", fontWeight: "bold" }}>Naranja</span>.
-                                    </p>
-                                  </div>
-
-                                  {/* Custom background input */}
-                                  <div className={styles.inputGroup} style={{ margin: 0 }}>
-                                    <label style={{ fontSize: "0.8rem", display: "flex", justifyContent: "space-between" }}>
-                                      <span>Imagen de Fondo Personalizada</span>
-                                      {customBgBase64 && (
-                                        <button
-                                          type="button"
-                                          onClick={() => setCustomBgBase64(null)}
-                                          style={{ border: "none", background: "none", color: "#ef4444", fontSize: "0.75rem", cursor: "pointer", padding: 0 }}
-                                        >
-                                          Restaurar Original
-                                        </button>
-                                      )}
-                                    </label>
-                                    <input
-                                      type="file"
-                                      accept="image/*"
-                                      onChange={(e) => {
-                                        const file = e.target.files[0];
-                                        if (file) {
-                                          const reader = new FileReader();
-                                          reader.onload = (event) => setCustomBgBase64(event.target.result);
-                                          reader.readAsDataURL(file);
-                                        }
-                                      }}
-                                      style={{ background: "transparent", border: "none", padding: 0, fontSize: "0.8rem" }}
-                                    />
-                                  </div>
-
-                                  {/* Custom program logo input */}
-                                  <div className={styles.inputGroup} style={{ margin: 0 }}>
-                                    <label style={{ fontSize: "0.8rem", display: "flex", justifyContent: "space-between" }}>
-                                      <span>Logotipo del Programa Personalizado (PNG)</span>
-                                      {programLogoBase64 && (
-                                        <button
-                                          type="button"
-                                          onClick={() => setProgramLogoBase64(null)}
-                                          style={{ border: "none", background: "none", color: "#ef4444", fontSize: "0.75rem", cursor: "pointer", padding: 0 }}
-                                        >
-                                          Restaurar Default
-                                        </button>
-                                      )}
-                                    </label>
-                                    <input
-                                      type="file"
-                                      accept="image/*"
-                                      onChange={(e) => {
-                                        const file = e.target.files[0];
-                                        if (file) {
-                                          const reader = new FileReader();
-                                          reader.onload = (event) => setProgramLogoBase64(event.target.result);
-                                          reader.readAsDataURL(file);
-                                        }
-                                      }}
-                                      style={{ background: "transparent", border: "none", padding: 0, fontSize: "0.8rem" }}
-                                    />
-                                  </div>
-                                </div>
-                              ) : (
-                                <div style={{ marginTop: "0.5rem" }}>
-                                  <label style={{ display: "block", fontSize: "0.8rem", marginBottom: "0.25rem", color: "var(--text-muted)" }}>
-                                    Sube un archivo de imagen convencional para usar como miniatura:
-                                  </label>
-                                  <input
-                                    type="file"
-                                    accept="image/*"
-                                    onChange={handleNewThumbnailSelect}
-                                    style={{ background: "transparent", border: "none", padding: 0 }}
-                                  />
-                                  {newThumbnailBase64 && (
-                                    <div style={{ marginTop: "0.5rem", position: "relative" }}>
-                                      <img src={newThumbnailBase64} alt="New preview" style={{ width: "100%", maxWidth: "160px", borderRadius: "8px", border: "1px solid var(--border-color)" }} />
-                                      <button type="button" onClick={() => setNewThumbnailBase64(null)} style={{ position: "absolute", top: "-5px", left: "145px", background: "#ef4444", color: "#fff", border: "none", borderRadius: "50%", width: "20px", height: "20px", cursor: "pointer", fontSize: "10px", padding: 0 }}>✕</button>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-
-                              {selectedYoutubeVideo?.isShort && (
-                                <div style={{ fontSize: "0.75rem", color: "var(--warning, #f59e0b)", marginTop: "0.5rem", display: "flex", gap: "0.25rem", alignItems: "center" }}>
-                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ flexShrink: 0 }}>
-                                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                                    <line x1="12" y1="9" x2="12" y2="13" />
-                                    <line x1="12" y1="17" x2="12.01" y2="17" />
-                                  </svg>
-                                  <span>YouTube no permite portadas personalizadas para Shorts (videos de menos de 60s) desde la API o la web de Studio de escritorio.</span>
-                                </div>
-                              )}
-
-                              <canvas ref={canvasRef} style={{ display: "none" }} />
-                            </div>
-
-                            <div className={styles.inputGroup} style={{ flexDirection: "row", alignItems: "center", gap: "0.5rem", marginTop: "1rem" }}>
-                              <input
-                                type="checkbox"
-                                id="optimizeScheduleToggle"
-                                checked={updateForm.isScheduled}
-                                onChange={(e) => setUpdateForm({ ...updateForm, isScheduled: e.target.checked })}
-                                style={{ width: "18px", height: "18px", cursor: "pointer" }}
-                              />
-                              <label htmlFor="optimizeScheduleToggle" style={{ cursor: "pointer", textTransform: "none", fontSize: "0.9rem" }}>
-                                Programar cambios para una fecha futura
-                              </label>
-                            </div>
-
-                            {updateForm.isScheduled && (
-                              <div className={styles.inputGroup} style={{ marginTop: "1rem" }}>
-                                <label>Fecha y Hora de Actualización</label>
-                                <input
-                                  type="datetime-local"
-                                  required={updateForm.isScheduled}
-                                  value={updateForm.scheduledAt}
-                                  onChange={(e) => setUpdateForm({ ...updateForm, scheduledAt: e.target.value })}
-                                />
-                              </div>
-                            )}
-
-                            <div className={styles.inlineEditActions}>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedYoutubeVideo(null);
-                                  setOptimizationSuggestions(null);
-                                  handleResetThumbnailStates();
-                                }}
-                                className={styles.btnCancel}
-                                style={{ flex: 1 }}
-                              >
-                                Cancelar
-                              </button>
-                              <button
-                                type="submit"
-                                disabled={updatingYoutubeVideo}
-                                className={styles.btnSubmit}
-                                style={{ flex: 1.5 }}
-                              >
-                                {updatingYoutubeVideo ? "Guardando..." : updateForm.isScheduled ? "Programar Cambios" : "Guardar en YouTube"}
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      </form>
-                    )}
-                  </Fragment>
+                    
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: "0.5rem" }}>
+                      <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                        <div><strong>ID YouTube:</strong> <code>{task.youtubeId}</code></div>
+                        {task.completedAt && (
+                          <div><strong>Sincronizado el:</strong> {formatDate(task.completedAt)}</div>
+                        )}
+                      </div>
+                      <a
+                        href={`https://studio.youtube.com/video/${task.youtubeId}/edit`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={styles.btnSubmit}
+                        style={{
+                          width: "auto",
+                          fontSize: "0.75rem",
+                          padding: "0.3rem 0.75rem",
+                          background: "#0284c7",
+                          border: "none",
+                          textDecoration: "none",
+                          color: "#fff",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "0.25rem",
+                          borderRadius: "4px",
+                          fontWeight: "500",
+                          height: "fit-content"
+                        }}
+                      >
+                        ✏️ Editar en YouTube
+                      </a>
+                    </div>
+                  </div>
                 ))}
               </div>
             )}
           </div>
+
         </div>
-      )}
-
-      {activeTab === "tasks" && (
-        <div className={styles.tasksLayout}>
-          {/* Formulario de creación de tareas en la izquierda */}
-          <div className={styles.tasksLeftCol}>
-            <div className={styles.card}>
-              <div className={styles.cardTitle}>Nuevo Video Pendiente</div>
-              <form onSubmit={handleCreateTask} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                <div className={styles.inputGroup}>
-                  <label htmlFor="taskYoutubeId">ID del Vídeo de YouTube</label>
-                  <input
-                    type="text"
-                    id="taskYoutubeId"
-                    value={newTaskForm.youtubeId}
-                    onChange={(e) => setNewTaskForm({ ...newTaskForm, youtubeId: e.target.value })}
-                    placeholder="Ej: vMLRoF6R3KE"
-                    required
-                  />
-                  <span className={styles.configOverlayInfo}>
-                  </span>
-                </div>
-                <div className={styles.inputGroup}>
-                  <label htmlFor="taskTitle">Título de Referencia</label>
-                  <input
-                    type="text"
-                    id="taskTitle"
-                    value={newTaskForm.title}
-                    onChange={(e) => setNewTaskForm({ ...newTaskForm, title: e.target.value })}
-                    placeholder="Introduce el título de referencia para el vídeo"
-                    required
-                  />
-                </div>
-                <div className={styles.inputGroup}>
-                  <label htmlFor="taskDescription">Descripción de Referencia</label>
-                  <textarea
-                    id="taskDescription"
-                    rows="4"
-                    value={newTaskForm.description}
-                    onChange={(e) => setNewTaskForm({ ...newTaskForm, description: e.target.value })}
-                    placeholder="Introduce la descripción de referencia para el vídeo"
-                    required
-                  />
-                </div>
-                <div className={styles.inputGroup}>
-                  <label htmlFor="taskDueDate">Fecha Límite de Entrega (Opcional)</label>
-                  <input
-                    type="date"
-                    id="taskDueDate"
-                    value={newTaskForm.dueDate}
-                    onChange={(e) => setNewTaskForm({ ...newTaskForm, dueDate: e.target.value })}
-                  />
-                </div>
-                <button type="submit" className={styles.btnSubmit} style={{ marginTop: "0.5rem" }}>
-                  Crear Video Pendiente
-                </button>
-              </form>
-            </div>
-          </div>
-
-          {/* Listado de tareas (Realizar vs Realizadas) en la derecha */}
-          <div className={styles.tasksRightCol}>
-            <div className={styles.card}>
-              <div className={styles.cardTitle} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span>Videos Pendientes</span>
-                <button onClick={fetchTasks} className={styles.refreshBtn} title="Actualizar lista">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
-                  </svg>
-                </button>
-              </div>
-
-              {loadingTasks ? (
-                <div className={styles.emptyState}>Cargando videos...</div>
-              ) : tasks.filter(t => t.status === "PENDING").length === 0 ? (
-                <div className={styles.emptyState}>No hay videos pendientes. ¡Buen trabajo!</div>
-              ) : (
-                <div className={styles.tasksList}>
-                  {tasks.filter(t => t.status === "PENDING").map(task => (
-                    <div key={task.id} className={styles.taskCardPending}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem" }}>
-                        <h4 className={styles.taskCardTitle}>{task.title}</h4>
-                        <div style={{ display: "flex", gap: "0.5rem" }}>
-                          <button
-                            onClick={() => handleWorkOnTask(task)}
-                            className={styles.btnWorkOnTask}
-                            title="Editar este video"
-                          >
-                            Editar Video
-                          </button>
-                          <button
-                            onClick={async () => {
-                              if (confirm("¿Estás seguro de que deseas eliminar esta tarea?")) {
-                                try {
-                                  const res = await fetch(`/api/tasks?id=${task.id}`, { method: 'DELETE' });
-                                  if (res.ok) {
-                                    fetchTasks();
-                                  } else {
-                                    alert("No se pudo eliminar la tarea");
-                                  }
-                                } catch (err) {
-                                  console.error(err);
-                                }
-                              }
-                            }}
-                            className={styles.taskActionBtnDelete}
-                            title="Eliminar tarea"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className={styles.taskCardDetails}>
-                        <p className={styles.taskCardDesc}>{task.description}</p>
-                        <div className={styles.taskCardMetaGrid}>
-                          <div><strong>ID YouTube:</strong> <code style={{ color: "var(--primary)" }}>{task.youtubeId}</code></div>
-                          {task.uploadDate && (
-                            <div><strong>Subido a YT:</strong> {formatDate(task.uploadDate)}</div>
-                          )}
-                          <div>
-                            <strong>Fecha Límite:</strong>{" "}
-                            {task.dueDate ? (
-                              <span style={{ color: new Date(task.dueDate) < new Date() ? "#ef4444" : "inherit" }}>
-                                {new Date(task.dueDate).toLocaleDateString("es-ES")}
-                              </span>
-                            ) : (
-                              <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}>Sin límite</span>
-                            )}
-                            <button
-                              onClick={() => {
-                                const newDate = prompt("Introduce la nueva fecha límite (AAAA-MM-DD) o déjala vacía para eliminarla:", task.dueDate ? new Date(task.dueDate).toISOString().substring(0, 10) : "");
-                                if (newDate !== null) {
-                                  fetch("/api/tasks", {
-                                    method: "PATCH",
-                                    headers: { "Content-Type": "application/json" },
-                                    body: JSON.stringify({ id: task.id, dueDate: newDate || null })
-                                  }).then(res => {
-                                    if (res.ok) fetchTasks();
-                                    else alert("Error al actualizar la fecha límite");
-                                  });
-                                }
-                              }}
-                              className={styles.editDueDateBtn}
-                              title="Editar fecha límite"
-                            >
-                              ✏️
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className={styles.card} style={{ marginTop: "1.5rem" }}>
-              <div className={styles.cardTitle}>Videos Editados(Completados)</div>
-              {loadingTasks ? (
-                <div className={styles.emptyState}>Cargando videos...</div>
-              ) : tasks.filter(t => t.status === "COMPLETED").length === 0 ? (
-                <div className={styles.emptyState}>No hay videos completados todavía.</div>
-              ) : (
-                <div className={styles.tasksList}>
-                  {tasks.filter(t => t.status === "COMPLETED").map(task => (
-                    <div key={task.id} className={styles.taskCardCompleted}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem" }}>
-                        <h4 className={styles.taskCardTitle} style={{ color: "var(--text-muted)", textDecoration: "line-through" }}>
-                          {task.title}
-                        </h4>
-                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                          <span className={styles.taskBadgeCompleted}>Completada</span>
-                          <button
-                            onClick={async () => {
-                              if (confirm("¿Estás seguro de que deseas eliminar esta tarea?")) {
-                                try {
-                                  const res = await fetch(`/api/tasks?id=${task.id}`, { method: 'DELETE' });
-                                  if (res.ok) {
-                                    fetchTasks();
-                                  } else {
-                                    alert("No se pudo eliminar la tarea");
-                                  }
-                                } catch (err) {
-                                  console.error(err);
-                                }
-                              }
-                            }}
-                            className={styles.taskActionBtnDelete}
-                            title="Eliminar tarea"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className={styles.taskCardDetails}>
-                        <p className={styles.taskCardDesc} style={{ color: "var(--text-muted)" }}>{task.description}</p>
-                        <div className={styles.taskCardMetaGrid} style={{ color: "var(--text-muted)" }}>
-                          <div><strong>ID YouTube:</strong> <code>{task.youtubeId}</code></div>
-                          {task.uploadDate && (
-                            <div><strong>Subido a YT:</strong> {formatDate(task.uploadDate)}</div>
-                          )}
-                          <div>
-                            <strong>Editado el:</strong> {formatDate(task.completedAt || task.updatedAt)}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      </div>
 
       {/* Modal de Configuración */}
       {showSettings && (
@@ -2495,39 +1725,17 @@ export default function Dashboard() {
           <form onSubmit={handleSaveConfig} className={styles.settingsModal}>
             <div className={styles.settingsHeader}>
               <h2>Configurar Credenciales de Empresa</h2>
-              <button
-                type="button"
-                onClick={() => setShowSettings(false)}
-                className={styles.closeBtn}
-              >
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
+              <button type="button" onClick={() => setShowSettings(false)} className={styles.closeBtn}>✕</button>
             </div>
 
             <div className={styles.inputGroup}>
               <label>Gemini API Key</label>
               <input
                 type="password"
-                autoComplete="new-password"
                 value={configInput.GEMINI_API_KEY}
-                onChange={(e) =>
-                  setConfigInput({ ...configInput, GEMINI_API_KEY: e.target.value })
-                }
-                placeholder={config.GEMINI_API_KEY ? `${config.GEMINI_API_KEY} (Configurada)` : "Pega tu API Key de Gemini"}
+                onChange={(e) => setConfigInput({ ...configInput, GEMINI_API_KEY: e.target.value })}
+                placeholder={config.GEMINI_API_KEY ? "(Configurada)" : "Pega tu API Key de Gemini"}
               />
-              <span className={styles.configOverlayInfo}>
-                Obtenida en Google AI Studio. Usada para el análisis de video.
-              </span>
             </div>
 
             <div className={styles.inputGroup}>
@@ -2535,188 +1743,25 @@ export default function Dashboard() {
               <input
                 type="text"
                 value={configInput.YOUTUBE_CLIENT_ID}
-                onChange={(e) =>
-                  setConfigInput({ ...configInput, YOUTUBE_CLIENT_ID: e.target.value })
-                }
-                placeholder={config.YOUTUBE_CLIENT_ID ? `${config.YOUTUBE_CLIENT_ID} (Configurado)` : "123456-abcdef.apps.googleusercontent.com"}
+                onChange={(e) => setConfigInput({ ...configInput, YOUTUBE_CLIENT_ID: e.target.value })}
+                placeholder={config.YOUTUBE_CLIENT_ID ? "(Configurado)" : "Client ID"}
               />
-              <span className={styles.configOverlayInfo}>
-                Creado en Google Cloud Console para la API de YouTube.
-              </span>
             </div>
 
             <div className={styles.inputGroup}>
               <label>Google OAuth Client Secret</label>
               <input
                 type="password"
-                autoComplete="new-password"
                 value={configInput.YOUTUBE_CLIENT_SECRET}
-                onChange={(e) =>
-                  setConfigInput({ ...configInput, YOUTUBE_CLIENT_SECRET: e.target.value })
-                }
-                placeholder={config.YOUTUBE_CLIENT_SECRET ? `${config.YOUTUBE_CLIENT_SECRET} (Configurado)` : "Pega el Secreto de Cliente OAuth"}
+                onChange={(e) => setConfigInput({ ...configInput, YOUTUBE_CLIENT_SECRET: e.target.value })}
+                placeholder={config.YOUTUBE_CLIENT_SECRET ? "(Configurado)" : "Client Secret"}
               />
-              <span className={styles.configOverlayInfo}>
-                Secreto asociado al Client ID de Google Cloud.
-              </span>
             </div>
 
-            <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", lineHeight: "1.4" }}>
-              * Nota: Si dejas algún campo vacío y ya estaba configurado, se conservará el valor anterior.
-              Toda la información se guarda en la base de datos compartida y estará disponible para el equipo.
-            </p>
-
             <div className={styles.settingsActions}>
-              <button
-                type="button"
-                onClick={() => setShowSettings(false)}
-                className={styles.btnCancel}
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                disabled={savingConfig}
-                className={styles.btnSubmit}
-                style={{ width: "auto" }}
-              >
+              <button type="button" onClick={() => setShowSettings(false)} className={styles.btnCancel}>Cancelar</button>
+              <button type="submit" disabled={savingConfig} className={styles.btnSubmit} style={{ width: "auto" }}>
                 {savingConfig ? "Guardando..." : "Guardar Cambios"}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* Modal de Edición de Video */}
-      {editingVideo && (
-        <div className={styles.settingsOverlay}>
-          <form onSubmit={handleUpdateVideo} className={styles.settingsModal} style={{ maxWidth: "600px" }}>
-            <div className={styles.settingsHeader}>
-              <h2>Editar Video en Cola</h2>
-              <button
-                type="button"
-                onClick={() => setEditingVideo(null)}
-                className={styles.closeBtn}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
-            </div>
-
-            <div className={styles.inputGroup}>
-              <label>Archivo Original</label>
-              <input type="text" disabled value={editingVideo.filename} style={{ opacity: 0.6 }} />
-            </div>
-
-            <div className={styles.inputGroup} style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <img
-                src={`/api/videos/thumbnail?id=${editingVideo.id}`}
-                onError={(e) => {
-                  e.target.style.display = "none";
-                }}
-                alt="Miniatura"
-                style={{ width: "100%", maxWidth: "240px", borderRadius: "8px", border: "1px solid var(--border-color)", boxShadow: "0 2px 8px rgba(0,0,0,0.3)" }}
-              />
-            </div>
-
-            <div className={styles.inputGroup}>
-              <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
-                <span>Título</span>
-                <span style={{ fontSize: "0.75rem", fontWeight: "normal", color: editForm.title.length >= 90 ? "#ef4444" : "var(--text-muted, #94a3b8)" }}>
-                  {editForm.title.length}/100
-                </span>
-              </label>
-              <textarea
-                rows="2"
-                required
-                maxLength={100}
-                value={editForm.title}
-                onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
-                placeholder="Título del video"
-                style={{ resize: "none" }}
-              />
-            </div>
-
-            <div className={styles.inputGroup}>
-              <label>Descripción</label>
-              <textarea
-                rows="5"
-                required
-                value={editForm.description}
-                onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
-                placeholder="Descripción del video"
-              />
-            </div>
-
-            <div className={styles.inputGroup}>
-              <label>Etiquetas (separadas por comas)</label>
-              <textarea
-                rows="2"
-                value={editForm.tags}
-                onChange={(e) => setEditForm({ ...editForm, tags: e.target.value })}
-                placeholder="ia, youtube, tags"
-                style={{ resize: "none" }}
-              />
-            </div>
-
-            <div className={styles.inputGroup}>
-              <label>Estado</label>
-              <select
-                value={editForm.status}
-                onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
-              >
-                <option value="DRAFT" style={{ background: "var(--bg-surface-solid)", color: "var(--text-primary)" }}>Borrador (DRAFT)</option>
-                <option value="ANALYZING" style={{ background: "var(--bg-surface-solid)", color: "var(--text-primary)" }}>Analizando con IA (ANALYZING)</option>
-                <option value="READY" style={{ background: "var(--bg-surface-solid)", color: "var(--text-primary)" }}>Listo para Programar (READY)</option>
-                <option value="UPLOADING" style={{ background: "var(--bg-surface-solid)", color: "var(--text-primary)" }}>Subiendo a YouTube (UPLOADING)</option>
-                <option value="SCHEDULED" style={{ background: "var(--bg-surface-solid)", color: "var(--text-primary)" }}>Programado (SCHEDULED)</option>
-                <option value="COMPLETED" style={{ background: "var(--bg-surface-solid)", color: "var(--text-primary)" }}>Publicado (COMPLETED)</option>
-                <option value="FAILED" style={{ background: "var(--bg-surface-solid)", color: "var(--text-primary)" }}>Fallido (FAILED)</option>
-              </select>
-            </div>
-
-            <div className={styles.inputGroup} style={{ flexDirection: "row", alignItems: "center", gap: "0.5rem" }}>
-              <input
-                type="checkbox"
-                id="editScheduleToggle"
-                checked={editForm.isScheduled}
-                onChange={(e) => setEditForm({ ...editForm, isScheduled: e.target.checked })}
-                style={{ width: "18px", height: "18px", cursor: "pointer" }}
-              />
-              <label htmlFor="editScheduleToggle" style={{ cursor: "pointer", textTransform: "none" }}>
-                Programar publicación para una fecha futura
-              </label>
-            </div>
-
-            {editForm.isScheduled && (
-              <div className={styles.inputGroup}>
-                <label>Fecha y Hora de Publicación</label>
-                <input
-                  type="datetime-local"
-                  required={editForm.isScheduled}
-                  value={editForm.scheduledAt}
-                  onChange={(e) => setEditForm({ ...editForm, scheduledAt: e.target.value })}
-                />
-              </div>
-            )}
-
-            <div className={styles.settingsActions}>
-              <button
-                type="button"
-                onClick={() => setEditingVideo(null)}
-                className={styles.btnCancel}
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                disabled={isUpdatingVideo}
-                className={styles.btnSubmit}
-                style={{ width: "auto" }}
-              >
-                {isUpdatingVideo ? "Guardando..." : "Guardar Cambios"}
               </button>
             </div>
           </form>
