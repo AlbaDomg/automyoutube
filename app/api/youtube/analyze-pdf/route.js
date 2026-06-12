@@ -193,18 +193,10 @@ Responde obligatoriamente en formato JSON con la siguiente estructura exacta:
         }
       }));
     } catch (err) {
-      // Fallback a gemini-flash-latest si excedemos cuota
-      const isQuotaExceeded = err.message && (
-        err.message.includes('429') ||
-        err.message.includes('RESOURCE_EXHAUSTED') ||
-        err.message.includes('quota') ||
-        err.message.includes('Quota exceeded')
-      );
-
-      if (isQuotaExceeded) {
-        console.warn('[Gemini API] Cuota de gemini-2.5-flash superada. Usando fallback gemini-flash-latest...');
+      console.warn(`[Gemini API] Falló gemini-2.5-flash: ${err.message}. Intentando con gemini-1.5-flash como fallback...`);
+      try {
         response = await callGeminiWithRetry(() => ai.models.generateContent({
-          model: 'gemini-flash-latest',
+          model: 'gemini-1.5-flash',
           contents: [
             {
               role: 'user',
@@ -223,7 +215,8 @@ Responde obligatoriamente en formato JSON con la siguiente estructura exacta:
             responseMimeType: 'application/json',
           }
         }));
-      } else {
+      } catch (fallbackErr) {
+        console.error('[Gemini API] Falló también el modelo de fallback gemini-1.5-flash:', fallbackErr.message);
         throw err;
       }
     }
