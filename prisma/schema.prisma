@@ -24,20 +24,21 @@ model Channel {
 }
 
 model Video {
-  id             String    @id @default(uuid())
-  filename       String
-  filePath       String    // Ruta del archivo local en el servidor
-  title          String?
-  description    String?
-  tags           String?   // Guardado como string separado por comas
-  scheduledAt    DateTime?
-  status         String    @default("DRAFT") // DRAFT, ANALYZING, READY, SCHEDULED, UPLOADING, COMPLETED, FAILED
-  youtubeId      String?
-  errorMessage   String?
+  id              String    @id @default(uuid())
+  filename        String
+  filePath        String    // Ruta del archivo local en el servidor
+  title           String?
+  description     String?
+  tags            String?   // Guardado como string separado por comas
+  scheduledAt     DateTime?
+  status          String    @default("DRAFT") // DRAFT, ANALYZING, READY, SCHEDULED, UPLOADING, COMPLETED, FAILED
+  youtubeId       String?
+  errorMessage    String?
   uploadProgress  Int       @default(0)
   thumbnailBase64 String?
+  playlistId      String?   // ID de la playlist a la que se añadirá el video
   createdAt       DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  updatedAt       DateTime  @updatedAt
 }
 
 model VideoTask {
@@ -50,6 +51,17 @@ model VideoTask {
   dueDate       DateTime?
   completedAt   DateTime?
   status        String    @default("PENDING") // PENDING, COMPLETED
+  playlistId    String?   // ID de la playlist sugerida o seleccionada
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+}
+
+model Playlist {
+  id          String   @id // ID de la lista en YouTube (p. ej. PL...)
+  title       String
+  description String?
+  thumbnail   String?
+  channelId   String   // ID del canal al que pertenece
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }

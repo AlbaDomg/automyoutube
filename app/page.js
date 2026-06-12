@@ -39,6 +39,10 @@ export default function Dashboard() {
   const [channel, setChannel] = useState({ connected: false, channel: null });
   const [loadingChannel, setLoadingChannel] = useState(true);
 
+  // Estado de las listas de reproducción
+  const [playlists, setPlaylists] = useState([]);
+  const [loadingPlaylists, setLoadingPlaylists] = useState(false);
+
   // Estado de la configuración
   const [showSettings, setShowSettings] = useState(false);
   const [config, setConfig] = useState({
@@ -69,7 +73,8 @@ export default function Dashboard() {
     description: "",
     tags: "",
     isScheduled: false,
-    scheduledAt: ""
+    scheduledAt: "",
+    playlistId: ""
   });
   const [updatingYoutubeVideo, setUpdatingYoutubeVideo] = useState(false);
   const [loadingYoutubeVideo, setLoadingYoutubeVideo] = useState(false);
@@ -477,11 +482,29 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
     }
   };
 
+  const fetchPlaylists = async () => {
+    setLoadingPlaylists(true);
+    try {
+      const res = await fetch("/api/youtube/playlists", { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        setPlaylists(data);
+      }
+    } catch (err) {
+      console.error("Error al obtener listas de reproducción:", err);
+    } finally {
+      setLoadingPlaylists(false);
+    }
+  };
+
   const fetchChannel = async () => {
     try {
       const res = await fetch("/api/channel", { cache: "no-store" });
       const data = await res.json();
       setChannel(data);
+      if (data.connected) {
+        fetchPlaylists();
+      }
     } catch (err) {
       console.error("Error al obtener estado del canal:", err);
     } finally {
@@ -596,7 +619,8 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
       isScheduled: !!scheduledUpdate,
       scheduledAt: scheduledUpdate && scheduledUpdate.scheduledAt 
         ? toLocalDateTimeString(scheduledUpdate.scheduledAt) 
-        : ""
+        : "",
+      playlistId: scheduledUpdate && scheduledUpdate.playlistId ? scheduledUpdate.playlistId : ""
     });
     setOptimizationSuggestions(null);
     handleResetThumbnailStates();
@@ -624,7 +648,8 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
           isScheduled: !!scheduledUpdate,
           scheduledAt: scheduledUpdate && scheduledUpdate.scheduledAt 
             ? toLocalDateTimeString(scheduledUpdate.scheduledAt) 
-            : ""
+            : "",
+          playlistId: task.playlistId || (scheduledUpdate && scheduledUpdate.playlistId) || ""
         });
         setOptimizationSuggestions(null);
         handleResetThumbnailStates();
@@ -759,6 +784,7 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
           tags: updateForm.tags,
           thumbnail: newThumbnailBase64,
           scheduledAt: updateForm.isScheduled ? updateForm.scheduledAt : null,
+          playlistId: updateForm.playlistId || null,
         }),
       });
 
@@ -1470,6 +1496,35 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
                     )}
 
                     <canvas ref={canvasRef} style={{ display: "none" }} />
+                  </div>
+
+                  {/* Lista de reproducción */}
+                  <div className={styles.inputGroup} style={{ marginTop: "1rem" }}>
+                    <label htmlFor="playlistSelect" style={{ fontSize: "0.85rem", fontWeight: "600" }}>
+                      Añadir a Lista de Reproducción de YouTube:
+                    </label>
+                    <select
+                      id="playlistSelect"
+                      value={updateForm.playlistId || ""}
+                      onChange={(e) => setUpdateForm({ ...updateForm, playlistId: e.target.value })}
+                      style={{
+                        padding: "0.5rem",
+                        background: "var(--bg-surface, #0f172a)",
+                        border: "1px solid var(--border-color, #334155)",
+                        borderRadius: "6px",
+                        color: "#fff",
+                        width: "100%",
+                        fontSize: "0.85rem",
+                        marginTop: "0.25rem"
+                      }}
+                    >
+                      <option value="">-- Ninguna lista (No añadir) --</option>
+                      {playlists.map((playlist) => (
+                        <option key={playlist.id} value={playlist.id}>
+                          {playlist.title}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   {/* Programación futura */}

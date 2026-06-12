@@ -26,7 +26,7 @@ function extractYoutubeId(input) {
 
 export async function POST(request) {
   try { // Force recompilation of stale Next.js cache
-    let { youtubeVideoId, title, description, tags, thumbnail, scheduledAt } = await request.json();
+    let { youtubeVideoId, title, description, tags, thumbnail, scheduledAt, playlistId } = await request.json();
     youtubeVideoId = extractYoutubeId(youtubeVideoId);
 
     if (!youtubeVideoId) {
@@ -86,7 +86,8 @@ export async function POST(request) {
           scheduledAt: new Date(scheduledAt),
           status: 'SCHEDULED',
           youtubeId: youtubeVideoId,
-          thumbnailBase64: thumbnail || null
+          thumbnailBase64: thumbnail || null,
+          playlistId: playlistId || null
         }
       });
 
@@ -106,7 +107,8 @@ export async function POST(request) {
           data: {
             status: 'SCHEDULED',
             title: title || '',
-            description: description || ''
+            description: description || '',
+            playlistId: playlistId || null
           }
         });
         console.log(`[Update Video API] Updated VideoTask status to SCHEDULED for youtubeVideoId: ${youtubeVideoId}`);
@@ -217,6 +219,28 @@ export async function POST(request) {
       }
     }
 
+    // 3.5 Añadir a lista de reproducción de YouTube si se solicita
+    if (playlistId) {
+      try {
+        console.log(`[Update Video API] Adding video ${youtubeVideoId} to playlist ${playlistId}...`);
+        await youtube.playlistItems.insert({
+          part: 'snippet',
+          requestBody: {
+            snippet: {
+              playlistId: playlistId,
+              resourceId: {
+                kind: 'youtube#video',
+                videoId: youtubeVideoId
+              }
+            }
+          }
+        });
+        console.log('[Update Video API] Video added to playlist successfully!');
+      } catch (playlistErr) {
+        console.warn(`[Update Video API] Failed to add video to playlist:`, playlistErr.message);
+      }
+    }
+
     // 4. Autocompletar la tarea si existe en la base de datos
     try {
       await prisma.videoTask.updateMany({
@@ -230,7 +254,8 @@ export async function POST(request) {
           status: 'COMPLETED',
           completedAt: new Date(),
           title: title || '',
-          description: description || ''
+          description: description || '',
+          playlistId: playlistId || null
         }
       });
       console.log(`[Update Video API] Automatically completed matching VideoTask for youtubeVideoId: ${youtubeVideoId}`);
