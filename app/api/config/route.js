@@ -2,10 +2,15 @@ export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
 import { getConfig, setConfig } from '@/lib/config';
+import { verifyAppAuth } from '@/lib/auth';
 
 // GET returns the configuration status with masked secrets for security
-export async function GET() {
+export async function GET(request) {
   try {
+    if (!(await verifyAppAuth(request))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const geminiKey = await getConfig('GEMINI_API_KEY');
     const youtubeClientId = await getConfig('YOUTUBE_CLIENT_ID');
     const youtubeClientSecret = await getConfig('YOUTUBE_CLIENT_SECRET');
@@ -42,6 +47,10 @@ export async function GET() {
 // POST saves the configuration keys into the database
 export async function POST(request) {
   try {
+    if (!(await verifyAppAuth(request))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { GEMINI_API_KEY, YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET } = await request.json();
 
     if (GEMINI_API_KEY) {

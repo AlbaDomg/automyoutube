@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getConfig } from '@/lib/config';
 import { GoogleGenAI } from '@google/genai';
+import { verifyAppAuth } from '@/lib/auth';
 
 // Helper with retries and exponential backoff
 async function callGeminiWithRetry(fn, maxRetries = 3, delayMs = 3000) {
@@ -31,6 +32,10 @@ async function callGeminiWithRetry(fn, maxRetries = 3, delayMs = 3000) {
 
 export async function POST(request) {
   try {
+    if (!(await verifyAppAuth(request))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { title, description } = await request.json();
 
     if (!title) {

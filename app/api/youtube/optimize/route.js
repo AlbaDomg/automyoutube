@@ -4,6 +4,7 @@ import { getOAuth2Client } from '@/lib/youtube';
 import { getConfig } from '@/lib/config';
 import { GoogleGenAI } from '@google/genai';
 import { google } from 'googleapis';
+import { verifyAppAuth } from '@/lib/auth';
 
 // Función helper con reintentos y backoff exponencial para llamadas a Gemini ante saturación (errores 503, 429, etc.)
 async function callGeminiWithRetry(fn, maxRetries = 3, delayMs = 3000) {
@@ -34,6 +35,10 @@ async function callGeminiWithRetry(fn, maxRetries = 3, delayMs = 3000) {
 
 export async function POST(request) {
   try {
+    if (!(await verifyAppAuth(request))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { youtubeVideoId } = await request.json();
     const language = 'Galician'; // Forzado a gallego siempre
 

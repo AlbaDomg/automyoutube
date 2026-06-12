@@ -6,6 +6,7 @@ import { getOAuth2Client } from '@/lib/youtube';
 import { google } from 'googleapis';
 import fs from 'fs';
 import path from 'path';
+import { verifyAppAuth } from '@/lib/auth';
 
 function extractYoutubeId(input) {
   if (!input) return "";
@@ -27,6 +28,10 @@ function extractYoutubeId(input) {
 
 export async function GET(request) {
   try {
+    if (!(await verifyAppAuth(request))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const tasks = await prisma.videoTask.findMany({
       orderBy: { createdAt: 'desc' }
     });
@@ -39,6 +44,10 @@ export async function GET(request) {
 
 export async function POST(request) {
   try { // Force recompilation of stale Next.js cache
+    if (!(await verifyAppAuth(request))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     let { youtubeId, title, description, dueDate } = await request.json();
     youtubeId = extractYoutubeId(youtubeId);
 
@@ -119,6 +128,10 @@ export async function POST(request) {
 
 export async function PATCH(request) {
   try {
+    if (!(await verifyAppAuth(request))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id, dueDate } = await request.json();
     if (!id) {
       return NextResponse.json({ error: 'Falta el ID de la tarea' }, { status: 400 });
@@ -138,6 +151,10 @@ export async function PATCH(request) {
 
 export async function DELETE(request) {
   try {
+    if (!(await verifyAppAuth(request))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
     if (!id) {

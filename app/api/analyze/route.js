@@ -3,6 +3,7 @@ import prisma from '@/lib/db';
 import { getConfig } from '@/lib/config';
 import { GoogleGenAI } from '@google/genai';
 import path from 'path';
+import { verifyAppAuth } from '@/lib/auth';
 
 // Función helper con reintentos y backoff exponencial para llamadas a Gemini ante saturación (errores 503, 429, etc.)
 async function callGeminiWithRetry(fn, maxRetries = 3, delayMs = 3000) {
@@ -34,6 +35,10 @@ async function callGeminiWithRetry(fn, maxRetries = 3, delayMs = 3000) {
 export async function POST(request) {
   let videoId = null;
   try {
+    if (!(await verifyAppAuth(request))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     videoId = body.videoId;
     const language = 'Galician'; // Forzado a gallego siempre

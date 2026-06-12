@@ -4,9 +4,14 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import fs from 'fs';
 import path from 'path';
+import { verifyAppAuth } from '@/lib/auth';
 
 export async function GET(request) {
   try {
+    if (!(await verifyAppAuth(request))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const videoId = searchParams.get('id');
 
@@ -35,6 +40,10 @@ export async function GET(request) {
 
 export async function DELETE(request) {
   try {
+    if (!(await verifyAppAuth(request))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const videoId = searchParams.get('id');
 
@@ -85,6 +94,10 @@ export async function DELETE(request) {
 
 export async function PATCH(request) {
   try {
+    if (!(await verifyAppAuth(request))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const videoId = searchParams.get('id');
 

@@ -6,6 +6,7 @@ import { GoogleGenAI } from '@google/genai';
 import { google } from 'googleapis';
 import fs from 'fs';
 import path from 'path';
+import { verifyAppAuth } from '@/lib/auth';
 
 function extractYoutubeId(input) {
   if (!input) return "";
@@ -54,6 +55,10 @@ async function callGeminiWithRetry(fn, maxRetries = 3, delayMs = 3000) {
 
 export async function POST(request) {
   try {
+    if (!(await verifyAppAuth(request))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const formData = await request.formData();
     const file = formData.get('file');
     let youtubeVideoId = formData.get('youtubeVideoId');

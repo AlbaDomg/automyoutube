@@ -5,6 +5,7 @@ import { google } from 'googleapis';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { verifyAppAuth } from '@/lib/auth';
 
 function extractYoutubeId(input) {
   if (!input) return "";
@@ -26,6 +27,10 @@ function extractYoutubeId(input) {
 
 export async function POST(request) {
   try { // Force recompilation of stale Next.js cache
+    if (!(await verifyAppAuth(request))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     let { youtubeVideoId, title, description, tags, thumbnail, scheduledAt, playlistId } = await request.json();
     youtubeVideoId = extractYoutubeId(youtubeVideoId);
 

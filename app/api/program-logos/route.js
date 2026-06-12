@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
+import { verifyAppAuth } from "@/lib/auth";
 
 const LOGOS_DIR = path.join(process.cwd(), "public", "program_logos");
 
@@ -9,8 +10,12 @@ if (!fs.existsSync(LOGOS_DIR)) {
   fs.mkdirSync(LOGOS_DIR, { recursive: true });
 }
 
-export async function GET() {
+export async function GET(request) {
   try {
+    if (!(await verifyAppAuth(request))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const files = fs.readdirSync(LOGOS_DIR);
     // Filtrar solo archivos de imagen comunes
     const imageExtensions = [".png", ".jpg", ".jpeg", ".svg", ".webp"];
@@ -26,6 +31,10 @@ export async function GET() {
 
 export async function POST(request) {
   try {
+    if (!(await verifyAppAuth(request))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const formData = await request.formData();
     const file = formData.get("file");
     if (!file) {
@@ -50,6 +59,10 @@ export async function POST(request) {
 
 export async function DELETE(request) {
   try {
+    if (!(await verifyAppAuth(request))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { filename } = await request.json();
     if (!filename) {
       return NextResponse.json({ error: "Filename is required" }, { status: 400 });

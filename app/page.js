@@ -35,6 +35,13 @@ function extractYoutubeId(input) {
 }
 
 export default function Dashboard() {
+  // Estados de autenticación de la aplicación (Google Sign-In)
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthRequired, setIsAuthRequired] = useState(false);
+  const [currentUserEmail, setCurrentUserEmail] = useState("");
+  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [authError, setAuthError] = useState("");
+
   // Estado del canal
   const [channel, setChannel] = useState({ connected: false, channel: null });
   const [loadingChannel, setLoadingChannel] = useState(true);
@@ -85,6 +92,7 @@ export default function Dashboard() {
 
   // Estado de la cola de actualizaciones programadas locales
   const [scheduledUpdates, setScheduledUpdates] = useState([]);
+  const [executingScheduler, setExecutingScheduler] = useState(false);
 
   // Listado de tareas (VideoTask)
   const [tasks, setTasks] = useState([]);
@@ -124,6 +132,49 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
     setIsAutoThumbnailEnabled(false);
     setNewThumbnailBase64(null);
   };
+
+  // Validar estado de autenticación al cargar
+  useEffect(() => {
+    const checkAuthStatus = async () => {
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has("error")) {
+          const err = urlParams.get("error");
+          const emailParam = urlParams.get("email");
+          if (err === "unauthorized_email") {
+            setAuthError(`O correo ${emailParam || ""} non está na lista de autorizados.`);
+          } else {
+            setAuthError("Erro ao iniciar sesión con Google.");
+          }
+          // Limpiar url
+          window.history.replaceState({}, document.title, window.location.pathname);
+        } else if (urlParams.has("login")) {
+          // Limpiar url
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+
+        const res = await window.fetch("/api/auth/me", { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          setIsAuthRequired(data.required);
+          
+          if (data.required) {
+            setIsAuthenticated(data.authenticated);
+            if (data.authenticated && data.user) {
+              setCurrentUserEmail(data.user.email);
+            }
+          } else {
+            setIsAuthenticated(true);
+          }
+        }
+      } catch (err) {
+        console.error("Error al validar el estado de autenticación:", err);
+      } finally {
+        setCheckingAuth(false);
+      }
+    };
+    checkAuthStatus();
+  }, []);
 
   // Precargar plantilla original de TVG ("Hora Galega")
   useEffect(() => {
@@ -175,8 +226,10 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
 
   // Cargar catálogo de logotipos al cargar la página
   useEffect(() => {
-    fetchProgramLogosCatalog();
-  }, []);
+    if (isAuthenticated) {
+      fetchProgramLogosCatalog();
+    }
+  }, [isAuthenticated]);
 
   // Cargar preferencia de logotipo persistida en localStorage al seleccionar un vídeo
   useEffect(() => {
@@ -435,11 +488,13 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
 
   // Carga inicial de datos
   useEffect(() => {
-    fetchConfig();
-    fetchChannel();
-    fetchTasks();
-    fetchScheduledUpdates();
-  }, []);
+    if (isAuthenticated) {
+      fetchConfig();
+      fetchChannel();
+      fetchTasks();
+      fetchScheduledUpdates();
+    }
+  }, [isAuthenticated]);
 
   // Cargar preferencia de autoincremento desde localStorage
   useEffect(() => {
@@ -460,12 +515,13 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
 
   // Recarga automática para actualizaciones programadas y listado de tareas
   useEffect(() => {
+    if (!isAuthenticated) return;
     const interval = setInterval(() => {
       fetchScheduledUpdates();
       fetchTasks(true);
     }, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isAuthenticated]);
 
 
 
@@ -536,6 +592,26 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
       }
     } catch (err) {
       console.error("Error al obtener cola de actualizaciones programadas:", err);
+    }
+  };
+
+  const handleExecuteScheduler = async () => {
+    setExecutingScheduler(true);
+    try {
+      const res = await fetch("/api/scheduler", { cache: "no-store" });
+      if (res.ok) {
+        alert("Sincronizaciones programadas ejecutadas con éxito.");
+        await fetchScheduledUpdates();
+        await fetchTasks();
+      } else {
+        const data = await res.json();
+        alert(`Error al ejecutar sincronizaciones: ${data.error || "error desconocido"}`);
+      }
+    } catch (err) {
+      console.error("Error executing scheduler:", err);
+      alert("Error de red al conectar con el servidor.");
+    } finally {
+      setExecutingScheduler(false);
     }
   };
 
@@ -886,6 +962,176 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
     return `${year}-${month}-${day}T${hours}:${minutes}`;
   };
 
+  if (checkingAuth) {
+    return (
+      <div style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: "100vh",
+        background: "#060814",
+        color: "#f8fafc",
+        fontFamily: "system-ui, -apple-system, sans-serif"
+      }}>
+        <div style={{
+          border: "4px solid rgba(168, 85, 247, 0.1)",
+          borderTop: "4px solid #a855f7",
+          borderRadius: "50%",
+          width: "40px",
+          height: "40px",
+          animation: "spin 1s linear infinite"
+        }} />
+        <style dangerouslySetInnerHTML={{__html: `
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}} />
+        <p style={{ marginTop: "1rem", color: "#94a3b8", fontSize: "0.9rem" }}>Cargando portal...</p>
+      </div>
+    );
+  }
+
+  if (isAuthRequired && !isAuthenticated) {
+    const handleGoogleLogin = () => {
+      window.location.href = "/api/auth/app-login";
+    };
+
+    return (
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: "100vh",
+        background: "radial-gradient(circle at 50% 50%, #0c0f24 0%, #040612 100%)",
+        color: "#f8fafc",
+        fontFamily: "system-ui, -apple-system, sans-serif",
+        padding: "1rem"
+      }}>
+        <div style={{
+          position: "absolute",
+          width: "300px",
+          height: "300px",
+          background: "rgba(168, 85, 247, 0.15)",
+          borderRadius: "50%",
+          filter: "blur(80px)",
+          top: "20%",
+          left: "30%",
+          zIndex: 1
+        }} />
+        <div style={{
+          position: "absolute",
+          width: "300px",
+          height: "300px",
+          background: "rgba(14, 165, 233, 0.15)",
+          borderRadius: "50%",
+          filter: "blur(80px)",
+          bottom: "20%",
+          right: "30%",
+          zIndex: 1
+        }} />
+
+        <div style={{
+          position: "relative",
+          zIndex: 2,
+          width: "100%",
+          maxWidth: "420px",
+          background: "rgba(15, 23, 42, 0.45)",
+          backdropFilter: "blur(20px) saturate(180%)",
+          WebkitBackdropFilter: "blur(20px) saturate(180%)",
+          border: "1px solid rgba(255, 255, 255, 0.08)",
+          borderRadius: "24px",
+          padding: "3rem 2rem",
+          boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)",
+          textAlign: "center"
+        }}>
+          <div style={{
+            fontSize: "3.5rem",
+            marginBottom: "1rem",
+            display: "inline-block",
+            background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
+            WebkitBackgroundClip: "text",
+            WebkitTextFillColor: "transparent",
+            filter: "drop-shadow(0 0 10px rgba(168, 85, 247, 0.3))"
+          }}>
+            🔒
+          </div>
+
+          <h2 style={{
+            fontSize: "1.75rem",
+            fontWeight: "800",
+            letterSpacing: "-0.03em",
+            marginBottom: "0.5rem",
+            background: "linear-gradient(135deg, #ffffff 40%, #e2e8f0 100%)",
+            WebkitBackgroundClip: "text",
+            WebkitTextFillColor: "transparent"
+          }}>
+            Acceso Protexido
+          </h2>
+
+          <p style={{
+            color: "#94a3b8",
+            fontSize: "0.85rem",
+            lineHeight: "1.5",
+            marginBottom: "2rem"
+          }}>
+            Inicia sesión coa túa conta de Google autorizada para poder entrar no panel e xestionar a base de datos.
+          </p>
+
+          {authError && (
+            <div style={{
+              background: "rgba(239, 68, 68, 0.1)",
+              border: "1px solid rgba(239, 68, 68, 0.2)",
+              color: "#ef4444",
+              fontSize: "0.8rem",
+              padding: "0.75rem 1rem",
+              borderRadius: "12px",
+              textAlign: "left",
+              marginBottom: "1.5rem"
+            }}>
+              ⚠️ {authError}
+            </div>
+          )}
+
+          <button
+            onClick={handleGoogleLogin}
+            style={{
+              width: "100%",
+              background: "linear-gradient(135deg, #a855f7 0%, #6366f1 100%)",
+              border: "none",
+              color: "#fff",
+              padding: "1rem",
+              borderRadius: "12px",
+              fontWeight: "700",
+              fontSize: "1rem",
+              cursor: "pointer",
+              transition: "all 0.3s ease",
+              boxShadow: "0 4px 15px rgba(168, 85, 247, 0.3)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "0.75rem"
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.transform = "translateY(-1px)";
+              e.currentTarget.style.boxShadow = "0 6px 20px rgba(168, 85, 247, 0.5)";
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.transform = "translateY(0)";
+              e.currentTarget.style.boxShadow = "0 4px 15px rgba(168, 85, 247, 0.3)";
+            }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12.24 10.285V13.4h6.887c-.275 1.565-1.88 4.604-6.887 4.604-4.33 0-7.859-3.579-7.859-8s3.529-8 7.859-8c2.46 0 4.105 1.025 5.047 1.926l2.427-2.334C18.155 2.502 15.427 1.2 12.24 1.2 6.25 1.2 1.39 6.06 1.39 12s4.86 10.8 10.85 10.8c6.26 0 10.42-4.4 10.42-10.6 0-.715-.077-1.26-.172-1.915H12.24z"/>
+            </svg>
+            Entrar con Google
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={styles.container}>
       {/* Header */}
@@ -896,6 +1142,30 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
         </div>
 
         <div className={styles.headerActions}>
+          {isAuthRequired && (
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginRight: "0.5rem" }}>
+              <span style={{ fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: "500" }}>
+                {currentUserEmail}
+              </span>
+              <button
+                onClick={() => {
+                  window.location.href = "/api/auth/logout";
+                }}
+                className={styles.disconnectBtn}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "0.25rem",
+                  padding: "0.5rem 0.8rem",
+                  fontSize: "0.8rem"
+                }}
+                title="Cerrar sesión"
+              >
+                🔒 Bloquear / Saír
+              </button>
+            </div>
+          )}
+
           <button
             onClick={() => {
               setConfigInput({ GEMINI_API_KEY: "", YOUTUBE_CLIENT_ID: "", YOUTUBE_CLIENT_SECRET: "" });
@@ -1580,7 +1850,27 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
           {/* Actualizaciones locales programadas activas */}
           {scheduledUpdates.length > 0 && (
             <div className={styles.card} style={{ marginTop: "1.5rem" }}>
-              <div className={styles.cardTitle}>Cola de Actualizaciones Programadas Locales</div>
+              <div className={styles.cardTitle} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span>Cola de Actualizaciones Programadas Locales</span>
+                <button
+                  type="button"
+                  onClick={handleExecuteScheduler}
+                  disabled={executingScheduler}
+                  className={styles.btnSubmit}
+                  style={{
+                    width: "auto",
+                    fontSize: "0.75rem",
+                    padding: "0.3rem 0.75rem",
+                    background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                    border: "none",
+                    margin: 0,
+                    opacity: executingScheduler ? 0.6 : 1,
+                    cursor: executingScheduler ? "not-allowed" : "pointer"
+                  }}
+                >
+                  {executingScheduler ? "Ejecutando..." : "⚡ Ejecutar Programados Ahora"}
+                </button>
+              </div>
               <div className={styles.tasksList}>
                 {scheduledUpdates.map(update => (
                   <div key={update.id} className={styles.taskCardPending} style={{ borderLeftColor: "#f59e0b" }}>

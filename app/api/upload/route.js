@@ -4,9 +4,14 @@ import { getOAuth2Client } from '@/lib/youtube';
 import { google } from 'googleapis';
 import fs from 'fs';
 import path from 'path';
+import { verifyAppAuth } from '@/lib/auth';
 
 export async function POST(request) {
   try {
+    if (!(await verifyAppAuth(request))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { videoId, title, description, tags, scheduledAt } = await request.json();
 
     if (!videoId) {

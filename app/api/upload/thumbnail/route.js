@@ -1,9 +1,14 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { verifyAppAuth } from '@/lib/auth';
 
 export async function POST(request) {
   try {
+    if (!(await verifyAppAuth(request))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { videoId, thumbnail } = await request.json();
 
     if (!videoId || !thumbnail) {
