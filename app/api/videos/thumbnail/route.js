@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import prisma from '@/lib/db';
 
 export async function GET(request) {
   try {
@@ -11,6 +12,27 @@ export async function GET(request) {
       return new Response('Missing id parameter', { status: 400 });
     }
 
+    // 1. Intentar buscar primero en la base de datos PostgreSQL
+    try {
+      const video = await prisma.video.findUnique({
+        where: { id }
+      });
+
+      if (video && video.thumbnailBase64) {
+        const base64Data = video.thumbnailBase64.replace(/^data:image\/\w+;base64,/, "");
+        const imageBuffer = Buffer.from(base64Data, 'base64');
+        return new Response(imageBuffer, {
+          headers: {
+            'Content-Type': 'image/jpeg',
+            'Cache-Control': 'public, max-age=3600',
+          },
+        });
+      }
+    } catch (dbError) {
+      console.warn('[Thumbnail API] Database check failed, falling back to disk:', dbError.message);
+    }
+
+    // 2. Fallback al sistema de archivos local
     const uploadsDir = path.join(process.cwd(), 'uploads');
     const thumbnailPath = path.join(uploadsDir, `${id}-thumbnail.jpg`);
 

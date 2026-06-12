@@ -1,5 +1,5 @@
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -34,8 +34,9 @@ model Video {
   status         String    @default("DRAFT") // DRAFT, ANALYZING, READY, SCHEDULED, UPLOADING, COMPLETED, FAILED
   youtubeId      String?
   errorMessage   String?
-  uploadProgress Int       @default(0)
-  createdAt      DateTime  @default(now())
+  uploadProgress  Int       @default(0)
+  thumbnailBase64 String?
+  createdAt       DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 }
 

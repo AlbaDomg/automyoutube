@@ -4,6 +4,7 @@ import { getOAuth2Client } from '@/lib/youtube';
 import { google } from 'googleapis';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 
 function extractYoutubeId(input) {
   if (!input) return "";
@@ -84,22 +85,13 @@ export async function POST(request) {
           tags: cleanedTags,
           scheduledAt: new Date(scheduledAt),
           status: 'SCHEDULED',
-          youtubeId: youtubeVideoId
+          youtubeId: youtubeVideoId,
+          thumbnailBase64: thumbnail || null
         }
       });
 
-      // Save custom thumbnail base64 if provided
       if (thumbnail) {
-        const uploadsDir = path.join(process.cwd(), 'uploads');
-        if (!fs.existsSync(uploadsDir)) {
-          fs.mkdirSync(uploadsDir, { recursive: true });
-        }
-
-        const base64Data = thumbnail.replace(/^data:image\/\w+;base64,/, "");
-        const buffer = Buffer.from(base64Data, 'base64');
-        const tempThumbPath = path.join(uploadsDir, `${newVideoUpdate.id}-thumbnail.jpg`);
-        fs.writeFileSync(tempThumbPath, buffer);
-        console.log(`[Update Video API] Saved scheduled custom thumbnail at ${tempThumbPath}`);
+        console.log(`[Update Video API] Saved scheduled custom thumbnail in database (ID: ${newVideoUpdate.id})`);
       }
 
       // 2. Actualizar el estado de la tarea (VideoTask) a 'SCHEDULED'
@@ -199,14 +191,9 @@ export async function POST(request) {
     // 3. Upload custom thumbnail if provided
     let thumbnailError = null;
     if (thumbnail) {
-      const uploadsDir = path.join(process.cwd(), 'uploads');
-      if (!fs.existsSync(uploadsDir)) {
-        fs.mkdirSync(uploadsDir, { recursive: true });
-      }
-
       const base64Data = thumbnail.replace(/^data:image\/\w+;base64,/, "");
       const buffer = Buffer.from(base64Data, 'base64');
-      const tempThumbPath = path.join(uploadsDir, `temp-update-${youtubeVideoId}.jpg`);
+      const tempThumbPath = path.join(os.tmpdir(), `temp-update-${youtubeVideoId}.jpg`);
 
       try {
         fs.writeFileSync(tempThumbPath, buffer);
