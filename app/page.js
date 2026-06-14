@@ -1633,9 +1633,7 @@ export default function Dashboard() {
                         : "Arrastra tu archivo PDF o Word (.docx) aquí o haz clic para explorar"
                       }
                     </p>
-                    <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block", marginTop: "0.25rem" }}>
-                      Soporta documentos PDF y Word estructurados
-                    </span>
+
                   </div>
                   <input
                     type="file"
