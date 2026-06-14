@@ -71,14 +71,17 @@ export async function GET(request) {
 
     let videos = [];
     let videoIds = [];
+    let isSearchById = false;
 
     if (q) {
       const targetVideoId = extractVideoId(q);
-      if (!targetVideoId) {
-        return NextResponse.json({ error: 'El formato de ID o URL de video de YouTube no es válido.' }, { status: 400 });
+      if (targetVideoId) {
+        videoIds = [targetVideoId];
+        isSearchById = true;
       }
-      videoIds = [targetVideoId];
-    } else {
+    }
+
+    if (!isSearchById) {
       // Obtener la lista de reproducción de subidas del canal
       const channelRes = await youtube.channels.list({
         part: 'contentDetails',
@@ -91,11 +94,11 @@ export async function GET(request) {
 
       const uploadsPlaylistId = channelRes.data.items[0].contentDetails.relatedPlaylists.uploads;
 
-      // Obtener los elementos de la lista de reproducción de subidas
+      // Obtener los elementos de la lista de reproducción de subidas (hasta 50 videos)
       const playlistRes = await youtube.playlistItems.list({
         part: 'snippet',
         playlistId: uploadsPlaylistId,
-        maxResults: 20
+        maxResults: 50
       });
 
       videoIds = (playlistRes.data.items || []).map(item => item.snippet.resourceId.videoId).filter(Boolean);
@@ -113,15 +116,21 @@ export async function GET(request) {
     };
 
     if (videoIds.length > 0) {
-      // Realizar una única consulta por lotes para traer snippets y detalles de contenido (incluyendo duración)
+      // Realizar una única consulta por lotes para traer snippets, detalles de contenido y estado de privacidad
       const videoDetailsRes = await youtube.videos.list({
-        part: 'snippet,contentDetails',
+        part: 'snippet,contentDetails,status',
         id: videoIds.join(',')
       });
 
       videos = (videoDetailsRes.data.items || []).map(item => {
         // Si buscamos por un ID específico (q está presente), verificar que pertenece a este canal
-        if (q && item.snippet?.channelId !== channel.id) {
+        if (isSearchById && item.snippet?.channelId !== channel.id) {
+          return null;
+        }
+
+        // Filtro de privacidad: Solo detectar videos en estado PRIVADO u OCULTO
+        const privacy = item.status?.privacyStatus;
+        if (privacy !== 'private' && privacy !== 'unlisted') {
           return null;
         }
 
@@ -137,16 +146,23 @@ export async function GET(request) {
           thumbnail: item.snippet.thumbnails?.medium?.url || item.snippet.thumbnails?.default?.url || '',
           publishedAt: item.snippet.publishedAt,
           tags: item.snippet.tags ? item.snippet.tags.join(', ') : '',
-          isShort: isShort
+          isShort: isShort,
+          privacyStatus: privacy
         };
       }).filter(Boolean);
 
-      // Si buscamos por ID y la lista final está vacía
-      if (q && videos.length === 0) {
+      // Si no es búsqueda por ID directo y se especificó consulta 'q', filtrar por título en el servidor
+      if (q && !isSearchById) {
+        const queryClean = q.toLowerCase().trim();
+        videos = videos.filter(v => v.title.toLowerCase().includes(queryClean));
+      }
+
+      // Si buscamos por ID y la lista final está vacía (no era privado/oculto o no existe)
+      if (isSearchById && videos.length === 0) {
         if (!videoDetailsRes.data.items || videoDetailsRes.data.items.length === 0) {
           return NextResponse.json({ error: 'No se encontró ningún video con ese ID en YouTube.' }, { status: 404 });
         } else {
-          return NextResponse.json({ error: 'El video no pertenece a este canal de YouTube.' }, { status: 403 });
+          return NextResponse.json({ error: 'El video no cumple los requisitos (debe estar en estado privado u oculto).' }, { status: 400 });
         }
       }
     }

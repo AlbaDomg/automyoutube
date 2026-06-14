@@ -60,6 +60,7 @@ REGLAS CRÍTICAS DE GENERACIÓN:
 2. No debe ser una copia de las primeras palabras del título. Debe tener sentido lógico completo.
 3. ESTRUCTURA: Imagina la frase dividida conceptualmente en un "título de 2 palabras" y un "subtítulo de 2 palabras" que tengan relación y coherencia entre sí (por ejemplo: "ALERTA MOS" + "EVITA PICADURAS", o "CONCURSO TVG" + "PREMIO FINAL", o "MANTER BATEAS" + "CONSELLO PRÁCTICO").
 4. Las palabras deben estar muy optimizadas para capturar el interés de la audiencia gallega (SEO / CTR alto).
+5. REGLA DE FORMATO ESTRICTO: La frase debe contener EXCLUSIVAMENTE las 4 palabras en gallego separadas por espacios. NO incluyas barras (/), guiones (-), comillas, ni ningún signo de puntuación en el texto.
 
 Responde exclusivamente en formato JSON con la siguiente estructura exacta:
 {

@@ -1,30 +1,9 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
-import { getOAuth2Client } from '@/lib/youtube';
-import { getConfig, setConfig } from '@/lib/config';
+import { getConfig } from '@/lib/config';
 import { GoogleGenAI } from '@google/genai';
-import { google } from 'googleapis';
-import fs from 'fs';
-import path from 'path';
 import { verifyAppAuth } from '@/lib/auth';
-
-function extractYoutubeId(input) {
-  if (!input) return "";
-  const trimmed = input.trim();
-  try {
-    const urlPattern = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|user\/[^\/]+\/|embed\/|watch\?(?:.*&)?v=)|youtu\.be\/|youtube\.com\/live\/)([a-zA-Z0-9_-]{11})/;
-    const match = trimmed.match(urlPattern);
-    if (match && match[1]) {
-      return match[1];
-    }
-  } catch (e) {}
-  const cleanIdPattern = /^([a-zA-Z0-9_-]{11})/;
-  const match = trimmed.match(cleanIdPattern);
-  if (match && match[1]) {
-    return match[1];
-  }
-  return trimmed;
-}
+import mammoth from 'mammoth';
 
 // Función helper con reintentos y backoff exponencial para llamadas a Gemini
 async function callGeminiWithRetry(fn, maxRetries = 3, delayMs = 3000) {
@@ -61,87 +40,39 @@ export async function POST(request) {
 
     const formData = await request.formData();
     const file = formData.get('file');
-    let youtubeVideoId = formData.get('youtubeVideoId');
-    youtubeVideoId = extractYoutubeId(youtubeVideoId);
-    const videoIndex = formData.get('videoIndex') || '1';
 
-    if (!youtubeVideoId) {
-      return NextResponse.json({ error: 'Falta el parámetro youtubeVideoId' }, { status: 400 });
+    if (!file) {
+      return NextResponse.json({ error: 'Por favor, selecciona un documento de referencia (PDF o Word).' }, { status: 400 });
     }
 
-
-
-    // 1. Verificar canal y recuperar token de YouTube
-    const channel = await prisma.channel.findFirst({
-      orderBy: { updatedAt: 'desc' }
-    });
-
-    if (!channel) {
-      return NextResponse.json({ error: 'No hay ningún canal de YouTube conectado. Autentícate primero.' }, { status: 400 });
-    }
-
-    const oauth2Client = await getOAuth2Client();
-    oauth2Client.setCredentials({
-      access_token: channel.accessToken,
-      refresh_token: channel.refreshToken,
-      expiry_date: channel.tokenExpiry.getTime()
-    });
-
-    // Refrescar token si expira pronto
-    if (channel.tokenExpiry.getTime() - Date.now() < 300 * 1000) {
+    const youtubeVideosRaw = formData.get('youtubeVideos');
+    let youtubeVideos = [];
+    if (youtubeVideosRaw) {
       try {
-        const { credentials } = await oauth2Client.refreshAccessToken();
-        await prisma.channel.update({
-          where: { id: channel.id },
-          data: {
-            accessToken: credentials.access_token,
-            tokenExpiry: new Date(credentials.expiry_date)
-          }
-        });
-      } catch (err) {
-        console.error('Error al refrescar el token en la API de análisis PDF:', err);
+        youtubeVideos = JSON.parse(youtubeVideosRaw);
+      } catch (e) {
+        console.error('Error parsing youtubeVideos in api:', e);
       }
     }
 
-    const youtube = google.youtube({
-      version: 'v3',
-      auth: oauth2Client
-    });
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const fileName = file.name.toLowerCase();
+    const isDocx = fileName.endsWith('.docx') || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
-    // Obtener detalles del video en YouTube para asegurar que existe (no bloqueante)
-    let currentSnippet = { title: `Video (${youtubeVideoId})`, description: '' };
-    try {
-      const videoRes = await youtube.videos.list({
-        part: 'snippet',
-        id: youtubeVideoId
-      });
-
-      if (videoRes.data.items && videoRes.data.items.length > 0) {
-        currentSnippet = videoRes.data.items[0].snippet;
-      } else {
-        console.warn(`[PDF Analyze API] El video ${youtubeVideoId} no se encontró en YouTube (list vacío).`);
-      }
-    } catch (ytError) {
-      console.warn('[PDF Analyze API] Error al consultar video en YouTube:', ytError.message);
-    }
-
-    // 2. Procesar el archivo PDF (cargar desde FormData o desde la base de datos si ya existe)
     let pdfBase64 = "";
-    if (file) {
-      const arrayBuffer = await file.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      pdfBase64 = buffer.toString('base64');
-      
-      // Guardar nombre y contenido base64 del PDF en la base de datos para entornos Serverless
-      await setConfig('ACTIVE_PDF_NAME', file.name);
-      await setConfig('ACTIVE_PDF_BASE64', pdfBase64);
-    } else {
-      // Leer el PDF guardado directamente desde la base de datos
-      const dbPdfBase64 = await getConfig('ACTIVE_PDF_BASE64');
-      if (!dbPdfBase64) {
-        return NextResponse.json({ error: 'No hay ningún PDF de referencia guardado. Sube uno primero.' }, { status: 400 });
+    let docxText = "";
+
+    if (isDocx) {
+      console.log(`[Analyze File API] Extracting text from DOCX: ${file.name}...`);
+      const result = await mammoth.extractRawText({ buffer });
+      docxText = result.value;
+      if (!docxText.trim()) {
+        return NextResponse.json({ error: 'El archivo Word parece estar vacío o no contiene texto legible.' }, { status: 400 });
       }
-      pdfBase64 = dbPdfBase64;
+    } else {
+      console.log(`[Analyze File API] Preparing PDF file: ${file.name}...`);
+      pdfBase64 = buffer.toString('base64');
     }
 
     // 3. Inicializar Gemini
@@ -153,36 +84,66 @@ export async function POST(request) {
     const ai = new GoogleGenAI({ apiKey });
 
     const prompt = `
-Analiza el documento PDF de referencia adjunto. Este documento contiene una tabla con los metadatos de los videos de redes para "Hora Galega".
-Localiza la fila de la tabla de videos correspondiente al número de vídeo ${videoIndex} (por ejemplo, 'Vídeo ${videoIndex}', 'Video ${videoIndex}', etc.).
+Analiza el documento de referencia adjunto. Este documento contiene la planificación o tabla con los metadatos de los videos de redes para "Hora Galega" u otros programas.
+Extrae la información de TODOS los vídeos que estén definidos y listados en la tabla o el texto del documento.
 
-Extrae de forma EXACTA y LITERAL (copia y pega sin modificar, resumir ni optimizar):
-1. El valor de la columna 'Titular' (que servirá como el título del video).
-2. El valor de la columna 'Sinopse' (que servirá como la descripción del video).
+Para CADA vídeo detectado en el documento, extrae de forma EXACTA y LITERAL (copia y pega sin modificar, resumir, formatear ni optimizar):
+1. El título del video (generalmente de una columna llamada 'Titular', 'Título', 'Tema' o similar).
+2. La descripción del video (generalmente de una columna llamada 'Sinopse', 'Sinopsis', 'Descripción' o similar).
 
-Además, genera usando IA:
-1. Una frase SEO de alto impacto de exactamente 4 palabras en Gallego (Galician) para imprimir en la miniatura, basada en el tema de este video.
+Además, genera usando IA para cada vídeo:
+1. El nombre del programa de televisión al que corresponde el contenido (por ejemplo: "HORA GALEGA", "LUAR", "A COROA", "HOLA", etc.).
+   - FUENTES DE INFORMACIÓN: Utiliza tanto el texto del documento (planilla) como la información del video coincidente de YouTube si está disponible.
+   - PRIORIDAD DE DETECCIÓN (CRÍTICA):
+     a) La prioridad número 1 es el contenido literal del documento (la planilla). Si el titular o la sinopsis de la planilla contienen palabras clave asociadas a un programa (por ejemplo, "Luar", "Hola", "A Coroa", "Hora Galega"), ese es el programa correcto.
+     b) La prioridad número 2 es la información del vídeo coincidente de YouTube (su título y descripción). Puedes usarlo para identificar el programa (por ejemplo, si tiene un sufijo como "| LUAR" o un enlace como "tvg.gal/luar").
+     c) REGLA DE CONFLICTO: Si hay un conflicto (por ejemplo, la planilla habla claramente del programa "HOLA", pero el vídeo coincidente de YouTube tiene el título con "| LUAR"), prevalece siempre la planilla (el programa es "HOLA"). No te dejes guiar por sufijos obsoletos de YouTube si el texto del documento indica otra cosa.
+     d) Si no se puede identificar ningún programa a través de la planilla ni de YouTube, asume "HORA GALEGA" como valor por defecto.
+   - Devuélvelo en el campo "programName" en MAYÚSCULAS.
+2. Una frase SEO de alto impacto de exactamente 4 palabras en Gallego (Galician) para imprimir en la miniatura, basada en el tema de ese video.
    - REGLA CRÍTICA: NO debes copiar simplemente las primeras 4 palabras del título. Debe ser una frase creada con sentido lógico coherente completo.
    - ESTRUCTURA DE DISEÑO: Imagina la frase dividida conceptualmente en un "título de 2 palabras" y un "subtítulo de 2 palabras" que tengan relación y coherencia entre sí (por ejemplo: "ALERTA MOS" + "EVITA PICADURAS", o "CONCURSO TVG" + "PREMIO FINAL", o "MANTER BATEAS" + "CONSELLO PRÁCTICO").
    - Las palabras deben estar muy optimizadas para capturar el interés (SEO / CTR alto).
+   - REGLA DE FORMATO ESTRICTO: La frase debe contener EXCLUSIVAMENTE las 4 palabras en gallego separadas por espacios. NO incluyas barras (/), guiones (-), comillas, ni ningún signo de puntuación en el texto.
+
+${youtubeVideos && youtubeVideos.length > 0 
+  ? `Se te proporciona la lista de vídeos en estado privado u oculto actualmente subidos al canal de YouTube (cada uno tiene su 'id', 'title' y 'description'):
+${JSON.stringify(youtubeVideos.map(v => ({ id: v.id, title: v.title, description: v.description })))}
+
+Analiza semánticamente el contenido y temática de cada uno de los vídeos que extraigas del documento de la planilla y compáralo con esta lista de YouTube.
+Si encuentras una correspondencia clara (por palabras clave, temática similar o título equivalente), asocia el campo "matchedVideoId" de ese vídeo con el "id" del vídeo de YouTube correspondiente de la lista.
+Si no encuentras una correspondencia clara y lógica (o la lista no tiene relación alguna con el tema de la planilla), deja "matchedVideoId" como una cadena vacía "".`
+  : 'Deja el campo "matchedVideoId" como una cadena vacía "" para todos los vídeos.'
+}
 
 Responde obligatoriamente en formato JSON con la siguiente estructura exacta:
 {
-  "title": "Titular literal extraído",
-  "description": "Sinopse literal extraído",
-  "thumbnailText": "Frase de cuatro palabras en Gallego"
+  "videos": [
+    {
+      "index": 1,
+      "title": "Título o titular literal extraído",
+      "description": "Sinopsis o sinopse literal extraído",
+      "thumbnailText": "Frase de cuatro palabras en Gallego",
+      "matchedVideoId": "id_del_video_coincidente_o_vacio",
+      "programName": "NOMBRE_DEL_PROGRAMA_EN_MAYUSCULAS"
+    }
+  ]
 }
 `;
 
-    console.log(`[PDF Analyze API] Enviando PDF de referencia a Gemini para el video ${youtubeVideoId}...`);
+    console.log(`[Analyze File API] Sending document to Gemini to parse videos...`);
     let response;
-    try {
-      response = await callGeminiWithRetry(() => ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: [
-          {
-            role: 'user',
-            parts: [
+    
+    // Preparar el contenido a enviar según el tipo de archivo
+    const geminiContents = [
+      {
+        role: 'user',
+        parts: isDocx 
+          ? [
+              { text: `Aquí está el texto extraído del documento de Word de referencia:\n\n${docxText}` },
+              { text: prompt }
+            ]
+          : [
               {
                 inlineData: {
                   data: pdfBase64,
@@ -191,8 +152,13 @@ Responde obligatoriamente en formato JSON con la siguiente estructura exacta:
               },
               { text: prompt }
             ]
-          }
-        ],
+      }
+    ];
+
+    try {
+      response = await callGeminiWithRetry(() => ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: geminiContents,
         config: {
           responseMimeType: 'application/json',
         }
@@ -202,20 +168,7 @@ Responde obligatoriamente en formato JSON con la siguiente estructura exacta:
       try {
         response = await callGeminiWithRetry(() => ai.models.generateContent({
           model: 'gemini-1.5-flash',
-          contents: [
-            {
-              role: 'user',
-              parts: [
-                {
-                  inlineData: {
-                    data: pdfBase64,
-                    mimeType: 'application/pdf'
-                  }
-                },
-                { text: prompt }
-              ]
-            }
-          ],
+          contents: geminiContents,
           config: {
             responseMimeType: 'application/json',
           }
@@ -226,56 +179,72 @@ Responde obligatoriamente en formato JSON con la siguiente estructura exacta:
       }
     }
 
-    let metadata;
+    let parsedResult;
     try {
-      metadata = JSON.parse(response.text);
+      parsedResult = JSON.parse(response.text);
     } catch (parseError) {
       console.error('Fallo al parsear respuesta JSON de Gemini. Texto bruto:', response.text);
-      throw new Error('Gemini no devolvió una estructura JSON válida');
+      return NextResponse.json({ error: 'Gemini no devolvió una estructura JSON válida' }, { status: 500 });
     }
 
-    const suggestedTitle = metadata.title || metadata.titles?.[0] || currentSnippet.title;
-    const socialBlock = `\n\nPodes ver o programa completo en tvg.gal/horagalega\n\n🔔 Subscríbete á canle oficial da Televisión de Galicia en YouTube: https://www.youtube.com/tvg\n\n🌐 Visita a nosa páxina web: https://agalega.gal/\n\n📲 E tamén podes seguirnos en todas as nosas redes sociais:\nFacebook: https://www.facebook.com/televisiondegalicia\nTwitter: https://x.com/tvgalicia\nInstagram: https://www.instagram.com/tvgalicia\nTikTok: https://www.tiktok.com/@tvgalicia`;
-    const baseDescription = metadata.description || '';
-    const finalDescription = baseDescription.trim() ? `${baseDescription.trim()}${socialBlock}` : socialBlock.trim();
-    const tagsString = metadata.tags ? metadata.tags.join(', ') : '';
+    if (!parsedResult.videos || !Array.isArray(parsedResult.videos)) {
+      return NextResponse.json({ error: 'El documento no contiene videos con el formato esperado.' }, { status: 400 });
+    }
 
-    // 4. Crear o actualizar la tarea VideoTask en estado PENDIENTE_SINCRONIZACION
-    console.log(`[PDF Analyze API] Upserting VideoTask para el video ${youtubeVideoId} en estado PENDIENTE_SINCRONIZACION...`);
-    const task = await prisma.videoTask.upsert({
-      where: { youtubeId: youtubeVideoId },
-      update: {
-        title: suggestedTitle,
-        description: finalDescription,
-        thumbnailText: metadata.thumbnailText || '',
-        status: 'PENDIENTE_SINCRONIZACION',
-        completedAt: null,
-        updatedAt: new Date()
-      },
-      create: {
-        youtubeId: youtubeVideoId,
-        title: suggestedTitle,
-        description: finalDescription,
-        thumbnailText: metadata.thumbnailText || '',
-        status: 'PENDIENTE_SINCRONIZACION'
+    // Añadir el bloque social por defecto a la descripción de cada video
+    const socialBlock = `\n\nPodes ver o programa completo en tvg.gal/horagalega\n\n🔔 Subscríbete á canle oficial da Televisión de Galicia en YouTube: https://www.youtube.com/tvg\n\n🌐 Visita a nosa páxina web: https://agalega.gal/\n\n📲 E tamén podes seguirnos en todas as nosas redes sociais:\nFacebook: https://www.facebook.com/televisiondegalicia\nTwitter: https://x.com/tvgalicia\nInstagram: https://www.instagram.com/tvgalicia\nTikTok: https://www.tiktok.com/@tvgalicia`;
+
+    const processedVideos = parsedResult.videos.map(v => {
+      const baseDesc = v.description || '';
+      
+      // Personalizar el enlace del programa en el bloque social
+      let programUrlSlug = 'horagalega';
+      if (v.programName && v.programName.trim()) {
+        const cleanedSlug = v.programName.toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/[^a-z0-9]/g, "");
+        if (cleanedSlug) {
+          programUrlSlug = cleanedSlug;
+        }
       }
+      
+      const customSocialBlock = `\n\nPodes ver o programa completo en tvg.gal/${programUrlSlug}\n\n🔔 Subscríbete á canle oficial da Televisión de Galicia en YouTube: https://www.youtube.com/tvg\n\n🌐 Visita a nosa páxina web: https://agalega.gal/\n\n📲 E tamén podes seguirnos en todas as nosas redes sociais:\nFacebook: https://www.facebook.com/televisiondegalicia\nTwitter: https://x.com/tvgalicia\nInstagram: https://www.instagram.com/tvgalicia\nTikTok: https://www.tiktok.com/@tvgalicia`;
+      const finalDesc = baseDesc.trim() ? `${baseDesc.trim()}${customSocialBlock}` : customSocialBlock.trim();
+      
+      // Asegurarse de que el título tenga el formato "Título | NOMBRE_DEL_PROGRAMA"
+      let finalTitle = (v.title || '').trim();
+      if (v.programName && v.programName.trim()) {
+        const progUpper = v.programName.toUpperCase().trim();
+        const suffix = `| ${progUpper}`;
+        // Si no termina con la barra y el programa, lo añadimos
+        if (!finalTitle.toUpperCase().endsWith(suffix.toUpperCase())) {
+          if (finalTitle.endsWith('|')) {
+            finalTitle = `${finalTitle} ${progUpper}`;
+          } else {
+            finalTitle = `${finalTitle} | ${progUpper}`;
+          }
+        }
+      }
+
+      return {
+        index: v.index,
+        title: finalTitle,
+        description: finalDesc,
+        thumbnailText: v.thumbnailText || '',
+        matchedVideoId: v.matchedVideoId || '',
+        programName: v.programName || ''
+      };
     });
 
-    const activePdfName = await getConfig('ACTIVE_PDF_NAME') || '';
     return NextResponse.json({
       success: true,
-      task,
-      suggestions: {
-        titles: [suggestedTitle],
-        description: finalDescription,
-        tags: metadata.tags || [],
-        thumbnailText: metadata.thumbnailText || ''
-      },
-      activePdfName
+      videos: processedVideos,
+      fileName: file.name
     });
 
   } catch (error) {
-    console.error('Error en API de análisis PDF:', error);
-    return NextResponse.json({ error: error.message || 'Fallo al analizar el PDF con Gemini' }, { status: 500 });
+    console.error('Error en API de análisis del archivo:', error);
+    return NextResponse.json({ error: error.message || 'Fallo al analizar el archivo con Gemini' }, { status: 500 });
   }
 }

@@ -100,23 +100,26 @@ export async function POST(request) {
         console.log(`[Update Video API] Saved scheduled custom thumbnail in database (ID: ${newVideoUpdate.id})`);
       }
 
-      // 2. Actualizar el estado de la tarea (VideoTask) a 'SCHEDULED'
+      // 2. Crear o actualizar la tarea (VideoTask) a 'SCHEDULED'
       try {
-        await prisma.videoTask.updateMany({
-          where: {
-            youtubeId: youtubeVideoId,
-            status: {
-              in: ['PENDING', 'PENDIENTE_SINCRONIZACION']
-            }
+        await prisma.videoTask.upsert({
+          where: { youtubeId: youtubeVideoId },
+          update: {
+            status: 'SCHEDULED',
+            title: title || '',
+            description: description || '',
+            playlistId: playlistId || null,
+            updatedAt: new Date()
           },
-          data: {
+          create: {
+            youtubeId: youtubeVideoId,
             status: 'SCHEDULED',
             title: title || '',
             description: description || '',
             playlistId: playlistId || null
           }
         });
-        console.log(`[Update Video API] Updated VideoTask status to SCHEDULED for youtubeVideoId: ${youtubeVideoId}`);
+        console.log(`[Update Video API] Upserted VideoTask status to SCHEDULED for youtubeVideoId: ${youtubeVideoId}`);
       } catch (taskError) {
         console.error('[Update Video API] Error setting VideoTask to SCHEDULED:', taskError.message);
       }
@@ -246,16 +249,20 @@ export async function POST(request) {
       }
     }
 
-    // 4. Autocompletar la tarea si existe en la base de datos
+    // 4. Crear o actualizar la tarea (VideoTask) a 'COMPLETED'
     try {
-      await prisma.videoTask.updateMany({
-        where: {
-          youtubeId: youtubeVideoId,
-          status: {
-            in: ['PENDING', 'PENDIENTE_SINCRONIZACION']
-          }
+      await prisma.videoTask.upsert({
+        where: { youtubeId: youtubeVideoId },
+        update: {
+          status: 'COMPLETED',
+          completedAt: new Date(),
+          title: title || '',
+          description: description || '',
+          playlistId: playlistId || null,
+          updatedAt: new Date()
         },
-        data: {
+        create: {
+          youtubeId: youtubeVideoId,
           status: 'COMPLETED',
           completedAt: new Date(),
           title: title || '',
@@ -263,9 +270,9 @@ export async function POST(request) {
           playlistId: playlistId || null
         }
       });
-      console.log(`[Update Video API] Automatically completed matching VideoTask for youtubeVideoId: ${youtubeVideoId}`);
+      console.log(`[Update Video API] Upserted VideoTask for youtubeVideoId: ${youtubeVideoId} to COMPLETED`);
     } catch (taskError) {
-      console.error('[Update Video API] Error autocompleting VideoTask:', taskError.message);
+      console.error('[Update Video API] Error upserting VideoTask:', taskError.message);
     }
 
     return NextResponse.json({ 

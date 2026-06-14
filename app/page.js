@@ -34,6 +34,44 @@ function extractYoutubeId(input) {
   return trimmed;
 }
 
+// Helper para normalizar/slugificar nombres de programas
+function slugify(text) {
+  if (!text) return "";
+  return text.toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+// Helper para actualizar el sufijo de programa del título
+function updateTitleSuffix(title, programName) {
+  let cleanTitle = (title || "").trim();
+  const suffixRegex = /\s*\|\s*[a-zA-Z0-9_\sÀ-ÿ\-]+$/i;
+  cleanTitle = cleanTitle.replace(suffixRegex, "").trim();
+  
+  if (programName && programName !== "none") {
+    const cleanProg = programName.replace(/\.[^/.]+$/, "").replace(/_/g, " ").toUpperCase().trim();
+    cleanTitle = `${cleanTitle} | ${cleanProg}`;
+  }
+  return cleanTitle;
+}
+
+// Helper para actualizar la URL de programa en la descripción
+function updateDescriptionUrl(description, programName) {
+  let slug = "horagalega";
+  if (programName && programName !== "none") {
+    const cleanProg = programName.replace(/\.[^/.]+$/, "").replace(/_/g, " ").trim();
+    slug = slugify(cleanProg);
+  }
+  
+  const urlRegex = /tvg\.gal\/[a-z0-9]+/gi;
+  const descStr = description || "";
+  if (urlRegex.test(descStr)) {
+    return descStr.replace(urlRegex, `tvg.gal/${slug}`);
+  }
+  return descStr;
+}
+
 export default function Dashboard() {
   // Estados de autenticación de la aplicación (Google Sign-In)
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -65,12 +103,16 @@ export default function Dashboard() {
   });
   const [savingConfig, setSavingConfig] = useState(false);
 
-  // Selección de Video, Carga de PDF e Índice
+  // Selección de Video, Carga de PDF, Archivos e Interfaz por Lotes
   const [youtubeId, setYoutubeId] = useState("");
-  const [pdfFile, setPdfFile] = useState(null);
-  const [savedPdfName, setSavedPdfName] = useState("");
-  const [videoIndex, setVideoIndex] = useState(1);
-  const [isAnalyzingPdf, setIsAnalyzingPdf] = useState(false);
+  const [searchTitle, setSearchTitle] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [documentFile, setDocumentFile] = useState(null);
+  const [isAnalyzingFile, setIsAnalyzingFile] = useState(false);
+  const [parsedVideos, setParsedVideos] = useState([]);
+  const [privateVideos, setPrivateVideos] = useState([]);
+  const [isSyncingBatch, setIsSyncingBatch] = useState(false);
+  const [syncProgress, setSyncProgress] = useState({ current: 0, total: 0, status: "" });
   const [autoIncrement, setAutoIncrement] = useState(true);
 
   // Estado de edición/actualización de YouTube
@@ -89,6 +131,7 @@ export default function Dashboard() {
   // Sugerencias de la IA (Títulos/Miniatura)
   const [optimizationSuggestions, setOptimizationSuggestions] = useState(null);
   const [isGeneratingSeoPhrase, setIsGeneratingSeoPhrase] = useState(false);
+  const [generatingSeoIndex, setGeneratingSeoIndex] = useState({});
 
   // Estado de la cola de actualizaciones programadas locales
   const [scheduledUpdates, setScheduledUpdates] = useState([]);
@@ -101,9 +144,10 @@ export default function Dashboard() {
   // Estados del generador de miniaturas (Estilo TVG)
   const [thumbnailText, setThumbnailText] = useState("");
   const [programLogosCatalog, setProgramLogosCatalog] = useState([]);
-  const [selectedProgramLogo, setSelectedProgramLogo] = useState("default");
+  const [selectedProgramLogo, setSelectedProgramLogo] = useState("none");
   const [customBgBase64, setCustomBgBase64] = useState(null);
-const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
+  const [showLogosManager, setShowLogosManager] = useState(false);
+  const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
   const [isAutoThumbnailEnabled, setIsAutoThumbnailEnabled] = useState(false);
   const [newThumbnailBase64, setNewThumbnailBase64] = useState(null);
   const [isGeneratingThumbnail, setIsGeneratingThumbnail] = useState(false);
@@ -111,6 +155,7 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
   const canvasRef = useRef(null);
   const templateImageRef = useRef(null);
   const defaultProgramLogoCanvasRef = useRef(null);
+  const maskedTvgLogoCanvasRef = useRef(null);
   const pdfInputRef = useRef(null);
 
   // Helper para cargar imágenes de forma asíncrona en canvas
@@ -127,10 +172,35 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
   // Restablecer estados del generador de miniatura
   const handleResetThumbnailStates = () => {
     setThumbnailText("");
-    setSelectedProgramLogo("default");
+    setSelectedProgramLogo("none");
     setCustomBgBase64(null);
     setIsAutoThumbnailEnabled(false);
     setNewThumbnailBase64(null);
+  };
+
+  // Cambiar logo y actualizar título y descripción en el editor individual
+  const handleLogoChange = (logoVal) => {
+    setSelectedProgramLogo(logoVal);
+    setUpdateForm(prev => ({
+      ...prev,
+      title: updateTitleSuffix(prev.title, logoVal),
+      description: updateDescriptionUrl(prev.description, logoVal)
+    }));
+  };
+
+  // Cambiar logo y actualizar título y descripción en el editor por lotes
+  const handleBatchLogoChange = (index, logoVal) => {
+    setParsedVideos(prev => {
+      const list = [...prev];
+      const idx = list.findIndex(v => v.index === index);
+      if (idx !== -1) {
+        list[idx].selectedProgramLogo = logoVal;
+        list[idx].title = updateTitleSuffix(list[idx].title, logoVal);
+        list[idx].description = updateDescriptionUrl(list[idx].description, logoVal);
+      }
+      return list;
+    });
+    regenerateThumbnailForIndex(index, { selectedProgramLogo: logoVal });
   };
 
   // Validar estado de autenticación al cargar
@@ -176,8 +246,9 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
     checkAuthStatus();
   }, []);
 
-  // Precargar plantilla original de TVG ("Hora Galega")
+  // Precargar y enmascarar logotipo de la cadena (TVG) y plantilla de programa (Hora Galega)
   useEffect(() => {
+    // 1. Cargar plantilla de programa ("Hora Galega")
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.src = "/template_thumbnail.png";
@@ -198,124 +269,37 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
           const r = progData[i];
           const g = progData[i + 1];
           const b = progData[i + 2];
-          // Volver transparente el fondo blanco del logotipo
-          if (r > 240 && g > 240 && b > 240) {
+          // Volver transparente el fondo blanco/grisáceo del logotipo
+          if (r > 220 && g > 220 && b > 220) {
             progData[i + 3] = 0;
           }
         }
         progCtx.putImageData(progImgData, 0, 0);
         defaultProgramLogoCanvasRef.current = progCanvas;
         console.log("[Thumbnail Generator] Logotipo por defecto procesado.");
+        if (isAuthenticated) {
+          fetchProgramLogosCatalog();
+        }
       } catch (err) {
         console.error("[Thumbnail Generator] Error procesando plantilla:", err);
       }
     };
-  }, []);
 
-  const fetchProgramLogosCatalog = async () => {
-    try {
-      const res = await fetch("/api/program-logos", { cache: "no-store" });
-      const data = await res.json();
-      if (data.logos) {
-        setProgramLogosCatalog(data.logos);
-      }
-    } catch (err) {
-      console.error("Error fetching program logos catalog:", err);
-    }
-  };
-
-  // Cargar catálogo de logotipos al cargar la página
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchProgramLogosCatalog();
-    }
-  }, [isAuthenticated]);
-
-  // Cargar preferencia de logotipo persistida en localStorage al seleccionar un vídeo
-  useEffect(() => {
-    if (selectedYoutubeVideo) {
-      const cleanId = extractYoutubeId(selectedYoutubeVideo.id || selectedYoutubeVideo.youtubeId);
-      if (cleanId) {
-        const saved = localStorage.getItem(`prog_logo_${cleanId}`);
-        setSelectedProgramLogo(saved || "default");
-      } else {
-        setSelectedProgramLogo("default");
-      }
-    }
-  }, [selectedYoutubeVideo]);
-
-  // Persistir la selección de logotipo en localStorage ante cambios
-  useEffect(() => {
-    if (selectedYoutubeVideo && selectedProgramLogo) {
-      const cleanId = extractYoutubeId(selectedYoutubeVideo.id || selectedYoutubeVideo.youtubeId);
-      if (cleanId) {
-        localStorage.setItem(`prog_logo_${cleanId}`, selectedProgramLogo);
-      }
-    }
-  }, [selectedProgramLogo, selectedYoutubeVideo]);
-
-  // Dibujar y componer la miniatura estilo TVG en el canvas
-  const generateAutoThumbnail = async () => {
-    if (!isAutoThumbnailEnabled || !selectedYoutubeVideo) return;
-
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    setIsGeneratingThumbnail(true);
-    try {
-      const ctx = canvas.getContext("2d");
-      if (!ctx) throw new Error("Contexto 2D no disponible");
-
-      canvas.width = 1280;
-      canvas.height = 720;
-
-      // 1. Dibujar Imagen de Fondo
-      let bgImg = null;
-      if (customBgBase64) {
-        bgImg = await loadImage(customBgBase64);
-      } else if (selectedYoutubeVideo.thumbnail) {
-        const proxiedUrl = `/api/youtube/thumbnail-proxy?url=${encodeURIComponent(selectedYoutubeVideo.thumbnail)}`;
-        bgImg = await loadImage(proxiedUrl);
-      }
-
-      if (bgImg) {
-        const canvasRatio = canvas.width / canvas.height;
-        const imgRatio = bgImg.width / bgImg.height;
-        let sx, sy, sw, sh;
-
-        if (imgRatio > canvasRatio) {
-          sh = bgImg.height;
-          sw = sh * canvasRatio;
-          sx = (bgImg.width - sw) / 2;
-          sy = 0;
-        } else {
-          sw = bgImg.width;
-          sh = sw / canvasRatio;
-          sx = 0;
-          sy = (bgImg.height - sh) / 2;
-        }
-        ctx.drawImage(bgImg, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
-      } else {
-        const grad = ctx.createLinearGradient(0, 0, 1280, 720);
-        grad.addColorStop(0, "#1e1b4b");
-        grad.addColorStop(1, "#311042");
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, 1280, 720);
-      }
-
-      // 2. Logotipo de la cadena (esquina superior derecha en corte diagonal usando /tvg_logo.png)
+    // 2. Cargar y enmascarar tvg_logo.png
+    const tvgImg = new Image();
+    tvgImg.crossOrigin = "anonymous";
+    tvgImg.src = "/tvg_logo.png";
+    tvgImg.onload = () => {
       try {
-        const tvgLogoImg = await loadImage("/tvg_logo.png");
-        const lw = tvgLogoImg.width;
-        const lh = tvgLogoImg.height;
+        const lw = tvgImg.width;
+        const lh = tvgImg.height;
 
-        // Crear lienzo temporal para aplicar la máscara de transparencia
         const tempCanvas = document.createElement("canvas");
         tempCanvas.width = lw;
         tempCanvas.height = lh;
         const tempCtx = tempCanvas.getContext("2d");
         if (tempCtx) {
-          tempCtx.drawImage(tvgLogoImg, 0, 0);
+          tempCtx.drawImage(tvgImg, 0, 0);
           const imgData = tempCtx.getImageData(0, 0, lw, lh);
           const data = imgData.data;
 
@@ -378,34 +362,218 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
             }
           }
           tempCtx.putImageData(imgData, 0, 0);
+          maskedTvgLogoCanvasRef.current = tempCanvas;
+          console.log("[Thumbnail Generator] Logotipo de la cadena (TVG) enmascarado y listo.");
         }
+      } catch (err) {
+        console.error("[Thumbnail Generator] Error enmascarando tvg_logo.png:", err);
+      }
+    };
+  }, [isAuthenticated]);
 
-        // Dibujar el logotipo de la cadena en la esquina superior derecha con sombra paralela
+  const fetchProgramLogosCatalog = async () => {
+    try {
+      const res = await fetch("/api/program-logos", { cache: "no-store" });
+      const data = await res.json();
+      if (data.logos) {
+        setProgramLogosCatalog(data.logos);
+
+        // Auto-subir Hora_Galega.png si no está en el catálogo y el canvas ya está listo
+        if (!data.logos.includes("Hora_Galega.png") && defaultProgramLogoCanvasRef.current) {
+          const canvas = defaultProgramLogoCanvasRef.current;
+          canvas.toBlob(async (blob) => {
+            if (!blob) return;
+            const fileToUpload = new File([blob], "Hora_Galega.png", { type: "image/png" });
+            const formData = new FormData();
+            formData.append("file", fileToUpload);
+            try {
+              const uploadRes = await fetch("/api/program-logos", {
+                method: "POST",
+                body: formData,
+              });
+              if (uploadRes.ok) {
+                console.log("[Auto-uploader] Hora_Galega.png subido al catálogo con éxito.");
+                const refetchRes = await fetch("/api/program-logos", { cache: "no-store" });
+                const refetchData = await refetchRes.json();
+                if (refetchData.logos) {
+                  setProgramLogosCatalog(refetchData.logos);
+                }
+              }
+            } catch (uploadErr) {
+              console.error("[Auto-uploader] Error al subir Hora_Galega.png:", uploadErr);
+            }
+          }, "image/png");
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching program logos catalog:", err);
+    }
+  };
+
+  // Cargar catálogo de logotipos al cargar la página
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchProgramLogosCatalog();
+    }
+  }, [isAuthenticated]);
+
+  // Cargar preferencia de logotipo persistida en localStorage al seleccionar un vídeo
+  useEffect(() => {
+    if (selectedYoutubeVideo) {
+      const cleanId = extractYoutubeId(selectedYoutubeVideo.id || selectedYoutubeVideo.youtubeId);
+      if (cleanId) {
+        const saved = localStorage.getItem(`prog_logo_${cleanId}`);
+        if (saved) {
+          setSelectedProgramLogo(saved);
+        } else {
+          // Auto-detectar del título o descripción
+          const title = selectedYoutubeVideo.title || "";
+          const desc = selectedYoutubeVideo.description || "";
+          
+          // Buscar sufijo del título: "| NOMBRE"
+          const suffixMatch = title.match(/\|\s*([a-zA-Z0-9_\sÀ-ÿ\-]+)$/);
+          let detectedProg = "";
+          if (suffixMatch) {
+            detectedProg = suffixMatch[1].toUpperCase().trim();
+          } else {
+            // Buscar en la descripción: tvg.gal/slug
+            const descMatch = desc.match(/tvg\.gal\/([a-z0-9]+)/i);
+            if (descMatch) {
+              const slug = descMatch[1].toLowerCase();
+              if (slug !== "horagalega") {
+                detectedProg = slug.toUpperCase();
+              }
+            }
+          }
+          
+          if (detectedProg) {
+            const found = programLogosCatalog.find(logo => {
+              const cleanLogoName = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
+              return cleanLogoName === detectedProg || slugify(cleanLogoName) === slugify(detectedProg);
+            });
+            if (found) {
+              setSelectedProgramLogo(found);
+            } else if (detectedProg === "HORA GALEGA") {
+              setSelectedProgramLogo("Hora_Galega.png");
+            } else {
+              setSelectedProgramLogo("none");
+            }
+          } else {
+            setSelectedProgramLogo("none");
+          }
+        }
+      } else {
+        setSelectedProgramLogo("none");
+      }
+    }
+  }, [selectedYoutubeVideo, programLogosCatalog]);
+
+  // Persistir la selección de logotipo en localStorage ante cambios
+  useEffect(() => {
+    if (selectedYoutubeVideo && selectedProgramLogo) {
+      const cleanId = extractYoutubeId(selectedYoutubeVideo.id || selectedYoutubeVideo.youtubeId);
+      if (cleanId) {
+        localStorage.setItem(`prog_logo_${cleanId}`, selectedProgramLogo);
+      }
+    }
+  }, [selectedProgramLogo, selectedYoutubeVideo]);
+
+  // Helper para obtener una URL de miniatura limpia (sin capas previas de logo o texto)
+  const getCleanVideoFrameUrl = (videoThumbnailUrl, videoId) => {
+    if (videoId && videoId.length === 11) {
+      return `https://i.ytimg.com/vi/${videoId}/hq2.jpg`;
+    }
+    if (videoThumbnailUrl) {
+      const match = videoThumbnailUrl.match(/(?:vi|vi_webp)\/([a-zA-Z0-9_-]{11})/);
+      if (match && match[1]) {
+        return `https://i.ytimg.com/vi/${match[1]}/hq2.jpg`;
+      }
+      const extracted = extractYoutubeId(videoThumbnailUrl);
+      if (extracted && extracted.length === 11) {
+        return `https://i.ytimg.com/vi/${extracted}/hq2.jpg`;
+      }
+    }
+    return videoThumbnailUrl || "";
+  };
+
+  // Dibujar y componer la miniatura estilo TVG en un canvas en memoria
+  const generateSingleAutoThumbnail = async (thumbnailTextVal, videoVal, customBgVal, selectedLogoVal) => {
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = 1280;
+      canvas.height = 720;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return null;
+
+      // 1. Dibujar Imagen de Fondo
+      let bgImg = null;
+      try {
+        if (customBgVal) {
+          bgImg = await loadImage(customBgVal);
+        } else {
+          const cleanUrl = getCleanVideoFrameUrl(videoVal?.thumbnail, videoVal?.id);
+          if (cleanUrl) {
+            const proxiedUrl = `/api/youtube/thumbnail-proxy?url=${encodeURIComponent(cleanUrl)}`;
+            bgImg = await loadImage(proxiedUrl);
+          }
+        }
+      } catch (bgLoadErr) {
+        console.warn("[Thumbnail Generator] No se pudo cargar la imagen de fondo, se usará gradiente:", bgLoadErr.message);
+      }
+
+      if (bgImg) {
+        const canvasRatio = 1280 / 720;
+        const imgRatio = bgImg.width / bgImg.height;
+        let sx, sy, sw, sh;
+
+        if (imgRatio > canvasRatio) {
+          sh = bgImg.height;
+          sw = sh * canvasRatio;
+          sx = (bgImg.width - sw) / 2;
+          sy = 0;
+        } else {
+          sw = bgImg.width;
+          sh = sw / canvasRatio;
+          sx = 0;
+          sy = (bgImg.height - sh) / 2;
+        }
+        ctx.drawImage(bgImg, sx, sy, sw, sh, 0, 0, 1280, 720);
+      } else {
+        const grad = ctx.createLinearGradient(0, 0, 1280, 720);
+        grad.addColorStop(0, "#1e1b4b");
+        grad.addColorStop(1, "#311042");
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, 1280, 720);
+      }
+
+      // 2. Logotipo de la cadena (TVG) pre-enmascarado
+      if (maskedTvgLogoCanvasRef.current) {
         ctx.save();
         ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
         ctx.shadowBlur = 10;
         ctx.shadowOffsetX = -4;
         ctx.shadowOffsetY = 4;
-        
-        // Dibujamos el logotipo TVG enmascarado
-        // Ancho y alto de 192px en la esquina para que coincida perfectamente con la diagonal 1110px a 1280px y alto 170px
-        ctx.drawImage(tempCanvas, 1280 - 192, 0, 192, 192);
+        ctx.drawImage(maskedTvgLogoCanvasRef.current, 1280 - 192, 0, 192, 192);
         ctx.restore();
-      } catch (err) {
-        console.error("[Thumbnail Generator] Error cargando o procesando tvg_logo.png:", err);
       }
 
       // 3. Logotipo del programa (esquina superior izquierda)
       let progImg = null;
-      if (selectedProgramLogo === "none") {
-        // No dibujar logotipo de programa
-      } else if (selectedProgramLogo === "default") {
+      if (selectedLogoVal === "none") {
+        // Sin logo
+      } else if (selectedLogoVal === "default" || selectedLogoVal === "Hora_Galega.png") {
         if (defaultProgramLogoCanvasRef.current) {
           progImg = defaultProgramLogoCanvasRef.current;
+        } else {
+          try {
+            progImg = await loadImage(`/program_logos/${selectedLogoVal}`);
+          } catch (err) {
+            console.error("[Thumbnail Generator] Error cargando logo de Hora Galega:", err);
+          }
         }
-      } else if (selectedProgramLogo) {
+      } else if (selectedLogoVal) {
         try {
-          progImg = await loadImage(`/program_logos/${selectedProgramLogo}`);
+          progImg = await loadImage(`/program_logos/${selectedLogoVal}`);
         } catch (err) {
           console.error("[Thumbnail Generator] Error cargando logo del catálogo:", err);
         }
@@ -428,10 +596,10 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
         ctx.drawImage(progImg, 40, 40, dw, dh);
       }
 
-      // 4. Frase SEO en Gallego abajo a la izquierda (máx 4 palabras)
-      if (thumbnailText) {
-        const words = thumbnailText.trim().toUpperCase().split(/\s+/);
-        // Dividir estrictamente en 2 palabras para el título (arriba, blanco) y las restantes/2 para el subtítulo (abajo, naranja)
+      // 4. Frase SEO
+      if (thumbnailTextVal) {
+        const cleanText = thumbnailTextVal.replace(/[\/\-\"\']/g, " ").replace(/\s+/g, " ").trim();
+        const words = cleanText.toUpperCase().split(/\s+/);
         const line1 = words.slice(0, 2).join(" ");
         const line2 = words.slice(2).join(" ");
 
@@ -467,16 +635,72 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
         ctx.restore();
       }
 
-      const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
-      setNewThumbnailBase64(dataUrl);
+      return canvas.toDataURL("image/jpeg", 0.9);
     } catch (err) {
       console.error("[Thumbnail Generator] Error renderizando canvas:", err);
-    } finally {
-      setIsGeneratingThumbnail(false);
+      return null;
     }
   };
 
-  // Renderizar miniatura automáticamente ante cambios
+  // Wrapper para el editor individual original
+  const generateAutoThumbnail = async () => {
+    if (!isAutoThumbnailEnabled || !selectedYoutubeVideo) return;
+    setIsGeneratingThumbnail(true);
+    const dataUrl = await generateSingleAutoThumbnail(
+      thumbnailText,
+      selectedYoutubeVideo,
+      customBgBase64,
+      selectedProgramLogo
+    );
+    if (dataUrl) {
+      setNewThumbnailBase64(dataUrl);
+    }
+    setIsGeneratingThumbnail(false);
+  };
+
+  // Regenerar miniatura para un video específico del lote
+  const regenerateThumbnailForIndex = async (index, updatedFields = {}) => {
+    setParsedVideos(prev => {
+      const list = [...prev];
+      const idx = list.findIndex(v => v.index === index);
+      if (idx === -1) return prev;
+
+      const current = { ...list[idx], ...updatedFields };
+
+      // Si la miniatura automática está desactivada, o si estamos estableciendo una miniatura manual directamente,
+      // no debemos sobreescribirla con la generación automática.
+      if (!current.isAutoThumbnailEnabled || ('generatedThumbnailBase64' in updatedFields && !current.isAutoThumbnailEnabled)) {
+        list[idx] = current;
+        return list;
+      }
+
+      const matchedVideo = privateVideos.find(pv => pv.id === current.matchedVideoId);
+
+      generateSingleAutoThumbnail(
+        current.thumbnailText,
+        matchedVideo,
+        current.customBgBase64,
+        current.selectedProgramLogo
+      ).then(thumbBase64 => {
+        setParsedVideos(latest => {
+          const latestList = [...latest];
+          const targetIdx = latestList.findIndex(v => v.index === index);
+          if (targetIdx !== -1) {
+            // Solo sobreescribimos si sigue estando activada la miniatura automática
+            if (latestList[targetIdx].isAutoThumbnailEnabled) {
+              latestList[targetIdx].generatedThumbnailBase64 = thumbBase64 || "";
+            }
+          }
+          return latestList;
+        });
+      });
+
+      list[idx] = current;
+      return list;
+    });
+  };
+
+  // Renderizar miniatura automáticamente ante cambios en el editor individual
   useEffect(() => {
     if (isAutoThumbnailEnabled && selectedYoutubeVideo) {
       const timer = setTimeout(() => {
@@ -615,27 +839,26 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
     }
   };
 
-  // Buscar un video específico en YouTube por ID
-  const fetchYoutubeVideoById = async (id) => {
-    const cleanId = extractYoutubeId(id);
-    if (!cleanId) return;
-    setYoutubeId(cleanId);
+  // Buscar videos en YouTube por título (o ID/URL como fallback)
+  const fetchYoutubeVideosByTitle = async (qVal) => {
+    if (!qVal || !qVal.trim()) return;
     setLoadingYoutubeVideo(true);
+    setSearchResults([]);
     try {
-      const res = await fetch(`/api/youtube/videos?q=${encodeURIComponent(cleanId)}`);
+      const res = await fetch(`/api/youtube/videos?q=${encodeURIComponent(qVal)}`);
       if (res.ok) {
         const data = await res.json();
-        if (data.length > 0) {
-          handleSelectVideo(data[0]);
-        } else {
-          alert("No se encontró el video con ese ID en tu canal de YouTube.");
+        setSearchResults(data);
+        if (data.length === 0) {
+          alert("No se encontraron videos privados u ocultos con ese término de búsqueda.");
         }
       } else {
-        alert("Fallo al buscar el video.");
+        const errData = await res.json();
+        alert("Fallo al buscar videos: " + (errData.error || "error desconocido"));
       }
     } catch (err) {
-      console.error("Error al buscar video:", err);
-      alert("Error de red al consultar el video.");
+      console.error("Error al buscar videos:", err);
+      alert("Error de red al consultar los videos.");
     } finally {
       setLoadingYoutubeVideo(false);
     }
@@ -743,43 +966,35 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
     }
   };
 
-  // Analizar el PDF con Gemini e iniciar tarea PENDIENTE_SINCRONIZACION
-  const handleAnalyzePdf = async (e) => {
+  // Analizar el documento (PDF o Word) con Gemini e iniciar mapeo automático
+  const handleAnalyzeFile = async (e) => {
     e.preventDefault();
-    const cleanYoutubeId = extractYoutubeId(youtubeId);
-    if (!pdfFile && !savedPdfName) {
-      alert("Por favor, sube un archivo PDF de referencia.");
+    if (!documentFile) {
+      alert("Por favor, sube un documento PDF o Word de referencia.");
       return;
     }
-    if (!cleanYoutubeId) {
-      alert("Por favor, introduce o selecciona un ID de video de YouTube.");
-      return;
-    }
-    setYoutubeId(cleanYoutubeId);
 
-    setIsAnalyzingPdf(true);
+    setIsAnalyzingFile(true);
+    setParsedVideos([]);
     try {
-      // 1. Intentar buscar el video en YouTube primero de forma segura para obtener info básica
-      let videoInfo = null;
+      // 1. Obtener la lista de videos privados/ocultos de YouTube
+      let activePrivateVideos = [];
       try {
-        const ytRes = await fetch(`/api/youtube/videos?q=${encodeURIComponent(cleanYoutubeId)}`);
+        const ytRes = await fetch("/api/youtube/videos", { cache: "no-store" });
         if (ytRes.ok) {
-          const ytData = await ytRes.json();
-          if (ytData && ytData.length > 0) {
-            videoInfo = ytData[0];
-          }
+          activePrivateVideos = await ytRes.json();
+          setPrivateVideos(activePrivateVideos);
+        } else {
+          console.warn("No se pudieron cargar los videos privados del canal.");
         }
       } catch (ytErr) {
-        console.warn("YouTube video check failed:", ytErr.message);
+        console.warn("YouTube video fetch failed:", ytErr.message);
       }
 
-      // 2. Analizar el PDF
+      // 2. Analizar el archivo (PDF o Word)
       const formData = new FormData();
-      if (pdfFile) {
-        formData.append("file", pdfFile);
-      }
-      formData.append("youtubeVideoId", cleanYoutubeId);
-      formData.append("videoIndex", videoIndex.toString());
+      formData.append("file", documentFile);
+      formData.append("youtubeVideos", JSON.stringify(activePrivateVideos));
 
       const res = await fetch("/api/youtube/analyze-pdf", {
         method: "POST",
@@ -792,56 +1007,196 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
       }
 
       const data = await res.json();
-      alert("¡Documento analizado con éxito! Datos volcados de forma literal en el editor en estado 'Pendiente de Sincronización'.");
       
-      if (data.activePdfName) {
-        setSavedPdfName(data.activePdfName);
-      }
+      // 3. Crear mapeo inicial usando el emparejamiento inteligente de Gemini
+      const mapped = data.videos.map((v, i) => {
+        // Mapear usando el ID sugerido por Gemini
+        const matchedVideo = activePrivateVideos.find(pv => pv.id === v.matchedVideoId) || null;
 
-      // Establecer video seleccionado y abrir el editor (fallback si no se recuperó información de YouTube)
-      const finalVideoInfo = videoInfo || {
-        id: cleanYoutubeId,
-        title: `Video (${cleanYoutubeId})`,
-        description: "",
-        tags: "",
-        thumbnail: ""
-      };
-      setSelectedYoutubeVideo(finalVideoInfo);
+        // Detectar si el programa corresponde a algún logo del catálogo (evitando seleccionar Hora Galega por defecto de forma genérica, pero asignándolo si corresponde)
+        let matchedLogo = "none";
+        if (v.programName) {
+          const cleanProg = v.programName.toUpperCase().replace(/_/g, " ").trim();
+          if (cleanProg === "HORA GALEGA") {
+            matchedLogo = "Hora_Galega.png";
+          } else {
+            const found = programLogosCatalog.find(logo => {
+              const cleanLogoName = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
+              return cleanLogoName === cleanProg;
+            });
+            if (found) {
+              matchedLogo = found;
+            }
+          }
+        }
 
-      const scheduledUpdate = scheduledUpdates.find(u => u.youtubeId === finalVideoInfo.id);
+        const item = {
+          index: v.index,
+          title: v.title || "",
+          description: v.description || "",
+          thumbnailText: v.thumbnailText || "",
+          isAutoThumbnailEnabled: true,
+          selectedProgramLogo: matchedLogo,
+          customBgBase64: null,
+          generatedThumbnailBase64: null,
+          matchedVideoId: matchedVideo ? matchedVideo.id : "",
+          isScheduled: false,
+          scheduledAt: "",
+          playlistId: "",
+          isSyncing: false,
+          isSynced: false,
+          syncError: null
+        };
 
-      // Rellenar editor con la transcripción/metadatos sugeridos (Títulos/Descripciones literales)
-      setUpdateForm({
-        title: data.suggestions.titles[0] || finalVideoInfo.title || "",
-        description: data.suggestions.description || finalVideoInfo.description || "",
-        tags: data.suggestions.tags.join(', ') || finalVideoInfo.tags || "",
-        isScheduled: !!scheduledUpdate,
-        scheduledAt: scheduledUpdate && scheduledUpdate.scheduledAt 
-          ? toLocalDateTimeString(scheduledUpdate.scheduledAt) 
-          : ""
+        // Generar miniatura inicial en segundo plano (con o sin video mapeado para evitar bloqueos)
+        generateSingleAutoThumbnail(
+          item.thumbnailText,
+          matchedVideo,
+          null,
+          matchedLogo
+        ).then(thumbBase64 => {
+          setParsedVideos(latest => {
+            const latestList = [...latest];
+            const targetIdx = latestList.findIndex(x => x.index === v.index);
+            if (targetIdx !== -1) {
+              latestList[targetIdx].generatedThumbnailBase64 = thumbBase64 || "";
+            }
+            return latestList;
+          });
+        });
+
+        return item;
       });
 
-      setOptimizationSuggestions(data.suggestions);
+      setParsedVideos(mapped);
+      setSelectedYoutubeVideo(null); // Cerrar editor individual
+      alert(`¡Documento procesado con éxito! Se han detectado ${data.videos.length} videos. Por favor, revisa el mapeo de cada video antes de sincronizar.`);
+    } catch (err) {
+      alert("Error al procesar el archivo: " + err.message);
+    } finally {
+      setIsAnalyzingFile(false);
+    }
+  };
 
-      if (data.suggestions.thumbnailText) {
-        setThumbnailText(data.suggestions.thumbnailText);
-        setIsAutoThumbnailEnabled(true);
+  // Generar frase SEO para un video en lote con IA
+  const handleGenerateSeoPhraseForIndex = async (index, title, description) => {
+    if (!title) {
+      alert("Introduce un título primero para generar la frase SEO.");
+      return;
+    }
+    setGeneratingSeoIndex(prev => ({ ...prev, [index]: true }));
+    try {
+      const res = await fetch("/api/youtube/generate-seo-phrase", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, description })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.thumbnailText) {
+          await regenerateThumbnailForIndex(index, { thumbnailText: data.thumbnailText });
+        }
       } else {
-        handleResetThumbnailStates();
-      }
-
-      // Actualizar listado de tareas pendientes
-      fetchTasks();
-
-      // Autoincrementar si la opción está activada
-      if (autoIncrement) {
-        setVideoIndex((prev) => Math.min(prev + 1, 10));
+        alert("Error al generar la frase SEO.");
       }
     } catch (err) {
-      alert("Error: " + err.message);
+      console.error(err);
+      alert("Error de red al conectar con Gemini.");
     } finally {
-      setIsAnalyzingPdf(false);
+      setGeneratingSeoIndex(prev => ({ ...prev, [index]: false }));
     }
+  };
+
+  // Sincronizar todos los videos mapeados en lote
+  const handleSyncAllVideos = async () => {
+    const matchedItems = parsedVideos.filter(v => v.matchedVideoId);
+    if (matchedItems.length === 0) {
+      alert("No hay ningún video mapeado con YouTube para sincronizar.");
+      return;
+    }
+
+    if (!confirm(`Se van a sincronizar y actualizar ${matchedItems.length} videos en YouTube. ¿Deseas continuar?`)) {
+      return;
+    }
+
+    setIsSyncingBatch(true);
+    setSyncProgress({ current: 0, total: matchedItems.length, status: "Iniciando sincronización..." });
+
+    let currentCount = 0;
+
+    for (let i = 0; i < parsedVideos.length; i++) {
+      const item = parsedVideos[i];
+      if (!item.matchedVideoId) continue;
+
+      currentCount++;
+      setSyncProgress({
+        current: currentCount,
+        total: matchedItems.length,
+        status: `Sincronizando vídeo ${item.index}: "${item.title}"...`
+      });
+
+      // Marcar item como sincronizando
+      setParsedVideos(prev => {
+        const list = [...prev];
+        list[i].isSyncing = true;
+        list[i].syncError = null;
+        return list;
+      });
+
+      try {
+        const res = await fetch("/api/youtube/update", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            youtubeVideoId: item.matchedVideoId,
+            title: item.title,
+            description: item.description,
+            thumbnail: item.isAutoThumbnailEnabled ? item.generatedThumbnailBase64 : null,
+            scheduledAt: item.isScheduled ? item.scheduledAt : null,
+            playlistId: item.playlistId || null,
+          }),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.error || "Fallo en la llamada de sincronización");
+        }
+
+        const resData = await res.json();
+
+        // Marcar item como completado
+        setParsedVideos(prev => {
+          const list = [...prev];
+          const targetIdx = list.findIndex(x => x.index === item.index);
+          if (targetIdx !== -1) {
+            list[targetIdx].isSyncing = false;
+            list[targetIdx].isSynced = true;
+            if (resData.thumbnailError) {
+              list[targetIdx].syncError = `Sincronizado sin miniatura: ${resData.thumbnailError}`;
+            }
+          }
+          return list;
+        });
+
+      } catch (err) {
+        console.error(`Error syncing video index ${item.index}:`, err);
+        setParsedVideos(prev => {
+          const list = [...prev];
+          const targetIdx = list.findIndex(x => x.index === item.index);
+          if (targetIdx !== -1) {
+            list[targetIdx].isSyncing = false;
+            list[targetIdx].syncError = err.message;
+          }
+          return list;
+        });
+      }
+    }
+
+    setSyncProgress(prev => ({ ...prev, status: "Sincronización finalizada." }));
+    setIsSyncingBatch(false);
+    fetchTasks();
+    fetchScheduledUpdates();
+    alert("¡Sincronización en lote finalizada!");
   };
 
   // Guardar cambios en YouTube y marcar tarea como completada (realizada)
@@ -1067,7 +1422,7 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
             WebkitBackgroundClip: "text",
             WebkitTextFillColor: "transparent"
           }}>
-            Acceso Protexido
+            Acceso Protegido
           </h2>
 
           <p style={{
@@ -1076,7 +1431,7 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
             lineHeight: "1.5",
             marginBottom: "2rem"
           }}>
-            Inicia sesión coa túa conta de Google autorizada para poder entrar no panel e xestionar a base de datos.
+            Inicia sesión con tu cuenta de Google autorizada para poder acceder a la aplicación.
           </p>
 
           {authError && (
@@ -1142,29 +1497,29 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
         </div>
 
         <div className={styles.headerActions}>
-          {isAuthRequired && (
-            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginRight: "0.5rem" }}>
-              <span style={{ fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: "500" }}>
-                {currentUserEmail}
-              </span>
-              <button
-                onClick={() => {
-                  window.location.href = "/api/auth/logout";
-                }}
-                className={styles.disconnectBtn}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "0.25rem",
-                  padding: "0.5rem 0.8rem",
-                  fontSize: "0.8rem"
-                }}
-                title="Cerrar sesión"
-              >
-                🔒 Bloquear / Saír
-              </button>
-            </div>
-          )}
+          <button
+            onClick={() => setShowLogosManager(true)}
+            className={styles.btnSettingsToggle}
+            title="Catálogo de Logotipos"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: "auto",
+              padding: "0 0.8rem",
+              gap: "0.4rem",
+              fontSize: "0.8rem",
+              fontWeight: "600",
+              color: "var(--text-primary)"
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <polyline points="21 15 16 10 5 21" />
+            </svg>
+            <span>Gestión de Logos</span>
+          </button>
 
           <button
             onClick={() => {
@@ -1234,123 +1589,619 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
       {/* Dashboard Grid */}
       <div className={styles.dashboardGrid}>
         {/* Columna Izquierda: Sincronización, PDF Editor e Inline Form */}
-        <div className={styles.mainCol}>
           
           {/* Tarjeta de Selección y Carga */}
           <div className={styles.card}>
-            <div className={styles.cardTitle}>Editor de Videos</div>
-            
-            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-              {/* Selector de Video por ID directo */}
-              <div className={styles.inputGroup}>
-                <label>ID Video YouTube</label>
-                <div style={{ display: "flex", gap: "0.5rem" }}>
-                  <input
-                    type="text"
-                    value={youtubeId}
-                    onChange={(e) => setYoutubeId(e.target.value)}
-                    style={{ flex: 1 }}
-                  />
-                  <button
-                    onClick={() => fetchYoutubeVideoById(youtubeId)}
-                    disabled={loadingYoutubeVideo || !youtubeId}
-                    className={styles.btnSubmit}
-                    style={{ width: "auto", whiteSpace: "nowrap" }}
+            <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+              {/* Bloque 1: Carga de Planilla (PDF o Word) */}
+              <div style={{ paddingBottom: "1.5rem", borderBottom: "1px solid var(--border-color, #334155)" }}>
+                <h3 style={{ fontSize: "0.95rem", fontWeight: "700", marginBottom: "0.5rem", color: "var(--text-primary)" }}>
+                  📁 Cargar Plantilla de Contenidos (PDF o Word)
+                </h3>
+                <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", margin: "0 0 1rem 0" }}>
+                  Sube la planilla de la empresa en formato PDF o Word (.docx) para mapear automáticamente los textos y generar portadas.
+                </p>
+
+                {/* Dropzone para PDF/Word */}
+                <div className={styles.inputGroup}>
+                  <div
+                    className={styles.uploadArea}
+                    style={{ 
+                      padding: "1.5rem", 
+                      border: "2px dashed var(--border-color, #334155)", 
+                      borderRadius: "8px", 
+                      textAlign: "center", 
+                      cursor: "pointer", 
+                      background: "rgba(255,255,255,0.01)" 
+                    }}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const file = e.dataTransfer.files[0];
+                      if (file && (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".docx") || file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document")) {
+                        setDocumentFile(file);
+                      } else {
+                        alert("Por favor, sube un archivo PDF o Word (.docx) válido.");
+                      }
+                    }}
+                    onClick={() => pdfInputRef.current?.click()}
                   >
-                    {loadingYoutubeVideo ? "Buscando..." : "Buscar Video"}
-                  </button>
-                </div>
-              </div>
-
-              {/* Índice de Vídeo en el PDF (Autocalculado y Manual) */}
-              <div className={styles.inputGroup} style={{ marginTop: "0.5rem" }}>
-                <label htmlFor="videoIndexSelect">Selecciona nº de video</label>
-                <select
-                  id="videoIndexSelect"
-                  value={videoIndex}
-                  disabled={!pdfFile && !savedPdfName}
-                  onChange={(e) => setVideoIndex(parseInt(e.target.value))}
-                  style={{ 
-                    background: "var(--bg-surface-solid)", 
-                    color: "var(--text-primary)", 
-                    padding: "0.5rem", 
-                    borderRadius: "6px",
-                    opacity: (!pdfFile && !savedPdfName) ? 0.5 : 1,
-                    cursor: (!pdfFile && !savedPdfName) ? "not-allowed" : "default"
-                  }}
-                >
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => (
-                    <option key={num} value={num} style={{ background: "var(--bg-surface-solid)", color: "var(--text-primary)" }}>
-                      Vídeo {num} {num === 1 ? "(Letizia / Mantilla)" : num === 2 ? "(Aviso Mos / Gasóleo)" : num === 3 ? "(Mantemento Bateas)" : ""}
-                    </option>
-                  ))}
-                </select>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.5rem" }}>
+                    <div style={{ fontSize: "2.2rem", marginBottom: "0.5rem" }}>📄</div>
+                    <p style={{ margin: 0, fontSize: "0.85rem", fontWeight: "600" }}>
+                      {documentFile 
+                        ? `Documento Seleccionado: ${documentFile.name}` 
+                        : "Arrastra tu archivo PDF o Word (.docx) aquí o haz clic para explorar"
+                      }
+                    </p>
+                    <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block", marginTop: "0.25rem" }}>
+                      Soporta documentos PDF y Word estructurados
+                    </span>
+                  </div>
                   <input
-                    type="checkbox"
-                    id="autoIncrementToggle"
-                    checked={autoIncrement}
-                    onChange={(e) => setAutoIncrement(e.target.checked)}
-                    style={{ cursor: "pointer" }}
+                    type="file"
+                    ref={pdfInputRef}
+                    accept="application/pdf, .docx, application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    onChange={(e) => {
+                      const file = e.target.files[0];
+                      if (file) setDocumentFile(file);
+                    }}
+                    style={{ display: "none" }}
                   />
-                  <label htmlFor="autoIncrementToggle" style={{ cursor: "pointer", fontSize: "0.8rem", color: "var(--text-muted)", userSelect: "none" }}>
-                    Autoincrementar número de vídeo tras copiar datos
-                  </label>
                 </div>
-              </div>
 
-              {/* Dropzone del PDF */}
-              <div className={styles.inputGroup} style={{ marginTop: "0.5rem" }}>
-                <label>Documento PDF de Referencia de la Empresa</label>
-                <div
-                  className={styles.uploadArea}
-                  style={{ padding: "1.5rem", border: "2px dashed var(--border-color)", borderRadius: "8px", textAlign: "center", cursor: "pointer", background: "rgba(255,255,255,0.01)" }}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    const file = e.dataTransfer.files[0];
-                    if (file && file.type === "application/pdf") {
-                      setPdfFile(file);
-                    } else {
-                      alert("Por favor, sube un archivo PDF válido.");
-                    }
+                {/* Botón de Análisis */}
+                <button
+                  type="button"
+                  onClick={handleAnalyzeFile}
+                  disabled={isAnalyzingFile || !documentFile}
+                  className={styles.btnSubmit}
+                  style={{ 
+                    marginTop: "1rem", 
+                    background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)", 
+                    opacity: (isAnalyzingFile || !documentFile) ? 0.6 : 1 
                   }}
-                  onClick={() => pdfInputRef.current?.click()}
                 >
-                  <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>📄</div>
-                  <p style={{ margin: 0, fontSize: "0.85rem", fontWeight: "500" }}>
-                    {pdfFile 
-                      ? `PDF Seleccionado: ${pdfFile.name}` 
-                      : savedPdfName 
-                        ? `PDF Activo Guardado: ${savedPdfName}` 
-                        : "Arrastra tu documento PDF de referencia aquí o haz clic para explorar"
-                    }
-                  </p>
-                </div>
-                <input
-                  type="file"
-                  ref={pdfInputRef}
-                  accept="application/pdf"
-                  onChange={(e) => {
-                    const file = e.target.files[0];
-                    if (file) setPdfFile(file);
-                  }}
-                  style={{ display: "none" }}
-                />
+                  {isAnalyzingFile ? "Procesando documento con IA..." : "⚡ Procesar Documento en Lote"}
+                </button>
               </div>
 
-              {/* Botón de Acción de Análisis */}
-              <button
-                type="button"
-                onClick={handleAnalyzePdf}
-                disabled={isAnalyzingPdf || (!pdfFile && !savedPdfName) || !youtubeId}
-                className={styles.btnSubmit}
-                style={{ background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)", opacity: (isAnalyzingPdf || (!pdfFile && !savedPdfName) || !youtubeId) ? 0.6 : 1 }}
-              >
-                {isAnalyzingPdf ? "Procesando y copiando datos..." : "⚡ Copiar Datos del PDF al Editor"}
-              </button>
+              {/* Bloque 2: Buscador Manual por Título */}
+              <div>
+                <h3 style={{ fontSize: "0.95rem", fontWeight: "700", marginBottom: "0.5rem", color: "var(--text-primary)" }}>
+                  🔍 Buscar Vídeos Específicos
+                </h3>
+
+                <div className={styles.inputGroup}>
+                  <div style={{ display: "flex", gap: "0.5rem" }}>
+                    <input
+                      type="text"
+                      placeholder="Escribe palabras clave del título del video..."
+                      value={searchTitle}
+                      onChange={(e) => setSearchTitle(e.target.value)}
+                      style={{ flex: 1 }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          fetchYoutubeVideosByTitle(searchTitle);
+                        }
+                      }}
+                    />
+                    <button
+                      onClick={() => fetchYoutubeVideosByTitle(searchTitle)}
+                      disabled={loadingYoutubeVideo || !searchTitle.trim()}
+                      className={styles.btnSubmit}
+                      style={{ width: "auto", whiteSpace: "nowrap" }}
+                    >
+                      {loadingYoutubeVideo ? "Buscando..." : "Buscar Video"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Resultados de la búsqueda */}
+                {searchResults.length > 0 && (
+                  <div style={{ 
+                    marginTop: "1rem", 
+                    background: "var(--bg-card, #0f172a)", 
+                    border: "1px solid var(--border-color, #334155)", 
+                    borderRadius: "12px", 
+                    maxHeight: "250px", 
+                    overflowY: "auto", 
+                    padding: "0.5rem" 
+                  }}>
+                    {searchResults.map(video => (
+                      <div key={video.id} style={{ 
+                        display: "flex", 
+                        alignItems: "center", 
+                        gap: "0.75rem", 
+                        padding: "0.5rem", 
+                        borderBottom: "1px solid rgba(255,255,255,0.05)",
+                        justifyContent: "space-between"
+                      }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flex: 1, minWidth: 0 }}>
+                          <img src={video.thumbnail} alt="" style={{ width: "64px", aspectRatio: "16/9", objectFit: "cover", borderRadius: "4px" }} />
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ fontSize: "0.8rem", fontWeight: "600", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+                              {video.title}
+                            </div>
+                            <span style={{ 
+                              fontSize: "0.7rem", 
+                              color: video.privacyStatus === 'private' ? "#ef4444" : "#f59e0b",
+                              background: video.privacyStatus === 'private' ? "rgba(239, 68, 68, 0.15)" : "rgba(245, 158, 11, 0.15)",
+                              padding: "1px 6px",
+                              borderRadius: "10px"
+                            }}>
+                              {video.privacyStatus === 'private' ? "Privado" : "Oculto"}
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => {
+                            handleSelectVideo(video);
+                            setSearchResults([]);
+                          }}
+                          className={styles.btnSubmit}
+                          style={{ width: "auto", fontSize: "0.75rem", padding: "0.3rem 0.6rem" }}
+                        >
+                          Editar
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
+
+          {/* Editor en lote para videos parseados */}
+          {parsedVideos.length > 0 && (
+            <div className={styles.inlineEditPanel} style={{ display: "block", marginTop: "1.5rem" }}>
+              <div className={styles.inlineEditHeader} style={{ borderBottom: "1px solid var(--border-color, #334155)" }}>
+                <div>
+                  <h3 style={{ fontSize: "1.2rem", fontWeight: "800", background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+                    ⚡ Sincronizador
+                  </h3>
+                  <span style={{ fontSize: "0.8rem", color: "var(--text-muted)", fontWeight: "500" }}>
+                    Documento: <strong>{documentFile?.name}</strong> | Se detectaron {parsedVideos.length} videos
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm("¿Descartar el documento actual y todos los cambios no guardados?")) {
+                      setParsedVideos([]);
+                      setDocumentFile(null);
+                    }
+                  }}
+                  className={styles.closeBtn}
+                  title="Descartar lote"
+                >✕</button>
+              </div>
+
+              {/* Lista de videos en lote */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "2rem", marginTop: "1.5rem" }}>
+                {parsedVideos.map((item, idx) => {
+                  const matchedVideo = privateVideos.find(pv => pv.id === item.matchedVideoId);
+                  
+                  return (
+                    <div key={item.index} style={{
+                      border: "1px solid var(--border-color, #334155)",
+                      borderRadius: "16px",
+                      padding: "1.5rem",
+                      background: "rgba(15, 23, 42, 0.25)",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "1.5rem",
+                      position: "relative"
+                    }}>
+                      {/* Estado de sincronización en tarjeta */}
+                      {item.isSynced && (
+                        <div style={{
+                          position: "absolute", top: "1rem", right: "1rem",
+                          background: "rgba(16, 185, 129, 0.15)", color: "#10b981",
+                          fontSize: "0.75rem", fontWeight: "bold", padding: "4px 10px", borderRadius: "12px",
+                          border: "1px solid rgba(16, 185, 129, 0.3)"
+                        }}>
+                          ✓ Sincronizado
+                        </div>
+                      )}
+                      {item.syncError && (
+                        <div style={{
+                          position: "absolute", top: "1rem", right: "1rem",
+                          background: "rgba(239, 68, 68, 0.15)", color: "#ef4444",
+                          fontSize: "0.75rem", fontWeight: "bold", padding: "4px 10px", borderRadius: "12px",
+                          border: "1px solid rgba(239, 68, 68, 0.3)"
+                        }}>
+                          ⚠️ {item.syncError}
+                        </div>
+                      )}
+
+                      <h4 style={{ fontSize: "1rem", margin: 0, fontWeight: "700", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <span style={{ background: "linear-gradient(135deg, #a855f7 0%, #6366f1 100%)", color: "#fff", width: "24px", height: "24px", display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "50%", fontSize: "0.8rem" }}>
+                          {item.index}
+                        </span>
+                        Vídeo {item.index} del documento
+                      </h4>
+
+                      <div className={styles.inlineEditContent} style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: "1.5rem" }}>
+                        {/* Columna Izquierda: Vinculación y Portada */}
+                        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                          {/* Selector de Video Privado */}
+                          <div className={styles.inputGroup} style={{ margin: 0 }}>
+                            <label style={{ fontSize: "0.8rem", fontWeight: "600" }}>Seleccionar vídeo manualmente:</label>
+                            <select
+                              value={item.matchedVideoId}
+                              onChange={(e) => {
+                                const newId = e.target.value;
+                                regenerateThumbnailForIndex(item.index, { matchedVideoId: newId });
+                              }}
+                              style={{
+                                padding: "0.5rem",
+                                background: "var(--bg-surface, #0f172a)",
+                                border: "1px solid var(--border-color, #334155)",
+                                borderRadius: "6px",
+                                color: "#fff",
+                                fontSize: "0.8rem",
+                                width: "100%",
+                                marginTop: "0.25rem"
+                              }}
+                            >
+                              <option value="">--Vincula un video específico--</option>
+                              {privateVideos.map(pv => (
+                                <option key={pv.id} value={pv.id}>
+                                  {pv.title} ({pv.privacyStatus === 'private' ? 'Privado' : 'Oculto'})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* Previsualización del vídeo actual mapeado */}
+                          {matchedVideo && (
+                            <div style={{ display: "flex", gap: "0.5rem", background: "rgba(255,255,255,0.02)", padding: "0.5rem", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.05)" }}>
+                              <img src={matchedVideo.thumbnail} alt="" style={{ width: "80px", aspectRatio: "16/9", objectFit: "cover", borderRadius: "4px" }} />
+                              <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", minWidth: 0 }}>
+                                <span style={{ fontSize: "0.75rem", fontWeight: "600", color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  {matchedVideo.title}
+                                </span>
+                                <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>ID: {matchedVideo.id}</span>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Miniatura automática */}
+                          <div style={{
+                            border: "1px solid var(--border-color, #334155)",
+                            borderRadius: "12px",
+                            padding: "0.75rem",
+                            background: "rgba(255,255,255,0.01)"
+                          }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                              <span style={{ fontWeight: "600", fontSize: "0.8rem" }}>
+                                🎨 Portada automática estilo TVG
+                              </span>
+                              <label className={styles.switch} style={{ position: "relative", display: "inline-block", width: "40px", height: "20px" }}>
+                                <input
+                                  type="checkbox"
+                                  checked={item.isAutoThumbnailEnabled}
+                                  onChange={(e) => {
+                                    const val = e.target.checked;
+                                    regenerateThumbnailForIndex(item.index, { isAutoThumbnailEnabled: val });
+                                  }}
+                                  style={{ opacity: 0, width: 0, height: 0 }}
+                                />
+                                <span style={{
+                                  position: "absolute", cursor: "pointer",
+                                  top: 0, left: 0, right: 0, bottom: 0,
+                                  backgroundColor: item.isAutoThumbnailEnabled ? "#10b981" : "#4b5563",
+                                  transition: "0.2s", borderRadius: "20px"
+                                }}>
+                                  <span style={{
+                                    position: "absolute", content: "''",
+                                    height: "14px", width: "14px",
+                                    left: item.isAutoThumbnailEnabled ? "22px" : "4px", bottom: "3px",
+                                    backgroundColor: "white", transition: "0.2s", borderRadius: "50%"
+                                  }} />
+                                </span>
+                              </label>
+                            </div>
+
+                            {item.isAutoThumbnailEnabled ? (
+                              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                                <div style={{ position: "relative", width: "100%", aspectRatio: "16/9", borderRadius: "6px", overflow: "hidden", border: "1px solid var(--border-color, #334155)", background: "#000" }}>
+                                  {item.generatedThumbnailBase64 ? (
+                                    <img src={item.generatedThumbnailBase64} alt="Preview" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                  ) : (
+                                    <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: "0.75rem" }}>
+                                      Generando miniatura...
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Frase SEO Gallego */}
+                                <div className={styles.inputGroup} style={{ margin: 0 }}>
+                                  <label style={{ fontSize: "0.7rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                    <span>Texto SEO Gallego (4 palabras)</span>
+                                    <button
+                                      type="button"
+                                      disabled={generatingSeoIndex[item.index]}
+                                      onClick={() => handleGenerateSeoPhraseForIndex(item.index, item.title, item.description)}
+                                      className={styles.btnSubmit}
+                                      style={{
+                                        width: "auto",
+                                        fontSize: "0.65rem",
+                                        padding: "1px 6px",
+                                        margin: 0,
+                                        background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
+                                        border: "none",
+                                        borderRadius: "4px",
+                                        color: "#fff",
+                                        opacity: generatingSeoIndex[item.index] ? 0.6 : 1,
+                                        cursor: generatingSeoIndex[item.index] ? "not-allowed" : "pointer"
+                                      }}
+                                    >
+                                      {generatingSeoIndex[item.index] ? "Generando..." : "🪄 Generar con IA"}
+                                    </button>
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={item.thumbnailText}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      regenerateThumbnailForIndex(item.index, { thumbnailText: val });
+                                    }}
+                                    placeholder="Ej: GRAN CONCURSO HORA GALEGA"
+                                    style={{ padding: "0.3rem", fontSize: "0.8rem" }}
+                                  />
+                                  {generatingSeoIndex[item.index] && (
+                                    <div style={{
+                                      marginTop: "0.2rem",
+                                      height: "3px",
+                                      width: "100%",
+                                      backgroundColor: "rgba(255,255,255,0.05)",
+                                      borderRadius: "1.5px",
+                                      overflow: "hidden",
+                                      position: "relative"
+                                    }}>
+                                      <div className={styles.pulseProgressBar} />
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Fondo Personalizado */}
+                                <div className={styles.inputGroup} style={{ margin: 0 }}>
+                                  <label style={{ fontSize: "0.7rem", display: "flex", justifyContent: "space-between" }}>
+                                    <span>Fondo Personalizado</span>
+                                    {item.customBgBase64 && (
+                                      <button type="button" onClick={() => regenerateThumbnailForIndex(item.index, { customBgBase64: null })} style={{ background: "none", border: "none", color: "#ef4444", fontSize: "0.75rem", cursor: "pointer", padding: 0 }}>Restaurar</button>
+                                    )}
+                                  </label>
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={(e) => {
+                                      const file = e.target.files[0];
+                                      if (file) {
+                                        const reader = new FileReader();
+                                        reader.onload = (ev) => {
+                                          regenerateThumbnailForIndex(item.index, { customBgBase64: ev.target.result });
+                                        };
+                                        reader.readAsDataURL(file);
+                                      }
+                                    }}
+                                    style={{ fontSize: "0.75rem" }}
+                                  />
+                                </div>
+
+                                {/* Logotipo del programa */}
+                                <div className={styles.inputGroup} style={{ margin: 0 }}>
+                                  <label style={{ fontSize: "0.7rem" }}>Logotipo del programa</label>
+                                  <select
+                                    value={item.selectedProgramLogo || "none"}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      handleBatchLogoChange(item.index, val);
+                                    }}
+                                    style={{
+                                      padding: "0.3rem",
+                                      background: "var(--bg-surface, #0f172a)",
+                                      border: "1px solid var(--border-color, #334155)",
+                                      borderRadius: "4px",
+                                      color: "#fff",
+                                      fontSize: "0.75rem"
+                                    }}
+                                  >
+                                    <option value="none">Ninguno (Sin logo)</option>
+                                    {programLogosCatalog.map(logo => (
+                                      <option key={logo} value={logo}>
+                                        {logo.replace(/\.[^/.]+$/, "").replace(/_/g, " ")}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              </div>
+                            ) : (
+                              <div>
+                                <label style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>Imagen convencional de portada:</label>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  onChange={(e) => {
+                                    const file = e.target.files[0];
+                                    if (file) {
+                                      const reader = new FileReader();
+                                      reader.onload = (ev) => {
+                                        regenerateThumbnailForIndex(item.index, { generatedThumbnailBase64: ev.target.result });
+                                      };
+                                      reader.readAsDataURL(file);
+                                    }
+                                  }}
+                                  style={{ fontSize: "0.75rem" }}
+                                />
+                                {item.generatedThumbnailBase64 && (
+                                  <div style={{ marginTop: "0.5rem", position: "relative", width: "120px" }}>
+                                    <img src={item.generatedThumbnailBase64} alt="Thumb" style={{ width: "100%", borderRadius: "4px" }} />
+                                    <button type="button" onClick={() => regenerateThumbnailForIndex(item.index, { generatedThumbnailBase64: null })} style={{ position: "absolute", top: "-5px", right: "-5px", background: "#ef4444", color: "#fff", border: "none", borderRadius: "50%", cursor: "pointer", width: "18px", height: "18px", fontSize: "10px" }}>✕</button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Columna Derecha: Metadatos del Video */}
+                        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                          <div className={styles.inputGroup} style={{ margin: 0 }}>
+                            <label style={{ display: "flex", justifyContent: "space-between" }}>
+                              <span>Título en YouTube</span>
+                              <span style={{ fontSize: "0.75rem", color: (item.title?.length || 0) >= 90 ? "#ef4444" : "var(--text-muted)" }}>
+                                {(item.title?.length || 0)}/100
+                              </span>
+                            </label>
+                            <input
+                              type="text"
+                              maxLength={100}
+                              value={item.title}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setParsedVideos(prev => {
+                                  const list = [...prev];
+                                  const targetIdx = list.findIndex(x => x.index === item.index);
+                                  if (targetIdx !== -1) list[targetIdx].title = val;
+                                  return list;
+                                });
+                              }}
+                              required
+                            />
+                          </div>
+
+                          <div className={styles.inputGroup} style={{ margin: 0 }}>
+                            <label>Descripción del vídeo</label>
+                            <textarea
+                              rows="8"
+                              value={item.description}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setParsedVideos(prev => {
+                                  const list = [...prev];
+                                  const targetIdx = list.findIndex(x => x.index === item.index);
+                                  if (targetIdx !== -1) list[targetIdx].description = val;
+                                  return list;
+                                });
+                              }}
+                              required
+                              style={{ fontSize: "0.8rem", lineHeight: "1.4" }}
+                            />
+                          </div>
+
+                          {/* Playlist */}
+                          <div className={styles.inputGroup} style={{ margin: 0 }}>
+                            <label style={{ fontSize: "0.8rem", fontWeight: "600" }}>Añadir a Lista de Reproducción:</label>
+                            <select
+                              value={item.playlistId || ""}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setParsedVideos(prev => {
+                                  const list = [...prev];
+                                  const targetIdx = list.findIndex(x => x.index === item.index);
+                                  if (targetIdx !== -1) list[targetIdx].playlistId = val;
+                                  return list;
+                                });
+                              }}
+                              style={{
+                                padding: "0.5rem",
+                                background: "var(--bg-surface, #0f172a)",
+                                border: "1px solid var(--border-color, #334155)",
+                                borderRadius: "6px",
+                                color: "#fff",
+                                fontSize: "0.8rem"
+                              }}
+                            >
+                              <option value="">-- Ninguna lista --</option>
+                              {playlists.map(pl => (
+                                <option key={pl.id} value={pl.id}>{pl.title}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* Programación */}
+                          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                              <input
+                                type="checkbox"
+                                id={`sched-${item.index}`}
+                                checked={item.isScheduled}
+                                onChange={(e) => {
+                                  const val = e.target.checked;
+                                  setParsedVideos(prev => {
+                                    const list = [...prev];
+                                    const targetIdx = list.findIndex(x => x.index === item.index);
+                                    if (targetIdx !== -1) list[targetIdx].isScheduled = val;
+                                    return list;
+                                  });
+                                }}
+                              />
+                              <label htmlFor={`sched-${item.index}`} style={{ cursor: "pointer", fontSize: "0.8rem", fontWeight: "600" }}>
+                                Programar sincronización automática:
+                              </label>
+                            </div>
+
+                            {item.isScheduled && (
+                              <div className={styles.inputGroup} style={{ margin: 0 }}>
+                                <label style={{ fontSize: "0.75rem" }}>Fecha y Hora</label>
+                                <input
+                                  type="datetime-local"
+                                  required={item.isScheduled}
+                                  value={item.scheduledAt}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setParsedVideos(prev => {
+                                      const list = [...prev];
+                                      const targetIdx = list.findIndex(x => x.index === item.index);
+                                      if (targetIdx !== -1) list[targetIdx].scheduledAt = val;
+                                      return list;
+                                    });
+                                  }}
+                                  style={{ padding: "0.4rem", fontSize: "0.8rem" }}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Botón de Sincronización en Lote */}
+              <div style={{
+                marginTop: "2rem",
+                paddingTop: "1.5rem",
+                borderTop: "1px solid var(--border-color, #334155)",
+                display: "flex",
+                gap: "1rem"
+              }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm("¿Descartar el documento actual y todos los cambios no guardados?")) {
+                      setParsedVideos([]);
+                      setDocumentFile(null);
+                    }
+                  }}
+                  className={styles.btnCancel}
+                  style={{ flex: 1 }}
+                >Descartar Todo</button>
+                <button
+                  type="button"
+                  onClick={handleSyncAllVideos}
+                  disabled={isSyncingBatch}
+                  className={styles.btnSubmit}
+                  style={{ flex: 2, background: "linear-gradient(135deg, #10b981 0%, #059669 100%)", boxShadow: "0 4px 15px rgba(16, 185, 129, 0.3)" }}
+                >
+                  🚀 Sincronizar todos los videos ({parsedVideos.filter(v => v.matchedVideoId).length} mapeados)
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Formulario de Edición (Si hay un video seleccionado) */}
           {selectedYoutubeVideo && (
@@ -1387,9 +2238,9 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
               }}>
                 <span style={{ fontSize: "1.1rem" }}>📋</span>
                 <div>
-                  <strong>Estado actual:</strong> Pendiente de sincronización.
+                  <strong>Estado actual:</strong> Listo para edición.
                   <span style={{ display: "block", fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                    Los datos correspondientes al Vídeo {videoIndex} del PDF se han copiado literalmente. Sincroniza para finalizar.
+                    Los datos correspondientes se han cargado en el editor. Realiza tus cambios y sincroniza con YouTube para aplicar.
                   </span>
                 </div>
               </div>
@@ -1602,9 +2453,7 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
                                    }}
                                    onClick={() => setLogoDropdownOpen(!logoDropdownOpen)}
                                  >
-                                   {selectedProgramLogo === "default"
-                                     ? "Hora Galega (Por defecto)"
-                                     : selectedProgramLogo === "none"
+                                   {selectedProgramLogo === "none"
                                      ? "Ninguno (Sin logotipo)"
                                      : selectedProgramLogo.replace(/\.[^/.]+$/, "").replace(/_/g, " ")}
                                    <span style={{ marginLeft: "0.3rem" }}>▾</span>
@@ -1628,20 +2477,10 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
                                      }}
                                    >
                                      <li
-                                       key="default"
-                                       style={{ padding: "0.4rem", cursor: "pointer", borderRadius: "4px" }}
-                                       onClick={() => {
-                                         setSelectedProgramLogo("default");
-                                         setLogoDropdownOpen(false);
-                                       }}
-                                     >
-                                       Hora Galega (Por defecto)
-                                     </li>
-                                     <li
                                        key="none"
                                        style={{ padding: "0.4rem", cursor: "pointer", borderRadius: "4px" }}
                                        onClick={() => {
-                                         setSelectedProgramLogo("none");
+                                         handleLogoChange("none");
                                          setLogoDropdownOpen(false);
                                        }}
                                      >
@@ -1661,7 +2500,7 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
                                          <span
                                            style={{ cursor: "pointer", flex: 1 }}
                                            onClick={() => {
-                                             setSelectedProgramLogo(logo);
+                                             handleLogoChange(logo);
                                              setLogoDropdownOpen(false);
                                            }}
                                          >
@@ -1690,7 +2529,7 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
                                                const data = await res.json();
                                                if (data.success) {
                                                  await fetchProgramLogosCatalog();
-                                                 if (selectedProgramLogo === logo) setSelectedProgramLogo("default");
+                                                 if (selectedProgramLogo === logo) setSelectedProgramLogo("none");
                                                } else {
                                                  alert("Error al eliminar logotipo: " + data.error);
                                                }
@@ -1888,10 +2727,9 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
               </div>
             </div>
           )}
-        </div>
 
-        {/* Columna Derecha: Tareas (Pendientes y Realizadas) */}
-        <div className={styles.sidebarCol}>
+        {/* Fila 3: Videos Pendientes e Historial (en dos columnas abajo) */}
+        <div className={styles.bottomGrid}>
           
           {/* Pendientes de Sincronización */}
           <div className={styles.card}>
@@ -2103,6 +2941,56 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
               />
             </div>
 
+            {isAuthRequired && (
+              <div style={{
+                marginTop: "1.5rem",
+                paddingTop: "1.5rem",
+                borderTop: "1px solid var(--border-color, #334155)",
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.75rem"
+              }}>
+                <label style={{ fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: "600" }}>
+                  Sesión de la Aplicación
+                </label>
+                <div style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "0.75rem 1rem",
+                  background: "rgba(255,255,255,0.02)",
+                  border: "1px solid var(--border-color, #334155)",
+                  borderRadius: "8px"
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <span style={{ fontSize: "1.2rem" }}>👤</span>
+                    <span style={{ fontSize: "0.85rem", color: "#f8fafc", fontWeight: "500" }}>
+                      {currentUserEmail}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      window.location.href = "/api/auth/logout";
+                    }}
+                    className={styles.disconnectBtn}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "0.25rem",
+                      padding: "0.5rem 0.8rem",
+                      fontSize: "0.8rem",
+                      width: "auto",
+                      margin: 0
+                    }}
+                    title="Cerrar sesión"
+                  >
+                    🔒 Bloquear / Saír
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className={styles.settingsActions}>
               <button type="button" onClick={() => setShowSettings(false)} className={styles.btnCancel}>Cancelar</button>
               <button type="submit" disabled={savingConfig} className={styles.btnSubmit} style={{ width: "auto" }}>
@@ -2110,6 +2998,160 @@ const [logoDropdownOpen, setLogoDropdownOpen] = useState(false);
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* Modal de Catálogo de Logotipos */}
+      {showLogosManager && (
+        <div className={styles.settingsOverlay}>
+          <div className={styles.settingsModal} style={{ maxWidth: "550px" }}>
+            <div className={styles.settingsHeader}>
+              <h2 style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                🎨 Catálogo de Logotipos
+              </h2>
+              <button type="button" onClick={() => setShowLogosManager(false)} className={styles.closeBtn}>✕</button>
+            </div>
+
+            <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: "1rem" }}>
+              Sube logotipos de programas en formato PNG transparentes. Se usarán de fondo o superposición en las portadas de los vídeos.
+            </p>
+
+            {/* Subir nuevo logo */}
+            <div style={{ marginBottom: "1.5rem", padding: "1rem", background: "rgba(255,255,255,0.02)", borderRadius: "8px", border: "1px solid var(--border-color, #334155)" }}>
+              <label
+                className={styles.btnSubmit}
+                style={{
+                  padding: "0.5rem 1rem",
+                  fontSize: "0.8rem",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                  width: "auto",
+                  margin: 0,
+                  background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
+                  color: "#fff"
+                }}
+              >
+                📤 Subir Nuevo Logotipo (PNG)
+                <input
+                  type="file"
+                  accept="image/png"
+                  onChange={async (e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                      const formData = new FormData();
+                      formData.append("file", file);
+                      try {
+                        const res = await fetch("/api/program-logos", {
+                          method: "POST",
+                          body: formData,
+                        });
+                        const data = await res.json();
+                        if (data.success) {
+                          await fetchProgramLogosCatalog();
+                        } else {
+                          alert("Error subiendo logotipo: " + data.error);
+                        }
+                      } catch (err) {
+                        console.error("Error subiendo logotipo:", err);
+                      }
+                    }
+                  }}
+                  style={{ display: "none" }}
+                />
+              </label>
+            </div>
+
+            {/* Listado de logotipos existentes */}
+            <h3 style={{ fontSize: "0.9rem", fontWeight: "600", marginBottom: "0.5rem" }}>Logotipos Registrados ({programLogosCatalog.length})</h3>
+            <div style={{ maxHeight: "250px", overflowY: "auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", padding: "0.25rem" }}>
+              {programLogosCatalog.length === 0 ? (
+                <div style={{ gridColumn: "span 2", fontSize: "0.8rem", color: "var(--text-muted)", textAlign: "center", padding: "1rem" }}>
+                  No hay logotipos registrados en el catálogo.
+                </div>
+              ) : (
+                programLogosCatalog.map(logo => (
+                  <div key={logo} style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "0.5rem",
+                    background: "var(--bg-card, #0f172a)",
+                    border: "1px solid var(--border-color, #334155)",
+                    borderRadius: "8px",
+                    gap: "0.5rem"
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", minWidth: 0, flex: 1 }}>
+                      <img src={`/program_logos/${logo}`} alt="" style={{ width: "32px", height: "32px", objectFit: "contain", borderRadius: "4px", background: "rgba(255,255,255,0.05)" }} />
+                      <span style={{ fontSize: "0.75rem", fontWeight: "600", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+                        {logo.replace(/\.[^/.]+$/, "").replace(/_/g, " ")}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label={`Eliminar ${logo}`}
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        color: "#ef4444",
+                        cursor: "pointer",
+                        fontSize: "0.85rem",
+                        padding: "0.25rem"
+                      }}
+                      onClick={async () => {
+                        if (!confirm(`¿Eliminar el logotipo "${logo}"?`)) return;
+                        try {
+                          const res = await fetch("/api/program-logos", {
+                            method: "DELETE",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ filename: logo }),
+                          });
+                          const data = await res.json();
+                          if (data.success) {
+                            await fetchProgramLogosCatalog();
+                          } else {
+                            alert("Error al eliminar logotipo: " + data.error);
+                          }
+                        } catch (err) {
+                          console.error("Error al eliminar logotipo:", err);
+                        }
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Overlay de Sincronización en Lote */}
+      {isSyncingBatch && (
+        <div className={styles.batchSyncOverlay}>
+          <div className={styles.batchSyncModal}>
+            <div className={styles.batchSyncSpinner} />
+            <h3 style={{ fontSize: "1.25rem", fontWeight: "800", color: "#f8fafc", margin: 0 }}>
+              Sincronizando Videos en Lote
+            </h3>
+            <p style={{ fontSize: "0.9rem", color: "#94a3b8", margin: 0 }}>
+              {syncProgress.status}
+            </p>
+            <div style={{ width: "100%" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "#64748b", marginBottom: "0.25rem" }}>
+                <span>Progreso</span>
+                <span>{syncProgress.current} de {syncProgress.total}</span>
+              </div>
+              <div className={styles.batchSyncProgressOuter}>
+                <div 
+                  className={styles.batchSyncProgressInner} 
+                  style={{ width: `${syncProgress.total > 0 ? (syncProgress.current / syncProgress.total) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
