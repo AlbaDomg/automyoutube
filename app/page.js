@@ -85,6 +85,47 @@ function findBestPlaylist(playlists, programName) {
   return best || null;
 }
 
+// Helper para encontrar el logotipo ideal basado en el nombre de la lista de reproducción
+function findBestLogoForPlaylist(playlistTitle, logosCatalog) {
+  if (!playlistTitle || !logosCatalog || logosCatalog.length === 0) return "none";
+  
+  const cleanPl = playlistTitle.toUpperCase().replace(/_/g, " ").trim();
+  const slugPl = slugify(cleanPl);
+  const normPl = slugPl.replace(/hola/g, "hora");
+  
+  // Fase 1: Coincidencia exacta
+  let best = logosCatalog.find(logo => {
+    const cleanLogo = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
+    if (cleanPl === cleanLogo) return true;
+    
+    const slugLogo = slugify(cleanLogo);
+    const normLogo = slugLogo.replace(/hola/g, "hora");
+    return normPl === normLogo;
+  });
+  
+  if (best) return best;
+  
+  // Fase 2: El nombre de la playlist contiene el logotipo del programa
+  best = logosCatalog.find(logo => {
+    const cleanLogo = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
+    const slugLogo = slugify(cleanLogo);
+    const normLogo = slugLogo.replace(/hola/g, "hora");
+    return normLogo.length > 2 && normPl.includes(normLogo);
+  });
+  
+  if (best) return best;
+
+  // Fase 3: El logotipo del programa contiene el nombre de la playlist
+  best = logosCatalog.find(logo => {
+    const cleanLogo = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
+    const slugLogo = slugify(cleanLogo);
+    const normLogo = slugLogo.replace(/hola/g, "hora");
+    return normPl.length > 2 && normLogo.includes(normPl);
+  });
+  
+  return best || "none";
+}
+
 // Helper para actualizar el sufijo de programa del título
 function updateTitleSuffix(title, programName) {
   let cleanTitle = (title || "").trim();
@@ -375,48 +416,55 @@ export default function Dashboard() {
     setNewThumbnailBase64(null);
   };
 
-  // Cambiar logo y actualizar título y descripción en el editor individual
-  const handleLogoChange = (logoVal) => {
-    setSelectedProgramLogo(logoVal);
-    
-    // Auto-detectar la playlist correspondiente al logo
-    let matchedPlaylistId = updateForm.playlistId;
-    if (logoVal && logoVal !== "none") {
-      const foundPl = findBestPlaylist(playlists, logoVal);
-      if (foundPl) {
-        matchedPlaylistId = foundPl.id;
-      }
-    }
+  // Helper para obtener el logotipo asociado a una playlist
+  const getMatchedLogoForPlaylist = (playlistId) => {
+    if (!playlistId || playlistId === "") return "none";
+    const playlist = playlists.find(pl => pl.id === playlistId);
+    if (!playlist) return "none";
+    return findBestLogoForPlaylist(playlist.title, programLogosCatalog);
+  };
 
+  // Cambiar playlist y actualizar automáticamente logotipo, título y descripción en el editor individual
+  const handleSinglePlaylistChange = (playlistId) => {
+    const matchedLogo = getMatchedLogoForPlaylist(playlistId);
+    setSelectedProgramLogo(matchedLogo);
     setUpdateForm(prev => ({
       ...prev,
-      title: updateTitleSuffix(prev.title, logoVal),
-      description: updateDescriptionUrl(prev.description, logoVal),
-      playlistId: matchedPlaylistId
+      playlistId: playlistId,
+      title: updateTitleSuffix(prev.title, matchedLogo),
+      description: updateDescriptionUrl(prev.description, matchedLogo)
     }));
   };
 
-  // Cambiar logo y actualizar título y descripción en el editor por lotes
-  const handleBatchLogoChange = (index, logoVal) => {
-    // Auto-detectar la playlist correspondiente al logo
-    let matchedPlaylistId = "";
-    if (logoVal && logoVal !== "none") {
-      const foundPl = findBestPlaylist(playlists, logoVal);
-      if (foundPl) {
-        matchedPlaylistId = foundPl.id;
+  // Cambiar playlist y actualizar automáticamente logotipo, título y descripción en el editor por lotes
+  const handleBatchPlaylistChange = (index, playlistId) => {
+    const matchedLogo = getMatchedLogoForPlaylist(playlistId);
+    setParsedVideos(prev => {
+      const list = [...prev];
+      const idx = list.findIndex(v => v.index === index);
+      if (idx !== -1) {
+        list[idx].playlistId = playlistId;
+        list[idx].selectedProgramLogo = matchedLogo;
+        list[idx].title = updateTitleSuffix(list[idx].title, matchedLogo);
+        list[idx].description = updateDescriptionUrl(list[idx].description, matchedLogo);
       }
-    }
+      return list;
+    });
+    regenerateThumbnailForIndex(index, { selectedProgramLogo: matchedLogo });
+  };
 
+  // Cambiar logo en el editor individual (solo cambia el logo, no toca título/descripción/playlist)
+  const handleLogoChange = (logoVal) => {
+    setSelectedProgramLogo(logoVal);
+  };
+
+  // Cambiar logo en el editor por lotes (solo cambia el logo y regenera miniatura, no toca título/descripción/playlist)
+  const handleBatchLogoChange = (index, logoVal) => {
     setParsedVideos(prev => {
       const list = [...prev];
       const idx = list.findIndex(v => v.index === index);
       if (idx !== -1) {
         list[idx].selectedProgramLogo = logoVal;
-        list[idx].title = updateTitleSuffix(list[idx].title, logoVal);
-        list[idx].description = updateDescriptionUrl(list[idx].description, logoVal);
-        if (matchedPlaylistId) {
-          list[idx].playlistId = matchedPlaylistId;
-        }
       }
       return list;
     });
@@ -705,20 +753,7 @@ export default function Dashboard() {
     }
   }, [selectedProgramLogo, selectedYoutubeVideo]);
 
-  // Sincronizar playlist correspondiente al cambiar el logotipo del programa (tanto manual como automático)
-  useEffect(() => {
-    if (selectedProgramLogo && selectedProgramLogo !== "none" && playlists.length > 0) {
-      const foundPl = findBestPlaylist(playlists, selectedProgramLogo);
-      if (foundPl) {
-        setUpdateForm(prev => {
-          if (!prev.playlistId) {
-            return { ...prev, playlistId: foundPl.id };
-          }
-          return prev;
-        });
-      }
-    }
-  }, [selectedProgramLogo, playlists]);
+
 
   // Helper para obtener una URL de miniatura limpia (sin capas previas de logo o texto)
   const getCleanVideoFrameUrl = (videoThumbnailUrl, videoId) => {
@@ -2442,13 +2477,7 @@ export default function Dashboard() {
                             <select
                               value={item.playlistId || ""}
                               onChange={(e) => {
-                                const val = e.target.value;
-                                setParsedVideos(prev => {
-                                  const list = [...prev];
-                                  const targetIdx = list.findIndex(x => x.index === item.index);
-                                  if (targetIdx !== -1) list[targetIdx].playlistId = val;
-                                  return list;
-                                });
+                                handleBatchPlaylistChange(item.index, e.target.value);
                               }}
                               style={{
                                 padding: "0.5rem",
@@ -2960,7 +2989,7 @@ export default function Dashboard() {
                     <select
                       id="playlistSelect"
                       value={updateForm.playlistId || ""}
-                      onChange={(e) => setUpdateForm({ ...updateForm, playlistId: e.target.value })}
+                      onChange={(e) => handleSinglePlaylistChange(e.target.value)}
                       style={{
                         padding: "0.5rem",
                         background: "var(--bg-surface, #0f172a)",
