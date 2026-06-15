@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, Fragment } from "react";
 import styles from "./page.module.css";
+import DateTimePicker from "@/components/DateTimePicker";
 
 // Helper para generar UUIDs en contextos de red no seguros
 function generateUUID() {
@@ -2490,8 +2491,7 @@ export default function Dashboard() {
                             {item.isScheduled && (
                               <div className={styles.inputGroup} style={{ margin: 0 }}>
                                 <label style={{ fontSize: "0.75rem" }}>Fecha y Hora</label>
-                                <input
-                                  type="datetime-local"
+                                <DateTimePicker
                                   required={item.isScheduled}
                                   value={item.scheduledAt}
                                   onChange={(e) => {
@@ -2503,7 +2503,7 @@ export default function Dashboard() {
                                       return list;
                                     });
                                   }}
-                                  style={{ padding: "0.4rem", fontSize: "0.8rem" }}
+                                  style={{ fontSize: "0.8rem" }}
                                 />
                               </div>
                             )}
@@ -2997,8 +2997,7 @@ export default function Dashboard() {
                   {updateForm.isScheduled && (
                     <div className={styles.inputGroup}>
                       <label>Fecha y Hora</label>
-                      <input
-                        type="datetime-local"
+                      <DateTimePicker
                         required={updateForm.isScheduled}
                         value={updateForm.scheduledAt}
                         onChange={(e) => setUpdateForm({ ...updateForm, scheduledAt: e.target.value })}
