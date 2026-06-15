@@ -120,6 +120,7 @@ export async function DELETE(request) {
         console.log(`[Program Logos API] Deleted logo locally: ${safeFilename}`);
       } catch (fsErr) {
         console.warn("[Program Logos API DELETE] Failed to delete from disk (expected on Vercel):", fsErr.message);
+        return NextResponse.json({ error: `No se pudo borrar del disco local: ${fsErr.message}` }, { status: 500 });
       }
     }
 
