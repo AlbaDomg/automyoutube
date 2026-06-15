@@ -43,6 +43,47 @@ function slugify(text) {
     .replace(/[^a-z0-9]/g, "");
 }
 
+// Helper para encontrar la lista de reproducción ideal basada en el programa, priorizando coincidencias exactas para evitar falsos positivos
+function findBestPlaylist(playlists, programName) {
+  if (!playlists || playlists.length === 0 || !programName) return null;
+
+  const cleanProg = programName.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
+  const slugProg = slugify(cleanProg);
+  const normProg = slugProg.replace(/hola/g, "hora");
+
+  // Fase 1: Coincidencia exacta (título limpio o slug normalizado)
+  let best = playlists.find(pl => {
+    const cleanPl = pl.title.toUpperCase().replace(/_/g, " ").trim();
+    if (cleanPl === cleanProg) return true;
+    
+    const slugPl = slugify(cleanPl);
+    const normPl = slugPl.replace(/hola/g, "hora");
+    return normPl === normProg;
+  });
+
+  if (best) return best;
+
+  // Fase 2: La playlist contiene al programa (p. ej. playlist larga que contiene el nombre del programa)
+  best = playlists.find(pl => {
+    const cleanPl = pl.title.toUpperCase().replace(/_/g, " ").trim();
+    const slugPl = slugify(cleanPl);
+    const normPl = slugPl.replace(/hola/g, "hora");
+    return normPl.includes(normProg);
+  });
+
+  if (best) return best;
+
+  // Fase 3: El programa contiene a la playlist (exigiendo longitud mínima para evitar falsos positivos como "Hola")
+  best = playlists.find(pl => {
+    const cleanPl = pl.title.toUpperCase().replace(/_/g, " ").trim();
+    const slugPl = slugify(cleanPl);
+    const normPl = slugPl.replace(/hola/g, "hora");
+    return normPl.length >= 5 && normProg.includes(normPl);
+  });
+
+  return best || null;
+}
+
 // Helper para actualizar el sufijo de programa del título
 function updateTitleSuffix(title, programName) {
   let cleanTitle = (title || "").trim();
@@ -56,7 +97,7 @@ function updateTitleSuffix(title, programName) {
   return cleanTitle;
 }
 
-// Helper para actualizar la URL de programa en la descripción
+// Helper para actualizar la URL de programa y asegurar la presencia del bloque social en la descripción
 function updateDescriptionUrl(description, programName) {
   let slug = "horagalega";
   if (programName && programName !== "none") {
@@ -64,12 +105,167 @@ function updateDescriptionUrl(description, programName) {
     slug = slugify(cleanProg);
   }
   
-  const urlRegex = /tvg\.gal\/[a-z0-9]+/gi;
-  const descStr = description || "";
-  if (urlRegex.test(descStr)) {
-    return descStr.replace(urlRegex, `tvg.gal/${slug}`);
+  const descStr = (description || "").trim();
+  
+  // Si ya tiene el bloque de redes sociales o un enlace de tvg.gal, solo nos aseguramos de que el link de tvg.gal/slug esté actualizado
+  if (descStr.includes("seguirnos en todas as nosas redes sociais") || descStr.includes("tvg.gal/")) {
+    const urlRegex = /tvg\.gal\/[a-z0-9]+/gi;
+    if (urlRegex.test(descStr)) {
+      return descStr.replace(urlRegex, `tvg.gal/${slug}`);
+    }
+    return descStr;
   }
-  return descStr;
+  
+  // Si no tiene el bloque de redes sociales, se lo añadimos con el slug correspondiente
+  const socialBlock = `\n\nPodes ver o programa completo en tvg.gal/${slug}\n\n🔔 Subscríbete á canle oficial da Televisión de Galicia en YouTube: https://www.youtube.com/tvg\n\n🌐 Visita a nosa páxina web: https://agalega.gal/\n\n📲 E tamén podes seguirnos en todas as nosas redes sociais:\nFacebook: https://www.facebook.com/televisiondegalicia\nTwitter: https://x.com/tvgalicia\nInstagram: https://www.instagram.com/tvgalicia\nTikTok: https://www.tiktok.com/@tvgalicia`;
+  
+  return descStr ? `${descStr}${socialBlock}` : socialBlock.trim();
+}
+
+// Helper para renderizar la descripción con vista previa de enlaces de redes (pills) estilo YouTube
+function renderDescriptionPreview(text) {
+  if (!text) return null;
+  const lines = text.split("\n");
+  
+  return lines.map((line, idx) => {
+    // Buscar enlaces de redes sociales oficiales
+    const fbMatch = line.match(/^Facebook:\s*(https?:\/\/(?:www\.)?facebook\.com\/([a-zA-Z0-9_\-\.]+)\/?)/i);
+    const twMatch = line.match(/^(?:Twitter|X):\s*(https?:\/\/(?:www\.)?(?:x|twitter)\.com\/([a-zA-Z0-9_\-\.]+)\/?)/i);
+    const igMatch = line.match(/^Instagram:\s*(https?:\/\/(?:www\.)?instagram\.com\/([a-zA-Z0-9_\-\.]+)\/?)/i);
+    const ttMatch = line.match(/^TikTok:\s*(https?:\/\/(?:www\.)?tiktok\.com\/@?([a-zA-Z0-9_\-\.]+)\/?)/i);
+    const ytSubMatch = line.match(/^(🔔\s*Subscríbete\s+[^:]+):\s*(https?:\/\/[^\s]+)/i);
+    const webMatch = line.match(/^(🌐\s*Visita\s+[^:]+):\s*(https?:\/\/[^\s]+)/i);
+    const generalUrlMatch = line.match(/^(Podes\s+ver\s+[^:]+):\s*(https?:\/\/[^\s]+)/i);
+
+    const pillStyle = {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: "6px",
+      background: "rgba(255, 255, 255, 0.08)",
+      border: "1px solid rgba(255, 255, 255, 0.15)",
+      borderRadius: "16px",
+      padding: "3px 12px",
+      fontSize: "0.8rem",
+      color: "#f1f5f9",
+      textDecoration: "none",
+      marginLeft: "6px",
+      verticalAlign: "middle",
+      boxShadow: "0 1px 3px rgba(0,0,0,0.1)"
+    };
+
+    const labelStyle = {
+      fontWeight: "500",
+      color: "#94a3b8"
+    };
+
+    if (fbMatch) {
+      const url = fbMatch[1];
+      const username = fbMatch[2];
+      return (
+        <div key={idx} style={{ marginBottom: "6px" }}>
+          <span style={labelStyle}>Facebook: </span>
+          <a href={url} target="_blank" rel="noopener noreferrer" style={pillStyle}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="#1877f2" style={{ display: "inline-block", verticalAlign: "middle" }}>
+              <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+            </svg>
+            <span style={{ fontSize: "0.75rem", opacity: 0.9 }}>/ {username}</span>
+          </a>
+        </div>
+      );
+    }
+
+    if (twMatch) {
+      const url = twMatch[1];
+      const username = twMatch[2];
+      return (
+        <div key={idx} style={{ marginBottom: "6px" }}>
+          <span style={labelStyle}>Twitter: </span>
+          <a href={url} target="_blank" rel="noopener noreferrer" style={pillStyle}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="#ffffff" style={{ display: "inline-block", verticalAlign: "middle" }}>
+              <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+            </svg>
+            <span style={{ fontSize: "0.75rem", opacity: 0.9 }}>/ {username}</span>
+          </a>
+        </div>
+      );
+    }
+
+    if (igMatch) {
+      const url = igMatch[1];
+      const username = igMatch[2];
+      return (
+        <div key={idx} style={{ marginBottom: "6px" }}>
+          <span style={labelStyle}>Instagram: </span>
+          <a href={url} target="_blank" rel="noopener noreferrer" style={pillStyle}>
+            <svg width="14" height="14" viewBox="0 0 24 24" style={{ display: "inline-block", verticalAlign: "middle" }}>
+              <defs>
+                <linearGradient id="ig-grad" x1="0%" y1="100%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor="#f09433" />
+                  <stop offset="25%" stopColor="#e6683c" />
+                  <stop offset="50%" stopColor="#dc2743" />
+                  <stop offset="75%" stopColor="#cc2366" />
+                  <stop offset="100%" stopColor="#bc1888" />
+                </linearGradient>
+              </defs>
+              <path fill="url(#ig-grad)" d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.051.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z"/>
+            </svg>
+            <span style={{ fontSize: "0.75rem", opacity: 0.9 }}>/ {username}</span>
+          </a>
+        </div>
+      );
+    }
+
+    if (ttMatch) {
+      const url = ttMatch[1];
+      const username = ttMatch[2];
+      return (
+        <div key={idx} style={{ marginBottom: "6px" }}>
+          <span style={labelStyle}>TikTok: </span>
+          <a href={url} target="_blank" rel="noopener noreferrer" style={pillStyle}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="#ffffff" style={{ display: "inline-block", verticalAlign: "middle" }}>
+              <path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.17-2.86-.74-3.95-1.72-.1.65-.18 1.3-.19 1.96-.02 2.64-.78 5.24-2.52 7.22-1.7 1.97-4.22 3.14-6.83 3.13-2.92.05-5.83-1.38-7.39-3.88-1.61-2.52-1.76-5.83-.4-8.48 1.25-2.48 3.73-4.14 6.5-4.41V7.99c-1.7.19-3.27 1.13-4.04 2.67-.84 1.63-.76 3.67.23 5.2 1.01 1.58 2.89 2.52 4.77 2.37 1.83-.08 3.53-1.23 4.13-2.97.47-1.31.43-2.73.44-4.1V.02z"/>
+            </svg>
+            <span style={{ fontSize: "0.75rem", opacity: 0.9 }}>/ {username}</span>
+          </a>
+        </div>
+      );
+    }
+
+    if (ytSubMatch) {
+      const text = ytSubMatch[1];
+      const url = ytSubMatch[2];
+      return (
+        <div key={idx} style={{ marginBottom: "6px" }}>
+          <span style={labelStyle}>{text}: </span>
+          <a href={url} target="_blank" rel="noopener noreferrer" style={{ color: "#38bdf8", textDecoration: "none" }}>{url}</a>
+        </div>
+      );
+    }
+
+    if (webMatch) {
+      const text = webMatch[1];
+      const url = webMatch[2];
+      return (
+        <div key={idx} style={{ marginBottom: "6px" }}>
+          <span style={labelStyle}>{text}: </span>
+          <a href={url} target="_blank" rel="noopener noreferrer" style={{ color: "#38bdf8", textDecoration: "none" }}>{url}</a>
+        </div>
+      );
+    }
+
+    if (generalUrlMatch) {
+      const text = generalUrlMatch[1];
+      const url = generalUrlMatch[2];
+      return (
+        <div key={idx} style={{ marginBottom: "6px" }}>
+          <span style={{ color: "var(--text-main)" }}>{text}: </span>
+          <a href={url} target="_blank" rel="noopener noreferrer" style={{ color: "#38bdf8", textDecoration: "none" }}>{url}</a>
+        </div>
+      );
+    }
+
+    return <div key={idx} style={{ minHeight: "1.2em" }}>{line}</div>;
+  });
 }
 
 export default function Dashboard() {
@@ -181,15 +377,35 @@ export default function Dashboard() {
   // Cambiar logo y actualizar título y descripción en el editor individual
   const handleLogoChange = (logoVal) => {
     setSelectedProgramLogo(logoVal);
+    
+    // Auto-detectar la playlist correspondiente al logo
+    let matchedPlaylistId = updateForm.playlistId;
+    if (logoVal && logoVal !== "none") {
+      const foundPl = findBestPlaylist(playlists, logoVal);
+      if (foundPl) {
+        matchedPlaylistId = foundPl.id;
+      }
+    }
+
     setUpdateForm(prev => ({
       ...prev,
       title: updateTitleSuffix(prev.title, logoVal),
-      description: updateDescriptionUrl(prev.description, logoVal)
+      description: updateDescriptionUrl(prev.description, logoVal),
+      playlistId: matchedPlaylistId
     }));
   };
 
   // Cambiar logo y actualizar título y descripción en el editor por lotes
   const handleBatchLogoChange = (index, logoVal) => {
+    // Auto-detectar la playlist correspondiente al logo
+    let matchedPlaylistId = "";
+    if (logoVal && logoVal !== "none") {
+      const foundPl = findBestPlaylist(playlists, logoVal);
+      if (foundPl) {
+        matchedPlaylistId = foundPl.id;
+      }
+    }
+
     setParsedVideos(prev => {
       const list = [...prev];
       const idx = list.findIndex(v => v.index === index);
@@ -197,6 +413,9 @@ export default function Dashboard() {
         list[idx].selectedProgramLogo = logoVal;
         list[idx].title = updateTitleSuffix(list[idx].title, logoVal);
         list[idx].description = updateDescriptionUrl(list[idx].description, logoVal);
+        if (matchedPlaylistId) {
+          list[idx].playlistId = matchedPlaylistId;
+        }
       }
       return list;
     });
@@ -449,7 +668,14 @@ export default function Dashboard() {
           if (detectedProg) {
             const found = programLogosCatalog.find(logo => {
               const cleanLogoName = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
-              return cleanLogoName === detectedProg || slugify(cleanLogoName) === slugify(detectedProg);
+              const slugLogo = slugify(cleanLogoName);
+              const slugProg = slugify(detectedProg);
+              return (
+                cleanLogoName === detectedProg ||
+                slugLogo === slugProg ||
+                (slugLogo.length > 3 && slugProg.includes(slugLogo)) ||
+                (slugProg.length > 3 && slugLogo.includes(slugProg))
+              );
             });
             if (found) {
               setSelectedProgramLogo(found);
@@ -477,6 +703,21 @@ export default function Dashboard() {
       }
     }
   }, [selectedProgramLogo, selectedYoutubeVideo]);
+
+  // Sincronizar playlist correspondiente al cambiar el logotipo del programa (tanto manual como automático)
+  useEffect(() => {
+    if (selectedProgramLogo && selectedProgramLogo !== "none" && playlists.length > 0) {
+      const foundPl = findBestPlaylist(playlists, selectedProgramLogo);
+      if (foundPl) {
+        setUpdateForm(prev => {
+          if (!prev.playlistId) {
+            return { ...prev, playlistId: foundPl.id };
+          }
+          return prev;
+        });
+      }
+    }
+  }, [selectedProgramLogo, playlists]);
 
   // Helper para obtener una URL de miniatura limpia (sin capas previas de logo o texto)
   const getCleanVideoFrameUrl = (videoThumbnailUrl, videoId) => {
@@ -910,10 +1151,55 @@ export default function Dashboard() {
     
     // Buscar si ya hay una actualización programada para este video
     const scheduledUpdate = scheduledUpdates.find(u => u.youtubeId === video.id);
+
+    // Auto-detectar programa para inicializar con la descripción con el bloque social correcto
+    let detectedProg = "none";
+    const cleanId = extractYoutubeId(video.id);
+    if (cleanId) {
+      const saved = localStorage.getItem(`prog_logo_${cleanId}`);
+      if (saved) {
+        detectedProg = saved;
+      } else {
+        const title = video.title || "";
+        const desc = video.description || "";
+        const suffixMatch = title.match(/\|\s*([a-zA-Z0-9_\sÀ-ÿ\-]+)$/);
+        if (suffixMatch) {
+          detectedProg = suffixMatch[1].toUpperCase().trim();
+        } else {
+          const descMatch = desc.match(/tvg\.gal\/([a-z0-9]+)/i);
+          if (descMatch) {
+            const slug = descMatch[1].toLowerCase();
+            if (slug !== "horagalega") {
+              detectedProg = slug.toUpperCase();
+            }
+          }
+        }
+        if (detectedProg !== "none") {
+          const found = programLogosCatalog.find(logo => {
+            const cleanLogoName = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
+            const slugLogo = slugify(cleanLogoName);
+            const slugProg = slugify(detectedProg);
+            return (
+              cleanLogoName === detectedProg ||
+              slugLogo === slugProg ||
+              (slugLogo.length > 3 && slugProg.includes(slugLogo)) ||
+              (slugProg.length > 3 && slugLogo.includes(slugProg))
+            );
+          });
+          if (found) {
+            detectedProg = found;
+          } else if (detectedProg === "HORA GALEGA") {
+            detectedProg = "Hora_Galega.png";
+          } else {
+            detectedProg = "none";
+          }
+        }
+      }
+    }
     
     setUpdateForm({
       title: video.title || "",
-      description: video.description || "",
+      description: updateDescriptionUrl(video.description || "", detectedProg),
       tags: video.tags || "",
       isScheduled: !!scheduledUpdate,
       scheduledAt: scheduledUpdate && scheduledUpdate.scheduledAt 
@@ -939,10 +1225,55 @@ export default function Dashboard() {
         
         // Buscar si ya hay una actualización programada para este video
         const scheduledUpdate = scheduledUpdates.find(u => u.youtubeId === task.youtubeId);
+
+        // Auto-detectar programa para inicializar con la descripción con el bloque social correcto
+        let detectedProg = "none";
+        const cleanId = extractYoutubeId(task.youtubeId);
+        if (cleanId) {
+          const saved = localStorage.getItem(`prog_logo_${cleanId}`);
+          if (saved) {
+            detectedProg = saved;
+          } else {
+            const title = task.title || video.title || "";
+            const desc = task.description || video.description || "";
+            const suffixMatch = title.match(/\|\s*([a-zA-Z0-9_\sÀ-ÿ\-]+)$/);
+            if (suffixMatch) {
+              detectedProg = suffixMatch[1].toUpperCase().trim();
+            } else {
+              const descMatch = desc.match(/tvg\.gal\/([a-z0-9]+)/i);
+              if (descMatch) {
+                const slug = descMatch[1].toLowerCase();
+                if (slug !== "horagalega") {
+                  detectedProg = slug.toUpperCase();
+                }
+              }
+            }
+            if (detectedProg !== "none") {
+              const found = programLogosCatalog.find(logo => {
+                const cleanLogoName = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
+                const slugLogo = slugify(cleanLogoName);
+                const slugProg = slugify(detectedProg);
+                return (
+                  cleanLogoName === detectedProg ||
+                  slugLogo === slugProg ||
+                  (slugLogo.length > 3 && slugProg.includes(slugLogo)) ||
+                  (slugProg.length > 3 && slugLogo.includes(slugProg))
+                );
+              });
+              if (found) {
+                detectedProg = found;
+              } else if (detectedProg === "HORA GALEGA") {
+                detectedProg = "Hora_Galega.png";
+              } else {
+                detectedProg = "none";
+              }
+            }
+          }
+        }
         
         setUpdateForm({
           title: task.title || video.title || "",
-          description: task.description || video.description || "",
+          description: updateDescriptionUrl(task.description || video.description || "", detectedProg),
           tags: video.tags || "",
           isScheduled: !!scheduledUpdate,
           scheduledAt: scheduledUpdate && scheduledUpdate.scheduledAt 
@@ -1022,11 +1353,27 @@ export default function Dashboard() {
           } else {
             const found = programLogosCatalog.find(logo => {
               const cleanLogoName = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
-              return cleanLogoName === cleanProg;
+              const slugLogo = slugify(cleanLogoName);
+              const slugProg = slugify(cleanProg);
+              return (
+                cleanLogoName === cleanProg ||
+                slugLogo === slugProg ||
+                (slugLogo.length > 3 && slugProg.includes(slugLogo)) ||
+                (slugProg.length > 3 && slugLogo.includes(slugProg))
+              );
             });
             if (found) {
               matchedLogo = found;
             }
+          }
+        }
+
+        // Detectar si el programa corresponde a alguna lista de reproducción
+        let matchedPlaylistId = "";
+        if (v.programName && playlists.length > 0) {
+          const foundPlaylist = findBestPlaylist(playlists, v.programName);
+          if (foundPlaylist) {
+            matchedPlaylistId = foundPlaylist.id;
           }
         }
 
@@ -1042,7 +1389,7 @@ export default function Dashboard() {
           matchedVideoId: matchedVideo ? matchedVideo.id : "",
           isScheduled: false,
           scheduledAt: "",
-          playlistId: "",
+          playlistId: matchedPlaylistId || "",
           isSyncing: false,
           isSynced: false,
           syncError: null
@@ -1598,9 +1945,7 @@ export default function Dashboard() {
                 <h3 style={{ fontSize: "0.95rem", fontWeight: "700", marginBottom: "0.5rem", color: "var(--text-primary)" }}>
                   📁 Cargar Plantilla de Contenidos (PDF o Word)
                 </h3>
-                <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", margin: "0 0 1rem 0" }}>
-                  Sube la planilla de la empresa en formato PDF o Word (.docx) para mapear automáticamente los textos y generar portadas.
-                </p>
+
 
                 {/* Dropzone para PDF/Word */}
                 <div className={styles.inputGroup}>
@@ -2087,6 +2432,7 @@ export default function Dashboard() {
                               required
                               style={{ fontSize: "0.8rem", lineHeight: "1.4" }}
                             />
+
                           </div>
 
                           {/* Playlist */}
@@ -2282,6 +2628,7 @@ export default function Dashboard() {
                       value={updateForm.description}
                       onChange={(e) => setUpdateForm({ ...updateForm, description: e.target.value })}
                     />
+
                   </div>
 
 

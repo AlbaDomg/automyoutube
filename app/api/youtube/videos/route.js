@@ -116,9 +116,9 @@ export async function GET(request) {
     };
 
     if (videoIds.length > 0) {
-      // Realizar una única consulta por lotes para traer snippets, detalles de contenido y estado de privacidad
+      // Realizar una única consulta por lotes para traer snippets, detalles de contenido, estado de privacidad y detalles de archivo
       const videoDetailsRes = await youtube.videos.list({
-        part: 'snippet,contentDetails,status',
+        part: 'snippet,contentDetails,status,fileDetails',
         id: videoIds.join(',')
       });
 
@@ -147,7 +147,8 @@ export async function GET(request) {
           publishedAt: item.snippet.publishedAt,
           tags: item.snippet.tags ? item.snippet.tags.join(', ') : '',
           isShort: isShort,
-          privacyStatus: privacy
+          privacyStatus: privacy,
+          fileName: item.fileDetails?.fileName || ''
         };
       }).filter(Boolean);
 

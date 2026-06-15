@@ -5,6 +5,8 @@ import prisma from '@/lib/db';
 import { getOAuth2Client } from '@/lib/youtube';
 import { google } from 'googleapis';
 import { verifyAppAuth } from '@/lib/auth';
+import fs from 'fs';
+import path from 'path';
 
 export async function GET(request) {
   try {
@@ -48,18 +50,85 @@ export async function GET(request) {
       auth: oauth2Client
     });
 
-    // Obtener las listas de reproducción del canal conectado
-    const response = await youtube.playlists.list({
-      part: 'snippet,contentDetails',
-      mine: true,
-      maxResults: 50
+    // 1. Obtener todas las listas de reproducción del canal usando paginación
+    let youtubePlaylists = [];
+    let nextPageToken = null;
+    do {
+      const response = await youtube.playlists.list({
+        part: 'snippet,contentDetails',
+        mine: true,
+        maxResults: 50,
+        pageToken: nextPageToken || undefined
+      });
+      if (response.data.items) {
+        youtubePlaylists.push(...response.data.items);
+      }
+      nextPageToken = response.data.nextPageToken;
+    } while (nextPageToken);
+
+    // 2. Obtener nombres de programas activos desde el catálogo de logos para conservarlos
+    const LOGOS_DIR = path.join(process.cwd(), "public", "program_logos");
+    let programNames = ["HORA GALEGA"]; // Valor por defecto
+    try {
+      if (fs.existsSync(LOGOS_DIR)) {
+        const files = fs.readdirSync(LOGOS_DIR);
+        const imageExtensions = [".png", ".jpg", ".jpeg", ".svg", ".webp"];
+        const logos = files.filter(file => 
+          imageExtensions.includes(path.extname(file).toLowerCase())
+        );
+        logos.forEach(logo => {
+          const name = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
+          if (name) programNames.push(name);
+        });
+      }
+    } catch (err) {
+      console.warn("[Playlists API] Error reading logos for filter:", err);
+    }
+
+    // 3. Obtener IDs de playlists actualmente en uso en la base de datos local
+    let usedPlaylistIds = new Set();
+    try {
+      const dbVideos = await prisma.video.findMany({
+        where: { playlistId: { not: null } },
+        select: { playlistId: true }
+      });
+      const dbTasks = await prisma.videoTask.findMany({
+        where: { playlistId: { not: null } },
+        select: { playlistId: true }
+      });
+      dbVideos.forEach(v => usedPlaylistIds.add(v.playlistId));
+      dbTasks.forEach(t => usedPlaylistIds.add(t.playlistId));
+    } catch (dbErr) {
+      console.warn("[Playlists API] Error fetching used playlist IDs:", dbErr);
+    }
+
+    // 4. Filtrar listas de reproducción: creadas en el último año, en uso local o de programas activos
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+    const filteredPlaylists = youtubePlaylists.filter(item => {
+      // Regla A: Incluir si está en uso en videos existentes en la base de datos
+      if (usedPlaylistIds.has(item.id)) return true;
+
+      // Regla B: Incluir si la lista se creó en el último año en YouTube
+      const publishedAt = item.snippet.publishedAt ? new Date(item.snippet.publishedAt) : null;
+      if (publishedAt && publishedAt >= oneYearAgo) return true;
+
+      // Regla C: Incluir si el nombre de la lista coincide con alguno de nuestros programas activos
+      const titleUpper = item.snippet.title.toUpperCase();
+      const matchesProgram = programNames.some(prog => {
+        const cleanProg = prog.toUpperCase();
+        return titleUpper.includes(cleanProg) || cleanProg.includes(titleUpper);
+      });
+      if (matchesProgram) return true;
+
+      return false;
     });
 
-    const youtubePlaylists = response.data.items || [];
-    const activePlaylistIds = youtubePlaylists.map(item => item.id);
+    const activePlaylistIds = filteredPlaylists.map(item => item.id);
 
-    // Sincronizar con la base de datos (upsert)
-    for (const item of youtubePlaylists) {
+    // 5. Sincronizar las listas filtradas con la base de datos (upsert)
+    for (const item of filteredPlaylists) {
       await prisma.playlist.upsert({
         where: { id: item.id },
         update: {
@@ -78,7 +147,7 @@ export async function GET(request) {
       });
     }
 
-    // Eliminar listas locales que ya no existen en YouTube para este canal
+    // 6. Eliminar listas locales que ya no estén en el conjunto activo filtrado
     await prisma.playlist.deleteMany({
       where: {
         channelId: channel.id,

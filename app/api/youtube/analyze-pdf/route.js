@@ -4,6 +4,82 @@ import { getConfig } from '@/lib/config';
 import { GoogleGenAI } from '@google/genai';
 import { verifyAppAuth } from '@/lib/auth';
 import mammoth from 'mammoth';
+import fs from 'fs';
+import path from 'path';
+
+function slugify(text) {
+  if (!text) return "";
+  return text.toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function detectProgramLocally(title, description, fileName, availableLogos) {
+  // 1. Intentar detectar desde el nombre del archivo original (Opción A)
+  if (fileName && availableLogos) {
+    const cleanFileName = fileName.toLowerCase().replace(/\.[^/.]+$/, "");
+    const slugFile = slugify(cleanFileName);
+    const fileParts = cleanFileName.split(/[^a-z0-9]/i);
+    
+    const abbreviations = {
+      "hg": "horagalega"
+    };
+
+    // Buscar coincidencia por abreviación
+    for (const part of fileParts) {
+      if (abbreviations[part]) {
+        const targetSlug = abbreviations[part];
+        const found = availableLogos.find(logo => slugify(logo.replace(/\.[^/.]+$/, "")) === targetSlug);
+        if (found) return found;
+        if (targetSlug === "horagalega") return "Hora_Galega.png";
+      }
+    }
+
+    // Buscar coincidencia de nombre completo del programa contenido en el archivo
+    const sortedLogos = [...availableLogos].sort((a, b) => b.length - a.length);
+    for (const logo of sortedLogos) {
+      const cleanLogoName = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
+      const slugLogo = slugify(cleanLogoName);
+      if (slugLogo.length > 2 && slugFile.includes(slugLogo)) {
+        return logo;
+      }
+    }
+  }
+
+  // 2. Intentar detectar desde el sufijo del título (ej. "| HORA GALEGA")
+  let detectedProg = "";
+  const suffixMatch = (title || "").match(/\|\s*([a-zA-Z0-9_\sÀ-ÿ\-]+)$/);
+  if (suffixMatch) {
+    detectedProg = suffixMatch[1].toUpperCase().trim();
+  } else {
+    // 3. Intentar detectar desde el enlace de la descripción (ej. tvg.gal/luar)
+    const descMatch = (description || "").match(/tvg\.gal\/([a-z0-9]+)/i);
+    if (descMatch) {
+      const slug = descMatch[1].toLowerCase();
+      if (slug !== "horagalega") {
+        detectedProg = slug.toUpperCase();
+      }
+    }
+  }
+
+  if (detectedProg && availableLogos) {
+    const found = availableLogos.find(logo => {
+      const cleanLogoName = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
+      const slugLogo = slugify(cleanLogoName);
+      const slugProg = slugify(detectedProg);
+      return (
+        cleanLogoName === detectedProg ||
+        slugLogo === slugProg ||
+        (slugLogo.length > 3 && slugProg.includes(slugLogo)) ||
+        (slugProg.length > 3 && slugLogo.includes(slugProg))
+      );
+    });
+    if (found) return found;
+    if (detectedProg === "HORA GALEGA") return "Hora_Galega.png";
+  }
+  return null;
+}
 
 // Función helper con reintentos y backoff exponencial para llamadas a Gemini
 async function callGeminiWithRetry(fn, maxRetries = 3, delayMs = 3000) {
@@ -83,6 +159,110 @@ export async function POST(request) {
 
     const ai = new GoogleGenAI({ apiKey });
 
+    // Cargar catálogo de logotipos disponibles en el backend
+    const LOGOS_DIR = path.join(process.cwd(), "public", "program_logos");
+    let availableLogos = [];
+    if (fs.existsSync(LOGOS_DIR)) {
+      try {
+        const files = fs.readdirSync(LOGOS_DIR);
+        const imageExtensions = [".png", ".jpg", ".jpeg", ".svg", ".webp"];
+        availableLogos = files.filter(file => 
+          imageExtensions.includes(path.extname(file).toLowerCase())
+        );
+      } catch (err) {
+        console.warn("[Analyze PDF] Error reading program logos catalog:", err.message);
+      }
+    }
+
+    // Detectar programa para vídeos de YouTube
+    let annotatedYoutubeVideos = [];
+    if (youtubeVideos && youtubeVideos.length > 0) {
+      console.log(`[Analyze PDF] Processing ${youtubeVideos.length} YouTube videos for program detection...`);
+      for (const video of youtubeVideos) {
+        let programLogoName = detectProgramLocally(video.title, video.description, video.fileName, availableLogos);
+        
+        // Si no se puede detectar por texto localmente, analizar visualmente su miniatura
+        if (!programLogoName && video.id) {
+          console.log(`[Analyze PDF] Video ${video.id} has generic text metadata. Attempting visual analysis of default thumbnail...`);
+          try {
+            const thumbnailUrl = `https://i.ytimg.com/vi/${video.id}/hqdefault.jpg`;
+            const imageResponse = await fetch(thumbnailUrl);
+            if (imageResponse.ok) {
+              const arrayBufferImage = await imageResponse.arrayBuffer();
+              const imageBase64 = Buffer.from(arrayBufferImage).toString('base64');
+              
+              const detectPrompt = `
+Analyze the provided YouTube video thumbnail frame.
+Your task is to identify which television program this frame/scene belongs to.
+The possible program names/logos are:
+${JSON.stringify(availableLogos.map(l => l.replace(/\.[^/.]+$/, "").replace(/_/g, " ").toUpperCase()))}
+
+Identify the program by looking at screen logos/watermarks (usually in corners), watermarks in video scenes, graphic style, or overlay texts.
+Respond strictly in JSON format with the matching program name in uppercase.
+If it is "HORA GALEGA" or the logo has "HORA GALEGA", respond "HORA GALEGA".
+If you cannot identify any of the matching programs from the list, respond "NONE".
+
+Response format:
+{
+  "detectedProgram": "PROGRAM_NAME_OR_NONE"
+}
+`;
+              const visionResponse = await callGeminiWithRetry(() => ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: [
+                  {
+                    role: 'user',
+                    parts: [
+                      {
+                        inlineData: {
+                          data: imageBase64,
+                          mimeType: 'image/jpeg'
+                        }
+                      },
+                      { text: detectPrompt }
+                    ]
+                  }
+                ],
+                config: {
+                  responseMimeType: 'application/json',
+                }
+              }));
+              
+              const visionResult = JSON.parse(visionResponse.text);
+              const detected = visionResult.detectedProgram ? visionResult.detectedProgram.toUpperCase().trim() : "NONE";
+              if (detected && detected !== "NONE") {
+                const foundLogo = availableLogos.find(logo => {
+                  const cleanLogoName = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
+                  return cleanLogoName === detected || slugify(cleanLogoName) === slugify(detected);
+                });
+                if (foundLogo) {
+                  programLogoName = foundLogo;
+                } else if (detected === "HORA GALEGA") {
+                  programLogoName = "Hora_Galega.png";
+                }
+              }
+              console.log(`[Analyze PDF] Visual detection result for video ${video.id}: ${programLogoName || "NONE"}`);
+            } else {
+              console.warn(`[Analyze PDF] Failed to fetch thumbnail for video ${video.id} (HTTP status: ${imageResponse.status})`);
+            }
+          } catch (visionErr) {
+            console.warn(`[Analyze PDF] Visual program detection failed for video ${video.id}:`, visionErr.message);
+          }
+        }
+        
+        annotatedYoutubeVideos.push({
+          id: video.id,
+          title: video.title,
+          description: video.description,
+          fileName: video.fileName || '',
+          detectedProgramLogo: programLogoName || "none",
+          detectedProgramName: programLogoName && programLogoName !== "none" 
+            ? programLogoName.replace(/\.[^/.]+$/, "").replace(/_/g, " ").toUpperCase().trim()
+            : "NONE"
+        });
+      }
+    }
+
     const prompt = `
 Analiza el documento de referencia adjunto. Este documento contiene la planificación o tabla con los metadatos de los videos de redes para "Hora Galega" u otros programas.
 Extrae la información de TODOS los vídeos que estén definidos y listados en la tabla o el texto del documento.
@@ -106,13 +286,15 @@ Además, genera usando IA para cada vídeo:
    - Las palabras deben estar muy optimizadas para capturar el interés (SEO / CTR alto).
    - REGLA DE FORMATO ESTRICTO: La frase debe contener EXCLUSIVAMENTE las 4 palabras en gallego separadas por espacios. NO incluyas barras (/), guiones (-), comillas, ni ningún signo de puntuación en el texto.
 
-${youtubeVideos && youtubeVideos.length > 0 
-  ? `Se te proporciona la lista de vídeos en estado privado u oculto actualmente subidos al canal de YouTube (cada uno tiene su 'id', 'title' y 'description'):
-${JSON.stringify(youtubeVideos.map(v => ({ id: v.id, title: v.title, description: v.description })))}
+${annotatedYoutubeVideos && annotatedYoutubeVideos.length > 0 
+  ? `Se te proporciona la lista de vídeos en estado privado u oculto actualmente subidos al canal de YouTube (cada uno tiene su 'id', 'title', 'description', 'detectedProgramLogo' y 'detectedProgramName'):
+${JSON.stringify(annotatedYoutubeVideos)}
 
 Analiza semánticamente el contenido y temática de cada uno de los vídeos que extraigas del documento de la planilla y compáralo con esta lista de YouTube.
-Si encuentras una correspondencia clara (por palabras clave, temática similar o título equivalente), asocia el campo "matchedVideoId" de ese vídeo con el "id" del vídeo de YouTube correspondiente de la lista.
-Si no encuentras una correspondencia clara y lógica (o la lista no tiene relación alguna con el tema de la planilla), deja "matchedVideoId" como una cadena vacía "".`
+REGLAS DE VINCULACIÓN:
+1. Si encuentras una correspondencia clara por título o descripción, asocia el campo "matchedVideoId" de ese vídeo con el "id" del vídeo de YouTube correspondiente de la lista.
+2. Si un vídeo de YouTube tiene un título o descripción genérica que no aporta coincidencia textual directa, usa la información del programa: si el programa del vídeo de la planilla (programName, ej. "LUAR") coincide con el del vídeo de YouTube (detectedProgramName, ej. "LUAR"), y no hay otros vídeos de YouTube que encajen mejor, asocia su "matchedVideoId" con el "id" de ese vídeo de YouTube correspondientemente.
+3. Si no encuentras ninguna correspondencia lógica, deja "matchedVideoId" como una cadena vacía "".`
   : 'Deja el campo "matchedVideoId" como una cadena vacía "" para todos los vídeos.'
 }
 
@@ -210,7 +392,19 @@ Responde obligatoriamente en formato JSON con la siguiente estructura exacta:
       }
       
       const customSocialBlock = `\n\nPodes ver o programa completo en tvg.gal/${programUrlSlug}\n\n🔔 Subscríbete á canle oficial da Televisión de Galicia en YouTube: https://www.youtube.com/tvg\n\n🌐 Visita a nosa páxina web: https://agalega.gal/\n\n📲 E tamén podes seguirnos en todas as nosas redes sociais:\nFacebook: https://www.facebook.com/televisiondegalicia\nTwitter: https://x.com/tvgalicia\nInstagram: https://www.instagram.com/tvgalicia\nTikTok: https://www.tiktok.com/@tvgalicia`;
-      const finalDesc = baseDesc.trim() ? `${baseDesc.trim()}${customSocialBlock}` : customSocialBlock.trim();
+      let finalDesc = baseDesc.trim();
+      if (finalDesc) {
+        if (finalDesc.includes("seguirnos en todas as nosas redes sociais") || finalDesc.includes("tvg.gal/")) {
+          const urlRegex = /tvg\.gal\/[a-z0-9]+/gi;
+          if (urlRegex.test(finalDesc)) {
+            finalDesc = finalDesc.replace(urlRegex, `tvg.gal/${programUrlSlug}`);
+          }
+        } else {
+          finalDesc = finalDesc + customSocialBlock;
+        }
+      } else {
+        finalDesc = customSocialBlock.trim();
+      }
       
       // Asegurarse de que el título tenga el formato "Título | NOMBRE_DEL_PROGRAMA"
       let finalTitle = (v.title || '').trim();
