@@ -3057,15 +3057,22 @@ export default function Dashboard() {
                                                  headers: { "Content-Type": "application/json" },
                                                  body: JSON.stringify({ filename: logo }),
                                                });
+                                               if (!res.ok) {
+                                                 const text = await res.text();
+                                                 alert(`Error del servidor (${res.status}): ${text}`);
+                                                 return;
+                                               }
                                                const data = await res.json();
                                                if (data.success) {
+                                                 alert("Logotipo eliminado con éxito.");
                                                  await fetchProgramLogosCatalog();
                                                  if (selectedProgramLogo === logo) setSelectedProgramLogo("none");
                                                } else {
-                                                 alert("Error al eliminar logotipo: " + data.error);
+                                                 alert("Error al eliminar logotipo: " + (data.error || "error desconocido"));
                                                }
                                              } catch (err) {
                                                console.error("Error al eliminar logotipo:", err);
+                                               alert("Error de red o de cliente: " + err.message);
                                              }
                                            }}
                                          >
@@ -3638,14 +3645,21 @@ export default function Dashboard() {
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({ filename: logo }),
                           });
+                          if (!res.ok) {
+                            const text = await res.text();
+                            alert(`Error del servidor (${res.status}): ${text}`);
+                            return;
+                          }
                           const data = await res.json();
                           if (data.success) {
+                            alert("Logotipo eliminado con éxito.");
                             await fetchProgramLogosCatalog();
                           } else {
-                            alert("Error al eliminar logotipo: " + data.error);
+                            alert("Error al eliminar logotipo: " + (data.error || "error desconocido"));
                           }
                         } catch (err) {
                           console.error("Error al eliminar logotipo:", err);
+                          alert("Error de red o de cliente: " + err.message);
                         }
                       }}
                     >
