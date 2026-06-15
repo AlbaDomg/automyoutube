@@ -1880,29 +1880,31 @@ export default function Dashboard() {
         </div>
 
         <div className={styles.headerActions}>
-          <button
-            onClick={() => setShowLogosManager(true)}
-            className={styles.btnSettingsToggle}
-            title="Catálogo de Logotipos"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: "auto",
-              padding: "0 0.8rem",
-              gap: "0.4rem",
-              fontSize: "0.8rem",
-              fontWeight: "600",
-              color: "var(--text-primary)"
-            }}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-              <circle cx="8.5" cy="8.5" r="1.5" />
-              <polyline points="21 15 16 10 5 21" />
-            </svg>
-            <span>Gestión de Logos</span>
-          </button>
+          {channel.connected && (
+            <button
+              onClick={() => setShowLogosManager(true)}
+              className={styles.btnSettingsToggle}
+              title="Catálogo de Logotipos"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: "auto",
+                padding: "0 0.8rem",
+                gap: "0.4rem",
+                fontSize: "0.8rem",
+                fontWeight: "600",
+                color: "var(--text-primary)"
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <polyline points="21 15 16 10 5 21" />
+              </svg>
+              <span>Gestión de Logos</span>
+            </button>
+          )}
 
           <button
             onClick={() => {
@@ -1969,8 +1971,163 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {/* Dashboard Grid */}
-      <div className={styles.dashboardGrid}>
+      {/* Dashboard Grid o Landing de Conexión */}
+      {loadingChannel ? (
+        <div style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "5rem 2rem",
+          color: "var(--text-secondary)",
+          fontSize: "1rem"
+        }}>
+          <div style={{
+            border: "4px solid rgba(168, 85, 247, 0.1)",
+            borderTop: "4px solid #a855f7",
+            borderRadius: "50%",
+            width: "30px",
+            height: "30px",
+            animation: "spin 1s linear infinite",
+            marginBottom: "1rem"
+          }} />
+          <style dangerouslySetInnerHTML={{__html: `
+            @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+          `}} />
+          <span>Comprobando canal de YouTube...</span>
+        </div>
+      ) : !channel.connected ? (
+        <div style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "4rem 2rem",
+          background: "rgba(15, 23, 42, 0.3)",
+          border: "1px solid var(--border-color)",
+          borderRadius: "24px",
+          textAlign: "center",
+          backdropFilter: "var(--glass-blur)",
+          maxWidth: "600px",
+          margin: "4rem auto",
+          boxShadow: "0 20px 40px -15px rgba(0,0,0,0.5)"
+        }}>
+          <div style={{
+            fontSize: "4rem",
+            marginBottom: "1.5rem",
+            background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
+            WebkitBackgroundClip: "text",
+            WebkitTextFillColor: "transparent",
+            filter: "drop-shadow(0 0 15px rgba(168, 85, 247, 0.4))",
+            display: "inline-block"
+          }}>
+            🔴
+          </div>
+          <h2 style={{
+            fontSize: "1.8rem",
+            fontWeight: "800",
+            color: "var(--text-primary)",
+            marginBottom: "1rem"
+          }}>
+            Vincula un Canal de YouTube
+          </h2>
+          <p style={{
+            color: "var(--text-secondary)",
+            fontSize: "0.95rem",
+            lineHeight: "1.6",
+            marginBottom: "2.5rem",
+            maxWidth: "480px"
+          }}>
+            Para poder gestionar y automatizar la sincronización de tus vídeos, diseñar portadas personalizadas con inteligencia artificial y programar actualizaciones, es necesario conectar primero tu canal de YouTube.
+          </p>
+
+          <div style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "1rem",
+            width: "100%",
+            maxWidth: "320px"
+          }}>
+            <button
+              onClick={() => {
+                if (!config.isConfigured) {
+                  alert("Configura las credenciales OAuth primero.");
+                  setShowSettings(true);
+                  return;
+                }
+                window.location.href = "/api/auth";
+              }}
+              style={{
+                width: "100%",
+                padding: "1rem",
+                borderRadius: "12px",
+                fontSize: "1rem",
+                fontWeight: "700",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "0.75rem",
+                cursor: "pointer",
+                background: "linear-gradient(135deg, #a855f7 0%, #6366f1 100%)",
+                border: "none",
+                color: "#fff",
+                boxShadow: "0 4px 15px rgba(168, 85, 247, 0.3)",
+                transition: "all 0.3s ease"
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.transform = "translateY(-2px)";
+                e.currentTarget.style.boxShadow = "0 6px 20px rgba(168, 85, 247, 0.5)";
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.transform = "translateY(0)";
+                e.currentTarget.style.boxShadow = "0 4px 15px rgba(168, 85, 247, 0.3)";
+              }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M23.498 6.163a3.003 3.003 0 0 0-2.11-2.11C19.517 3.545 12 3.545 12 3.545s-7.517 0-9.388.508a3.003 3.003 0 0 0-2.11 2.11C0 8.033 0 12 0 12s0 3.967.502 5.837a3.003 3.003 0 0 0 2.11 2.11c1.871.508 9.388.508 9.388.508s7.517 0 9.388-.508a3.003 3.003 0 0 0 2.11-2.11C24 15.967 24 12 24 12s0-3.967-.502-5.837zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+              </svg>
+              Conectar canal de YouTube
+            </button>
+
+            {!config.isConfigured && (
+              <button
+                onClick={() => {
+                  setConfigInput({ GEMINI_API_KEY: "", YOUTUBE_CLIENT_ID: "", YOUTUBE_CLIENT_SECRET: "" });
+                  setShowSettings(true);
+                }}
+                style={{
+                  width: "100%",
+                  padding: "0.85rem",
+                  borderRadius: "12px",
+                  fontSize: "0.9rem",
+                  fontWeight: "600",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "0.5rem",
+                  cursor: "pointer",
+                  background: "rgba(255, 255, 255, 0.05)",
+                  border: "1px solid var(--border-color)",
+                  color: "var(--text-primary)",
+                  transition: "all 0.3s ease"
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.background = "rgba(255, 255, 255, 0.08)";
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.background = "rgba(255, 255, 255, 0.05)";
+                }}
+              >
+                ⚙️ Configurar Credenciales OAuth
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className={styles.dashboardGrid}>
         {/* Columna Izquierda: Sincronización, PDF Editor e Inline Form */}
           
           {/* Tarjeta de Selección y Carga */}
@@ -3274,6 +3431,7 @@ export default function Dashboard() {
 
         </div>
       </div>
+    )}
 
       {/* Modal de Configuración */}
       {showSettings && (
