@@ -8,6 +8,8 @@ import { getCurrentUserEmail } from '@/lib/auth';
 export async function GET(request) {
   const requestUrl = new URL(request.url);
   const { searchParams, origin } = requestUrl;
+  const code = searchParams.get('code');
+  const state = searchParams.get('state');
   const appUrl = origin || (await getConfig('NEXT_PUBLIC_APP_URL')) || 'http://localhost:3000';
   
   let redirectBase = appUrl;
