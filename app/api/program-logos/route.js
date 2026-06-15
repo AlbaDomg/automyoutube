@@ -2,12 +2,17 @@ import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import { verifyAppAuth } from "@/lib/auth";
+import prisma from "@/lib/db";
 
 const LOGOS_DIR = path.join(process.cwd(), "public", "program_logos");
 
-// Asegurar que el directorio existe
-if (!fs.existsSync(LOGOS_DIR)) {
-  fs.mkdirSync(LOGOS_DIR, { recursive: true });
+// Asegurar que el directorio existe (solo local)
+try {
+  if (!fs.existsSync(LOGOS_DIR)) {
+    fs.mkdirSync(LOGOS_DIR, { recursive: true });
+  }
+} catch (err) {
+  console.warn("[Program Logos API] Could not create logos directory on disk:", err.message);
 }
 
 export async function GET(request) {
@@ -16,15 +21,28 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const files = fs.readdirSync(LOGOS_DIR);
-    // Filtrar solo archivos de imagen comunes
-    const imageExtensions = [".png", ".jpg", ".jpeg", ".svg", ".webp"];
-    const logos = files.filter(file => 
-      imageExtensions.includes(path.extname(file).toLowerCase())
-    );
-    return NextResponse.json({ success: true, logos });
+    let staticLogos = [];
+    if (fs.existsSync(LOGOS_DIR)) {
+      const files = fs.readdirSync(LOGOS_DIR);
+      // Filtrar solo archivos de imagen comunes
+      const imageExtensions = [".png", ".jpg", ".jpeg", ".svg", ".webp"];
+      staticLogos = files.filter(file => 
+        imageExtensions.includes(path.extname(file).toLowerCase())
+      );
+    }
+
+    // Obtener logotipos desde la base de datos
+    const dbLogos = await prisma.programLogo.findMany({
+      select: { name: true }
+    });
+    const dbLogoNames = dbLogos.map(l => l.name);
+
+    // Combinar y hacer únicos
+    const uniqueLogos = Array.from(new Set([...staticLogos, ...dbLogoNames]));
+
+    return NextResponse.json({ success: true, logos: uniqueLogos });
   } catch (error) {
-    console.error("[Program Logos API GET] Error reading directory:", error);
+    console.error("[Program Logos API GET] Error reading logos catalog:", error);
     return NextResponse.json({ error: "Failed to read logos catalog" }, { status: 500 });
   }
 }
@@ -45,10 +63,25 @@ export async function POST(request) {
     const filename = file.name;
     // Sanitizar el nombre de archivo para evitar vulnerabilidades de path traversal
     const safeFilename = path.basename(filename).replace(/[^a-zA-Z0-9_.-]/g, "_");
-    const filePath = path.join(LOGOS_DIR, safeFilename);
 
-    fs.writeFileSync(filePath, buffer);
-    console.log(`[Program Logos API] Saved new logo: ${safeFilename}`);
+    // Guardar en la base de datos
+    const base64Content = buffer.toString("base64");
+    await prisma.programLogo.upsert({
+      where: { name: safeFilename },
+      update: { base64: base64Content },
+      create: { name: safeFilename, base64: base64Content }
+    });
+
+    // Opcionalmente guardar localmente en disco (si es posible)
+    try {
+      if (fs.existsSync(LOGOS_DIR)) {
+        const filePath = path.join(LOGOS_DIR, safeFilename);
+        fs.writeFileSync(filePath, buffer);
+        console.log(`[Program Logos API] Saved new logo locally: ${safeFilename}`);
+      }
+    } catch (fsErr) {
+      console.warn(`[Program Logos API] Could not save logo to local disk (expected on Vercel):`, fsErr.message);
+    }
 
     return NextResponse.json({ success: true, filename: safeFilename });
   } catch (error) {
@@ -69,15 +102,28 @@ export async function DELETE(request) {
     }
 
     const safeFilename = path.basename(filename);
-    const filePath = path.join(LOGOS_DIR, safeFilename);
 
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-      console.log(`[Program Logos API] Deleted logo: ${safeFilename}`);
-      return NextResponse.json({ success: true });
-    } else {
-      return NextResponse.json({ error: "File not found" }, { status: 404 });
+    // Eliminar de la base de datos
+    try {
+      await prisma.programLogo.deleteMany({
+        where: { name: safeFilename }
+      });
+    } catch (dbErr) {
+      console.error("[Program Logos API DELETE] DB delete error:", dbErr);
     }
+
+    // Opcionalmente eliminar del disco local
+    const filePath = path.join(LOGOS_DIR, safeFilename);
+    if (fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+        console.log(`[Program Logos API] Deleted logo locally: ${safeFilename}`);
+      } catch (fsErr) {
+        console.warn("[Program Logos API DELETE] Failed to delete from disk (expected on Vercel):", fsErr.message);
+      }
+    }
+
+    return NextResponse.json({ success: true });
   } catch (error) {
     console.error("[Program Logos API DELETE] Error deleting logo:", error);
     return NextResponse.json({ error: "Failed to delete logo" }, { status: 500 });

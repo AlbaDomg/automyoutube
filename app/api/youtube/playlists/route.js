@@ -79,11 +79,23 @@ export async function GET(request) {
         );
         logos.forEach(logo => {
           const name = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
-          if (name) programNames.push(name);
+          if (name && !programNames.includes(name)) programNames.push(name);
         });
       }
     } catch (err) {
       console.warn("[Playlists API] Error reading logos for filter:", err);
+    }
+
+    try {
+      const dbLogos = await prisma.programLogo.findMany({
+        select: { name: true }
+      });
+      dbLogos.forEach(logo => {
+        const name = logo.name.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
+        if (name && !programNames.includes(name)) programNames.push(name);
+      });
+    } catch (dbErr) {
+      console.warn("[Playlists API] Error reading DB logos for filter:", dbErr);
     }
 
     // 3. Obtener IDs de playlists actualmente en uso en la base de datos local

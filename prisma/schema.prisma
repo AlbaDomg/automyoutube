@@ -72,3 +72,11 @@ model Playlist {
   updatedAt   DateTime @updatedAt
 }
 
+model ProgramLogo {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  base64    String
+  createdAt DateTime @default(now())
+}
+
+

@@ -174,6 +174,16 @@ export async function POST(request) {
       }
     }
 
+    try {
+      const dbLogos = await prisma.programLogo.findMany({
+        select: { name: true }
+      });
+      const dbLogoNames = dbLogos.map(l => l.name);
+      availableLogos = Array.from(new Set([...availableLogos, ...dbLogoNames]));
+    } catch (dbErr) {
+      console.warn("[Analyze PDF] Error reading DB program logos catalog:", dbErr.message);
+    }
+
     // Detectar programa para vídeos de YouTube
     let annotatedYoutubeVideos = [];
     if (youtubeVideos && youtubeVideos.length > 0) {
