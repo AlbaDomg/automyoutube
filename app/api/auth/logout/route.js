@@ -10,6 +10,7 @@ export async function GET(request) {
     console.error('[API Auth Logout] Error clearing cookie:', err);
   }
 
-  const appUrl = (await getConfig('NEXT_PUBLIC_APP_URL')) || 'http://localhost:3000';
+  const { origin } = new URL(request.url);
+  const appUrl = origin || (await getConfig('NEXT_PUBLIC_APP_URL')) || 'http://localhost:3000';
   return NextResponse.redirect(`${appUrl}/`);
 }

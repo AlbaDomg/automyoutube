@@ -2,9 +2,13 @@ import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import prisma from '@/lib/db';
+import { verifyAppAuth, getCurrentUserEmail } from '@/lib/auth';
 
 export async function POST(request) {
   try {
+    if (!(await verifyAppAuth(request))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
     const formData = await request.formData();
     const chunkFile = formData.get('chunk');
     const fileName = formData.get('fileName');
@@ -78,12 +82,19 @@ export async function POST(request) {
           }
 
           // Crear la entrada del video en la base de datos
+          const email = await getCurrentUserEmail(request);
+          const channel = await prisma.channel.findUnique({
+            where: { userEmail: email }
+          });
+
           const video = await prisma.video.create({
             data: {
               id: uploadId,
               filename: fileName,
               filePath: finalFilePath,
-              status: 'READY'
+              status: 'READY',
+              userEmail: email,
+              channelId: channel ? channel.id : null
             }
           });
 

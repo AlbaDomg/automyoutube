@@ -6,11 +6,9 @@ import { cookies } from 'next/headers';
 import { getConfig } from '@/lib/config';
 
 export async function GET(request) {
-  const { searchParams } = new URL(request.url);
-  const code = searchParams.get('code');
-  const state = searchParams.get('state');
-  
-  const appUrl = (await getConfig('NEXT_PUBLIC_APP_URL')) || 'http://localhost:3000';
+  const requestUrl = new URL(request.url);
+  const { searchParams, origin } = requestUrl;
+  const appUrl = origin || (await getConfig('NEXT_PUBLIC_APP_URL')) || 'http://localhost:3000';
   const redirectBase = state || appUrl;
 
   if (!code) {
@@ -18,7 +16,7 @@ export async function GET(request) {
   }
 
   try {
-    const oauth2Client = await getAppLoginOAuth2Client();
+    const oauth2Client = await getAppLoginOAuth2Client(origin);
     const { tokens } = await oauth2Client.getToken(code);
     oauth2Client.setCredentials(tokens);
 

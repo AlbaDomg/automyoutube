@@ -11,7 +11,8 @@ export async function GET(request) {
       } catch (_) {}
     }
 
-    const oauth2Client = await getAppLoginOAuth2Client();
+    const { origin } = new URL(request.url);
+    const oauth2Client = await getAppLoginOAuth2Client(origin);
     const scopes = [
       'openid',
       'https://www.googleapis.com/auth/userinfo.email',

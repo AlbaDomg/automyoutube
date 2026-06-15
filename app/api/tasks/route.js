@@ -6,7 +6,7 @@ import { getOAuth2Client } from '@/lib/youtube';
 import { google } from 'googleapis';
 import fs from 'fs';
 import path from 'path';
-import { verifyAppAuth } from '@/lib/auth';
+import { verifyAppAuth, getCurrentUserEmail } from '@/lib/auth';
 
 function extractYoutubeId(input) {
   if (!input) return "";
@@ -32,7 +32,17 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const email = await getCurrentUserEmail(request);
+    const channel = await prisma.channel.findUnique({
+      where: { userEmail: email }
+    });
+
+    if (!channel) {
+      return NextResponse.json([]); // Return empty if no channel connected
+    }
+
     const tasks = await prisma.videoTask.findMany({
+      where: { channelId: channel.id },
       orderBy: { createdAt: 'desc' }
     });
     return NextResponse.json(tasks);
@@ -43,9 +53,18 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  try { // Force recompilation of stale Next.js cache
+  try {
     if (!(await verifyAppAuth(request))) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const email = await getCurrentUserEmail(request);
+    const channel = await prisma.channel.findUnique({
+      where: { userEmail: email }
+    });
+
+    if (!channel) {
+      return NextResponse.json({ error: 'No YouTube channel connected. Please authenticate first.' }, { status: 400 });
     }
 
     let { youtubeId, title, description, dueDate } = await request.json();
@@ -59,50 +78,43 @@ export async function POST(request) {
 
     // Intentar obtener la fecha de subida original de YouTube
     try {
-      const channel = await prisma.channel.findFirst({
-        orderBy: { updatedAt: 'desc' }
+      const oauth2Client = await getOAuth2Client();
+      oauth2Client.setCredentials({
+        access_token: channel.accessToken,
+        refresh_token: channel.refreshToken,
+        expiry_date: channel.tokenExpiry.getTime()
       });
 
-      if (channel) {
-        const oauth2Client = await getOAuth2Client();
-        oauth2Client.setCredentials({
-          access_token: channel.accessToken,
-          refresh_token: channel.refreshToken,
-          expiry_date: channel.tokenExpiry.getTime()
-        });
-
-        // Refrescar token si expira pronto
-        if (channel.tokenExpiry.getTime() - Date.now() < 300 * 1000) {
-          const { credentials } = await oauth2Client.refreshAccessToken();
-          await prisma.channel.update({
-            where: { id: channel.id },
-            data: {
-              accessToken: credentials.access_token,
-              tokenExpiry: new Date(credentials.expiry_date)
-            }
-          });
-        }
-
-        const youtube = google.youtube({
-          version: 'v3',
-          auth: oauth2Client
-        });
-
-        const videoRes = await youtube.videos.list({
-          part: 'snippet',
-          id: youtubeId
-        });
-
-        if (videoRes.data.items && videoRes.data.items.length > 0) {
-          const publishedAt = videoRes.data.items[0].snippet.publishedAt;
-          if (publishedAt) {
-            uploadDate = new Date(publishedAt);
+      // Refrescar token si expira pronto
+      if (channel.tokenExpiry.getTime() - Date.now() < 300 * 1000) {
+        const { credentials } = await oauth2Client.refreshAccessToken();
+        await prisma.channel.update({
+          where: { dbId: channel.dbId },
+          data: {
+            accessToken: credentials.access_token,
+            tokenExpiry: new Date(credentials.expiry_date)
           }
+        });
+      }
+
+      const youtube = google.youtube({
+        version: 'v3',
+        auth: oauth2Client
+      });
+
+      const videoRes = await youtube.videos.list({
+        part: 'snippet',
+        id: youtubeId
+      });
+
+      if (videoRes.data.items && videoRes.data.items.length > 0) {
+        const publishedAt = videoRes.data.items[0].snippet.publishedAt;
+        if (publishedAt) {
+          uploadDate = new Date(publishedAt);
         }
       }
     } catch (ytError) {
       console.warn('[Tasks API] No se pudo obtener la fecha de subida original de YouTube:', ytError.message);
-      // Fallback a la fecha actual por defecto
     }
 
     const newTask = await prisma.videoTask.create({
@@ -112,7 +124,9 @@ export async function POST(request) {
         description,
         uploadDate,
         dueDate: dueDate ? new Date(dueDate) : null,
-        status: 'PENDING'
+        status: 'PENDING',
+        userEmail: email,
+        channelId: channel.id
       }
     });
 
@@ -132,10 +146,28 @@ export async function PATCH(request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const email = await getCurrentUserEmail(request);
+    const channel = await prisma.channel.findUnique({
+      where: { userEmail: email }
+    });
+
+    if (!channel) {
+      return NextResponse.json({ error: 'No channel connected' }, { status: 400 });
+    }
+
     const { id, dueDate } = await request.json();
     if (!id) {
       return NextResponse.json({ error: 'Falta el ID de la tarea' }, { status: 400 });
     }
+
+    const task = await prisma.videoTask.findUnique({
+      where: { id }
+    });
+
+    if (!task || task.channelId !== channel.id) {
+      return NextResponse.json({ error: 'Tarea no encontrada' }, { status: 404 });
+    }
+
     const updatedTask = await prisma.videoTask.update({
       where: { id },
       data: {
@@ -155,6 +187,15 @@ export async function DELETE(request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const email = await getCurrentUserEmail(request);
+    const channel = await prisma.channel.findUnique({
+      where: { userEmail: email }
+    });
+
+    if (!channel) {
+      return NextResponse.json({ error: 'No channel connected' }, { status: 400 });
+    }
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
     if (!id) {
@@ -166,37 +207,41 @@ export async function DELETE(request) {
       where: { id }
     });
 
-    if (task) {
-      try {
-        const existingScheduled = await prisma.video.findMany({
-          where: {
-            youtubeId: task.youtubeId,
-            status: 'SCHEDULED',
-            filePath: 'YOUTUBE_UPDATE'
-          }
-        });
-        const uploadsDir = path.join(process.cwd(), 'uploads');
-        for (const oldUpdate of existingScheduled) {
-          const oldThumbPath = path.join(uploadsDir, `${oldUpdate.id}-thumbnail.jpg`);
-          if (fs.existsSync(oldThumbPath)) {
-            try {
-              fs.unlinkSync(oldThumbPath);
-              console.log(`[Tasks DELETE API] Deleted scheduled custom thumbnail: ${oldThumbPath}`);
-            } catch (err) {
-              console.warn(`[Tasks DELETE API] Failed to delete scheduled thumbnail:`, err.message);
-            }
+    if (!task || task.channelId !== channel.id) {
+      return NextResponse.json({ error: 'Tarea no encontrada' }, { status: 404 });
+    }
+
+    try {
+      const existingScheduled = await prisma.video.findMany({
+        where: {
+          youtubeId: task.youtubeId,
+          status: 'SCHEDULED',
+          filePath: 'YOUTUBE_UPDATE',
+          channelId: channel.id
+        }
+      });
+      const uploadsDir = path.join(process.cwd(), 'uploads');
+      for (const oldUpdate of existingScheduled) {
+        const oldThumbPath = path.join(uploadsDir, `${oldUpdate.id}-thumbnail.jpg`);
+        if (fs.existsSync(oldThumbPath)) {
+          try {
+            fs.unlinkSync(oldThumbPath);
+            console.log(`[Tasks DELETE API] Deleted scheduled custom thumbnail: ${oldThumbPath}`);
+          } catch (err) {
+            console.warn(`[Tasks DELETE API] Failed to delete scheduled thumbnail:`, err.message);
           }
         }
-        await prisma.video.deleteMany({
-          where: {
-            youtubeId: task.youtubeId,
-            status: 'SCHEDULED',
-            filePath: 'YOUTUBE_UPDATE'
-          }
-        });
-      } catch (scheduleErr) {
-        console.error('[Tasks DELETE API] Error cleaning up associated schedules:', scheduleErr.message);
       }
+      await prisma.video.deleteMany({
+        where: {
+          youtubeId: task.youtubeId,
+          status: 'SCHEDULED',
+          filePath: 'YOUTUBE_UPDATE',
+          channelId: channel.id
+        }
+      });
+    } catch (scheduleErr) {
+      console.error('[Tasks DELETE API] Error cleaning up associated schedules:', scheduleErr.message);
     }
 
     await prisma.videoTask.delete({
@@ -208,4 +253,5 @@ export async function DELETE(request) {
     return NextResponse.json({ error: 'Error al eliminar la tarea' }, { status: 500 });
   }
 }
+
 

@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { getOAuth2Client } from '@/lib/youtube';
 import { google } from 'googleapis';
-import { verifyAppAuth } from '@/lib/auth';
+import { verifyAppAuth, getCurrentUserEmail } from '@/lib/auth';
 import fs from 'fs';
 import path from 'path';
 
@@ -14,8 +14,9 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const channel = await prisma.channel.findFirst({
-      orderBy: { updatedAt: 'desc' }
+    const email = await getCurrentUserEmail(request);
+    const channel = await prisma.channel.findUnique({
+      where: { userEmail: email }
     });
 
     if (!channel) {
@@ -34,7 +35,7 @@ export async function GET(request) {
       try {
         const { credentials } = await oauth2Client.refreshAccessToken();
         await prisma.channel.update({
-          where: { id: channel.id },
+          where: { dbId: channel.dbId },
           data: {
             accessToken: credentials.access_token,
             tokenExpiry: new Date(credentials.expiry_date)

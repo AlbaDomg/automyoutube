@@ -13,12 +13,14 @@ model SystemConfig {
 }
 
 model Channel {
-  id           String   @id // ID del canal de YouTube (p. ej. UC...)
+  dbId         String   @id @default(uuid())
+  id           String   // ID del canal de YouTube (p. ej. UC...)
   title        String
   thumbnail    String?
   accessToken  String
   refreshToken String
   tokenExpiry  DateTime
+  userEmail    String   @unique // El correo del trabajador al que pertenece esta conexión
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
@@ -37,6 +39,8 @@ model Video {
   uploadProgress  Int       @default(0)
   thumbnailBase64 String?
   playlistId      String?   // ID de la playlist a la que se añadirá el video
+  userEmail       String?   // El correo del trabajador
+  channelId       String?   // El ID del canal de YouTube
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 }
@@ -52,6 +56,8 @@ model VideoTask {
   completedAt   DateTime?
   status        String    @default("PENDING") // PENDING, COMPLETED
   playlistId    String?   // ID de la playlist sugerida o seleccionada
+  userEmail     String?   // El correo del trabajador
+  channelId     String?   // El ID del canal de YouTube
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }
@@ -65,3 +71,4 @@ model Playlist {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
+

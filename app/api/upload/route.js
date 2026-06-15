@@ -4,7 +4,7 @@ import { getOAuth2Client } from '@/lib/youtube';
 import { google } from 'googleapis';
 import fs from 'fs';
 import path from 'path';
-import { verifyAppAuth } from '@/lib/auth';
+import { verifyAppAuth, getCurrentUserEmail } from '@/lib/auth';
 
 export async function POST(request) {
   try {
@@ -28,8 +28,9 @@ export async function POST(request) {
     }
 
     // Obtener el canal de YouTube conectado
-    const channel = await prisma.channel.findFirst({
-      orderBy: { updatedAt: 'desc' }
+    const email = await getCurrentUserEmail(request);
+    const channel = await prisma.channel.findUnique({
+      where: { userEmail: email }
     });
 
     if (!channel) {
@@ -53,7 +54,7 @@ export async function POST(request) {
     });
 
     // Ejecutar el proceso de subida de forma asíncrona en segundo plano para que no bloquee la petición (lo cual causaría un tiempo de espera agotado)
-    uploadToYouTubeBackground(updatedVideo.id, channel.id);
+    uploadToYouTubeBackground(updatedVideo.id, channel.dbId);
 
     return NextResponse.json({
       success: true,
@@ -66,10 +67,10 @@ export async function POST(request) {
   }
 }
 
-async function uploadToYouTubeBackground(videoId, channelId) {
+async function uploadToYouTubeBackground(videoId, channelDbId) {
   try {
     const video = await prisma.video.findUnique({ where: { id: videoId } });
-    const channel = await prisma.channel.findUnique({ where: { id: channelId } });
+    const channel = await prisma.channel.findUnique({ where: { dbId: channelDbId } });
 
     if (!video || !channel) return;
 
@@ -89,7 +90,7 @@ async function uploadToYouTubeBackground(videoId, channelId) {
       console.log('[YouTube Upload] Access token is expiring. Refreshing...');
       const { credentials } = await oauth2Client.refreshAccessToken();
       await prisma.channel.update({
-        where: { id: channel.id },
+        where: { dbId: channel.dbId },
         data: {
           accessToken: credentials.access_token,
           tokenExpiry: new Date(credentials.expiry_date)

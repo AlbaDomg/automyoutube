@@ -4,12 +4,21 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import fs from 'fs';
 import path from 'path';
-import { verifyAppAuth } from '@/lib/auth';
+import { verifyAppAuth, getCurrentUserEmail } from '@/lib/auth';
 
 export async function GET(request) {
   try {
     if (!(await verifyAppAuth(request))) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const email = await getCurrentUserEmail(request);
+    const channel = await prisma.channel.findUnique({
+      where: { userEmail: email }
+    });
+
+    if (!channel) {
+      return NextResponse.json([]); // Return empty list if no channel connected
     }
 
     const { searchParams } = new URL(request.url);
@@ -20,7 +29,7 @@ export async function GET(request) {
         where: { id: videoId }
       });
 
-      if (!video) {
+      if (!video || video.channelId !== channel.id) {
         return NextResponse.json({ error: 'Video not found' }, { status: 404 });
       }
 
@@ -28,6 +37,7 @@ export async function GET(request) {
     }
 
     const videos = await prisma.video.findMany({
+      where: { channelId: channel.id },
       orderBy: { createdAt: 'desc' }
     });
 
@@ -44,6 +54,15 @@ export async function DELETE(request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const email = await getCurrentUserEmail(request);
+    const channel = await prisma.channel.findUnique({
+      where: { userEmail: email }
+    });
+
+    if (!channel) {
+      return NextResponse.json({ error: 'No channel connected' }, { status: 400 });
+    }
+
     const { searchParams } = new URL(request.url);
     const videoId = searchParams.get('id');
 
@@ -55,7 +74,7 @@ export async function DELETE(request) {
       where: { id: videoId }
     });
 
-    if (!video) {
+    if (!video || video.channelId !== channel.id) {
       return NextResponse.json({ error: 'Video not found' }, { status: 404 });
     }
 
@@ -98,11 +117,28 @@ export async function PATCH(request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const email = await getCurrentUserEmail(request);
+    const channel = await prisma.channel.findUnique({
+      where: { userEmail: email }
+    });
+
+    if (!channel) {
+      return NextResponse.json({ error: 'No channel connected' }, { status: 400 });
+    }
+
     const { searchParams } = new URL(request.url);
     const videoId = searchParams.get('id');
 
     if (!videoId) {
       return NextResponse.json({ error: 'Missing videoId parameter' }, { status: 400 });
+    }
+
+    const video = await prisma.video.findUnique({
+      where: { id: videoId }
+    });
+
+    if (!video || video.channelId !== channel.id) {
+      return NextResponse.json({ error: 'Video not found' }, { status: 404 });
     }
 
     const body = await request.json();
@@ -130,3 +166,4 @@ export async function PATCH(request) {
     return NextResponse.json({ error: 'Failed to update video' }, { status: 500 });
   }
 }
+

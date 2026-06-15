@@ -5,7 +5,7 @@ import { google } from 'googleapis';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { verifyAppAuth } from '@/lib/auth';
+import { verifyAppAuth, getCurrentUserEmail } from '@/lib/auth';
 
 function extractYoutubeId(input) {
   if (!input) return "";
@@ -46,8 +46,9 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Missing youtubeVideoId parameter' }, { status: 400 });
     }
 
-    const channel = await prisma.channel.findFirst({
-      orderBy: { updatedAt: 'desc' }
+    const email = await getCurrentUserEmail(request);
+    const channel = await prisma.channel.findUnique({
+      where: { userEmail: email }
     });
 
     if (!channel) {
@@ -80,7 +81,8 @@ export async function POST(request) {
           where: {
             youtubeId: youtubeVideoId,
             status: 'SCHEDULED',
-            filePath: 'YOUTUBE_UPDATE'
+            filePath: 'YOUTUBE_UPDATE',
+            channelId: channel.id
           }
         });
       } catch (cleanupErr) {
@@ -100,7 +102,9 @@ export async function POST(request) {
           status: 'SCHEDULED',
           youtubeId: youtubeVideoId,
           thumbnailBase64: thumbnail || null,
-          playlistId: playlistId || null
+          playlistId: playlistId || null,
+          userEmail: email,
+          channelId: channel.id
         }
       });
 
@@ -117,6 +121,8 @@ export async function POST(request) {
             title: title || '',
             description: description || '',
             playlistId: playlistId || null,
+            userEmail: email,
+            channelId: channel.id,
             updatedAt: new Date()
           },
           create: {
@@ -124,7 +130,9 @@ export async function POST(request) {
             status: 'SCHEDULED',
             title: title || '',
             description: description || '',
-            playlistId: playlistId || null
+            playlistId: playlistId || null,
+            userEmail: email,
+            channelId: channel.id
           }
         });
         console.log(`[Update Video API] Upserted VideoTask status to SCHEDULED for youtubeVideoId: ${youtubeVideoId}`);
@@ -148,7 +156,7 @@ export async function POST(request) {
       try {
         const { credentials } = await oauth2Client.refreshAccessToken();
         await prisma.channel.update({
-          where: { id: channel.id },
+          where: { dbId: channel.dbId },
           data: {
             accessToken: credentials.access_token,
             tokenExpiry: new Date(credentials.expiry_date)
@@ -290,6 +298,8 @@ export async function POST(request) {
           title: title || '',
           description: description || '',
           playlistId: playlistId || null,
+          userEmail: email,
+          channelId: channel.id,
           updatedAt: new Date()
         },
         create: {
@@ -298,7 +308,9 @@ export async function POST(request) {
           completedAt: new Date(),
           title: title || '',
           description: description || '',
-          playlistId: playlistId || null
+          playlistId: playlistId || null,
+          userEmail: email,
+          channelId: channel.id
         }
       });
       console.log(`[Update Video API] Upserted VideoTask for youtubeVideoId: ${youtubeVideoId} to COMPLETED`);

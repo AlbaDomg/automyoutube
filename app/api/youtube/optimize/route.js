@@ -4,7 +4,7 @@ import { getOAuth2Client } from '@/lib/youtube';
 import { getConfig } from '@/lib/config';
 import { GoogleGenAI } from '@google/genai';
 import { google } from 'googleapis';
-import { verifyAppAuth } from '@/lib/auth';
+import { verifyAppAuth, getCurrentUserEmail } from '@/lib/auth';
 
 // Función helper con reintentos y backoff exponencial para llamadas a Gemini ante saturación (errores 503, 429, etc.)
 async function callGeminiWithRetry(fn, maxRetries = 3, delayMs = 3000) {
@@ -46,8 +46,9 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Missing youtubeVideoId parameter' }, { status: 400 });
     }
 
-    const channel = await prisma.channel.findFirst({
-      orderBy: { updatedAt: 'desc' }
+    const email = await getCurrentUserEmail(request);
+    const channel = await prisma.channel.findUnique({
+      where: { userEmail: email }
     });
 
     if (!channel) {
@@ -66,7 +67,7 @@ export async function POST(request) {
       try {
         const { credentials } = await oauth2Client.refreshAccessToken();
         await prisma.channel.update({
-          where: { id: channel.id },
+          where: { dbId: channel.dbId },
           data: {
             accessToken: credentials.access_token,
             tokenExpiry: new Date(credentials.expiry_date)
