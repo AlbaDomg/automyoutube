@@ -3064,7 +3064,11 @@ export default function Dashboard() {
                                                }
                                                const data = await res.json();
                                                if (data.success) {
-                                                 alert("Logotipo eliminado con éxito.");
+                                                 if (data.readOnly) {
+                                                   alert("Este logotipo está integrado en el código del servidor (Vercel) y no se puede borrar desde aquí. Para eliminarlo definitivamente, bórralo de la carpeta local public/program_logos en tu ordenador, haz commit y haz push.");
+                                                 } else {
+                                                   alert("Logotipo eliminado con éxito.");
+                                                 }
                                                  await fetchProgramLogosCatalog();
                                                  if (selectedProgramLogo === logo) setSelectedProgramLogo("none");
                                                } else {
@@ -3652,7 +3656,11 @@ export default function Dashboard() {
                           }
                           const data = await res.json();
                           if (data.success) {
-                            alert("Logotipo eliminado con éxito.");
+                            if (data.readOnly) {
+                              alert("Este logotipo está integrado en el código del servidor (Vercel) y no se puede borrar desde aquí. Para eliminarlo definitivamente, bórralo de la carpeta local public/program_logos en tu ordenador, haz commit y haz push.");
+                            } else {
+                              alert("Logotipo eliminado con éxito.");
+                            }
                             await fetchProgramLogosCatalog();
                           } else {
                             alert("Error al eliminar logotipo: " + (data.error || "error desconocido"));
