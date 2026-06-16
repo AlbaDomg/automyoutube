@@ -8,6 +8,8 @@ import { getConfig } from '@/lib/config';
 export async function GET(request) {
   const requestUrl = new URL(request.url);
   const { searchParams, origin } = requestUrl;
+  const code = searchParams.get('code');
+  const state = searchParams.get('state');
   const appUrl = origin || (await getConfig('NEXT_PUBLIC_APP_URL')) || 'http://localhost:3000';
   const redirectBase = state || appUrl;
 
