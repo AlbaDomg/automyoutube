@@ -2471,10 +2471,10 @@ export default function Dashboard() {
 
                           {/* Previsualización del vídeo actual mapeado */}
                           {matchedVideo && (
-                            <div style={{ display: "flex", gap: "0.5rem", background: "rgba(255,255,255,0.02)", padding: "0.5rem", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.05)" }}>
-                              <img src={matchedVideo.thumbnail} alt="" style={{ width: "80px", aspectRatio: "16/9", objectFit: "cover", borderRadius: "4px" }} />
-                              <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", minWidth: 0 }}>
-                                <span style={{ fontSize: "0.75rem", fontWeight: "600", color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "rgba(255,255,255,0.02)", padding: "0.5rem", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.05)" }}>
+                              <img src={matchedVideo.thumbnail} alt="" style={{ width: "80px", aspectRatio: "16/9", objectFit: "cover", borderRadius: "4px", alignSelf: "center" }} />
+                              <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", minWidth: 0, flex: 1 }}>
+                                <span style={{ fontSize: "0.75rem", fontWeight: "600", color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "normal", wordBreak: "break-word" }}>
                                   {matchedVideo.title}
                                 </span>
                                 <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>ID: {matchedVideo.id}</span>
