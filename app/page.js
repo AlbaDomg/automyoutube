@@ -2521,7 +2521,7 @@ export default function Dashboard() {
 
                             {item.isAutoThumbnailEnabled ? (
                               <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                                <div style={{ position: "relative", width: "100%", aspectRatio: "16/9", borderRadius: "6px", overflow: "hidden", border: "1px solid var(--border-color, #334155)", background: "#000" }}>
+                                <div style={{ position: "relative", width: "100%", maxWidth: "320px", aspectRatio: "16/9", borderRadius: "6px", overflow: "hidden", border: "1px solid var(--border-color, #334155)", background: "#000" }}>
                                   {item.generatedThumbnailBase64 ? (
                                     <img src={item.generatedThumbnailBase64} alt="Preview" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                                   ) : (
@@ -2939,7 +2939,7 @@ export default function Dashboard() {
 
                     {isAutoThumbnailEnabled ? (
                       <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                        <div style={{ position: "relative", width: "100%", aspectRatio: "16/9", borderRadius: "6px", overflow: "hidden", border: "1px solid var(--border-color)", background: "#000" }}>
+                        <div style={{ position: "relative", width: "100%", maxWidth: "320px", aspectRatio: "16/9", borderRadius: "6px", overflow: "hidden", border: "1px solid var(--border-color)", background: "#000" }}>
                           {newThumbnailBase64 ? (
                             <img src={newThumbnailBase64} alt="Preview" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           ) : (
