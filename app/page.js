@@ -159,7 +159,7 @@ function updateDescriptionUrl(description, programName) {
   }
   
   // Si no tiene el bloque de redes sociales, se lo añadimos con el slug correspondiente
-  const socialBlock = `\n\nPodes ver o programa completo en tvg.gal/${slug}\n\n🔔 Subscríbete á canle oficial da Televisión de Galicia en YouTube: https://www.youtube.com/tvg\n\n🌐 Visita a nosa páxina web: https://agalega.gal/\n\n📲 E tamén podes seguirnos en todas as nosas redes sociais:\nFacebook: https://www.facebook.com/televisiondegalicia\nTwitter: https://x.com/tvgalicia\nInstagram: https://www.instagram.com/tvgalicia\nTikTok: https://www.tiktok.com/@tvgalicia`;
+  const socialBlock = `\n\n📺 Podes ver o programa completo en tvg.gal/${slug}\n\n🔔 Subscríbete á canle oficial da Televisión de Galicia en YouTube: https://www.youtube.com/tvg\n\n🌐 Visita a nosa páxina web: https://agalega.gal/\n\n📲 E tamén podes seguirnos en todas as nosas redes sociais:\n• 📘 Facebook: https://www.facebook.com/televisiondegalicia\n• 🐦 Twitter: https://x.com/tvgalicia\n• 📸 Instagram: https://www.instagram.com/tvgalicia\n• 🎵 TikTok: https://www.tiktok.com/@tvgalicia`;
   
   return descStr ? `${descStr}${socialBlock}` : socialBlock.trim();
 }
