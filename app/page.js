@@ -1326,7 +1326,7 @@ export default function Dashboard() {
           tags: video.tags || "",
           isScheduled: !!scheduledUpdate,
           scheduledAt: scheduledUpdate && scheduledUpdate.scheduledAt
-            ? toLocalDateTimeString(scheduledUpdate.scheduledAt)
+            ? toUTCISOString(scheduledUpdate.scheduledAt)
             : "",
           playlistId: task.playlistId || (scheduledUpdate && scheduledUpdate.playlistId) || ""
         });
@@ -1573,7 +1573,7 @@ export default function Dashboard() {
             title: item.title,
             description: item.description,
             thumbnail: item.isAutoThumbnailEnabled ? item.generatedThumbnailBase64 : null,
-            scheduledAt: item.isScheduled ? item.scheduledAt : null,
+            scheduledAt: item.isScheduled ? toUTCISOString(item.scheduledAt) : null,
             playlistId: item.playlistId || null,
           }),
         });
@@ -1666,7 +1666,7 @@ export default function Dashboard() {
             title: item.title,
             description: item.description,
             thumbnail: item.isAutoThumbnailEnabled ? item.generatedThumbnailBase64 : null,
-            scheduledAt: batchScheduleDate,
+            scheduledAt: toUTCISOString(batchScheduleDate),
             playlistId: item.playlistId || null,
           }),
         });
@@ -1724,7 +1724,7 @@ export default function Dashboard() {
           description: updateForm.description,
           tags: updateForm.tags,
           thumbnail: newThumbnailBase64,
-          scheduledAt: updateForm.isScheduled ? updateForm.scheduledAt : null,
+          scheduledAt: updateForm.isScheduled ? toUTCISOString(updateForm.scheduledAt) : null,
           playlistId: updateForm.playlistId || null,
         }),
       });
@@ -1812,8 +1812,13 @@ export default function Dashboard() {
       year: "numeric",
       hour: "2-digit",
       minute: "2-digit",
-      timeZone: "UTC",
     });
+  };
+
+  // Convierte un string de fecha/hora local (del DateTimePicker) a ISO UTC
+  const toUTCISOString = (localDateTimeStr) => {
+    if (!localDateTimeStr) return null;
+    return new Date(localDateTimeStr).toISOString();
   };
 
   const toLocalDateTimeString = (date) => {
