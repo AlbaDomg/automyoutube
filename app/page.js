@@ -3057,21 +3057,12 @@ export default function Dashboard() {
                                                  headers: { "Content-Type": "application/json" },
                                                  body: JSON.stringify({ filename: logo }),
                                                });
-                                               if (!res.ok) {
-                                                 const text = await res.text();
-                                                 alert(`Error del servidor (${res.status}): ${text}`);
-                                                 return;
-                                               }
-                                               const data = await res.json();
-                                               if (data.success) {
-                                                 if (data.readOnly) {
-                                                   alert("Este logotipo está integrado en el código del servidor (Vercel) y no se puede borrar desde aquí. Para eliminarlo definitivamente, bórralo de la carpeta local public/program_logos en tu ordenador, haz commit y haz push.");
-                                                 } else {
-                                                   alert("Logotipo eliminado con éxito.");
-                                                 }
+                                               if (res.ok) {
+                                                 alert("Logotipo eliminado con éxito.");
                                                  await fetchProgramLogosCatalog();
                                                  if (selectedProgramLogo === logo) setSelectedProgramLogo("none");
                                                } else {
+                                                 const data = await res.json();
                                                  alert("Error al eliminar logotipo: " + (data.error || "error desconocido"));
                                                }
                                              } catch (err) {
@@ -3649,20 +3640,11 @@ export default function Dashboard() {
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({ filename: logo }),
                           });
-                          if (!res.ok) {
-                            const text = await res.text();
-                            alert(`Error del servidor (${res.status}): ${text}`);
-                            return;
-                          }
-                          const data = await res.json();
-                          if (data.success) {
-                            if (data.readOnly) {
-                              alert("Este logotipo está integrado en el código del servidor (Vercel) y no se puede borrar desde aquí. Para eliminarlo definitivamente, bórralo de la carpeta local public/program_logos en tu ordenador, haz commit y haz push.");
-                            } else {
-                              alert("Logotipo eliminado con éxito.");
-                            }
+                          if (res.ok) {
+                            alert("Logotipo eliminado con éxito.");
                             await fetchProgramLogosCatalog();
                           } else {
+                            const data = await res.json();
                             alert("Error al eliminar logotipo: " + (data.error || "error desconocido"));
                           }
                         } catch (err) {

@@ -159,29 +159,27 @@ export async function POST(request) {
 
     const ai = new GoogleGenAI({ apiKey });
 
-    // Cargar catálogo de logotipos disponibles en el backend
-    const LOGOS_DIR = path.join(process.cwd(), "public", "program_logos");
+    // Cargar catálogo de logotipos disponibles en el backend (desde la base de datos)
     let availableLogos = [];
-    if (fs.existsSync(LOGOS_DIR)) {
-      try {
-        const files = fs.readdirSync(LOGOS_DIR);
-        const imageExtensions = [".png", ".jpg", ".jpeg", ".svg", ".webp"];
-        availableLogos = files.filter(file => 
-          imageExtensions.includes(path.extname(file).toLowerCase())
-        );
-      } catch (err) {
-        console.warn("[Analyze PDF] Error reading program logos catalog:", err.message);
-      }
-    }
-
     try {
       const dbLogos = await prisma.programLogo.findMany({
         select: { name: true }
       });
-      const dbLogoNames = dbLogos.map(l => l.name);
-      availableLogos = Array.from(new Set([...availableLogos, ...dbLogoNames]));
+      availableLogos = dbLogos.map(l => l.name);
+
+      // Si por alguna razón la BD está vacía, hacer una lectura rápida del directorio estático
+      if (availableLogos.length === 0) {
+        const STATIC_LOGOS_DIR = path.join(process.cwd(), "public", "static_program_logos");
+        if (fs.existsSync(STATIC_LOGOS_DIR)) {
+          const files = fs.readdirSync(STATIC_LOGOS_DIR);
+          const imageExtensions = [".png", ".jpg", ".jpeg", ".svg", ".webp"];
+          availableLogos = files.filter(file => 
+            imageExtensions.includes(path.extname(file).toLowerCase())
+          );
+        }
+      }
     } catch (dbErr) {
-      console.warn("[Analyze PDF] Error reading DB program logos catalog:", dbErr.message);
+      console.warn("[Analyze PDF] Error reading program logos catalog from DB:", dbErr.message);
     }
 
     // Detectar programa para vídeos de YouTube

@@ -67,33 +67,33 @@ export async function GET(request) {
       nextPageToken = response.data.nextPageToken;
     } while (nextPageToken);
 
-    // 2. Obtener nombres de programas activos desde el catálogo de logos para conservarlos
-    const LOGOS_DIR = path.join(process.cwd(), "public", "program_logos");
+    // 2. Obtener nombres de programas activos desde el catálogo de logos en la base de datos
     let programNames = ["HORA GALEGA"]; // Valor por defecto
-    try {
-      if (fs.existsSync(LOGOS_DIR)) {
-        const files = fs.readdirSync(LOGOS_DIR);
-        const imageExtensions = [".png", ".jpg", ".jpeg", ".svg", ".webp"];
-        const logos = files.filter(file => 
-          imageExtensions.includes(path.extname(file).toLowerCase())
-        );
-        logos.forEach(logo => {
-          const name = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
-          if (name && !programNames.includes(name)) programNames.push(name);
-        });
-      }
-    } catch (err) {
-      console.warn("[Playlists API] Error reading logos for filter:", err);
-    }
-
     try {
       const dbLogos = await prisma.programLogo.findMany({
         select: { name: true }
       });
-      dbLogos.forEach(logo => {
-        const name = logo.name.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
-        if (name && !programNames.includes(name)) programNames.push(name);
-      });
+      
+      // Si por alguna razón la BD está vacía, hacer una lectura rápida del directorio estático
+      if (dbLogos.length === 0) {
+        const STATIC_LOGOS_DIR = path.join(process.cwd(), "public", "static_program_logos");
+        if (fs.existsSync(STATIC_LOGOS_DIR)) {
+          const files = fs.readdirSync(STATIC_LOGOS_DIR);
+          const imageExtensions = [".png", ".jpg", ".jpeg", ".svg", ".webp"];
+          const logos = files.filter(file => 
+            imageExtensions.includes(path.extname(file).toLowerCase())
+          );
+          logos.forEach(logo => {
+            const name = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
+            if (name && !programNames.includes(name)) programNames.push(name);
+          });
+        }
+      } else {
+        dbLogos.forEach(logo => {
+          const name = logo.name.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
+          if (name && !programNames.includes(name)) programNames.push(name);
+        });
+      }
     } catch (dbErr) {
       console.warn("[Playlists API] Error reading DB logos for filter:", dbErr);
     }

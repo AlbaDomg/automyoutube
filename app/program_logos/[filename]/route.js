@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import path from "path";
+import fs from "fs";
 
 export async function GET(request, { params }) {
   try {
@@ -12,9 +13,31 @@ export async function GET(request, { params }) {
     const safeFilename = path.basename(filename);
 
     // Buscar el logotipo en la base de datos
-    const logo = await prisma.programLogo.findUnique({
+    let logo = await prisma.programLogo.findUnique({
       where: { name: safeFilename }
     });
+
+    // Fallback: si no está en la base de datos, comprobar si existe en los logos estáticos iniciales
+    if (!logo) {
+      const STATIC_LOGOS_DIR = path.join(process.cwd(), "public", "static_program_logos");
+      const staticFilePath = path.join(STATIC_LOGOS_DIR, safeFilename);
+      if (fs.existsSync(staticFilePath)) {
+        try {
+          const buffer = fs.readFileSync(staticFilePath);
+          const base64Content = buffer.toString("base64");
+          
+          // Guardar en la base de datos para que esté disponible de forma dinámica
+          logo = await prisma.programLogo.upsert({
+            where: { name: safeFilename },
+            update: { base64: base64Content },
+            create: { name: safeFilename, base64: base64Content }
+          });
+          console.log(`[Serve Logo API] Auto-seeded logo ${safeFilename} from static folder to DB`);
+        } catch (fsErr) {
+          console.error(`[Serve Logo API] Failed to auto-seed logo ${safeFilename} from disk:`, fsErr);
+        }
+      }
+    }
 
     if (!logo) {
       return new Response("Not Found", { status: 404 });
@@ -43,3 +66,4 @@ export async function GET(request, { params }) {
     return new Response("Internal Server Error", { status: 500 });
   }
 }
+
