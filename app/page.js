@@ -3520,11 +3520,48 @@ export default function Dashboard() {
               <div className={styles.tasksList}>
                 {scheduledUpdates.map(update => (
                   <div key={update.id} className={styles.taskCardPending} style={{ borderLeftColor: "#f59e0b" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <h4 style={{ fontSize: "0.85rem", margin: 0 }}>{update.title || "Actualización pendiente"}</h4>
-                      <span className={styles.statusBadge} style={{ background: "rgba(245, 158, 11, 0.15)", color: "#f59e0b", padding: "2px 8px", borderRadius: "12px", fontSize: "0.7rem" }}>
-                        {update.status === "SCHEDULED" ? "Programada" : "Aplicando..."}
-                      </span>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                      <h4 style={{ fontSize: "0.85rem", margin: 0, flex: 1 }}>{update.title || "Actualización pendiente"}</h4>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginLeft: "0.5rem" }}>
+                        <span className={styles.statusBadge} style={{ background: "rgba(245, 158, 11, 0.15)", color: "#f59e0b", padding: "2px 8px", borderRadius: "12px", fontSize: "0.7rem", whiteSpace: "nowrap" }}>
+                          {update.status === "SCHEDULED" ? "Programada" : "Aplicando..."}
+                        </span>
+                        <button
+                          type="button"
+                          title="Cancelar programación"
+                          onClick={async () => {
+                            if (!confirm(`¿Cancelar la sincronización programada de "${update.title || update.youtubeId}"?`)) return;
+                            try {
+                              const res = await fetch(`/api/videos/${update.id}`, { method: "DELETE" });
+                              if (res.ok) {
+                                fetchScheduledUpdates();
+                                fetchTasks();
+                              } else {
+                                const data = await res.json();
+                                alert("Error al cancelar: " + (data.error || "error desconocido"));
+                              }
+                            } catch (err) {
+                              console.error(err);
+                              alert("Error de red al cancelar la programación.");
+                            }
+                          }}
+                          style={{
+                            background: "rgba(239, 68, 68, 0.15)",
+                            border: "1px solid rgba(239, 68, 68, 0.3)",
+                            color: "#ef4444",
+                            borderRadius: "50%",
+                            width: "22px",
+                            height: "22px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            cursor: "pointer",
+                            fontSize: "0.7rem",
+                            fontWeight: "bold",
+                            flexShrink: 0
+                          }}
+                        >✕</button>
+                      </div>
                     </div>
                     <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.4rem" }}>
                       <strong>ID YouTube:</strong> <code>{update.youtubeId}</code> | <strong>Ejecución:</strong> {formatDate(update.scheduledAt)}
