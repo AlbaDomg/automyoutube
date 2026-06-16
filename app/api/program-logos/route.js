@@ -28,7 +28,7 @@ export async function GET(request) {
       if (fs.existsSync(STATIC_LOGOS_DIR)) {
         const files = fs.readdirSync(STATIC_LOGOS_DIR);
         const imageExtensions = [".png", ".jpg", ".jpeg", ".svg", ".webp"];
-        const staticLogosToSeed = files.filter(file => 
+        const staticLogosToSeed = files.filter(file =>
           imageExtensions.includes(path.extname(file).toLowerCase())
         );
 
@@ -51,14 +51,17 @@ export async function GET(request) {
       await setConfig("PROGRAM_LOGOS_SEEDED", "true");
     }
 
-    // Obtener todos los logotipos directamente de la base de datos
+    // Obtener todos los logotipos directamente de la base de datos (con playlistId)
     const dbLogos = await prisma.programLogo.findMany({
-      select: { name: true },
+      select: { name: true, playlistId: true },
       orderBy: { createdAt: "asc" }
     });
-    const logoNames = dbLogos.map(l => l.name);
 
-    return NextResponse.json({ success: true, logos: logoNames });
+    // Devolver tanto la lista de nombres (compatibilidad) como los objetos completos
+    const logoNames = dbLogos.map(l => l.name);
+    const logos = dbLogos.map(l => ({ name: l.name, playlistId: l.playlistId || null }));
+
+    return NextResponse.json({ success: true, logos, logoNames });
   } catch (error) {
     console.error("[Program Logos API GET] Error reading logos catalog:", error);
     return NextResponse.json({ error: "Failed to read logos catalog" }, { status: 500 });
@@ -77,16 +80,18 @@ export async function POST(request) {
       return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
     }
 
+    const playlistId = formData.get("playlistId") || null;
+
     const buffer = Buffer.from(await file.arrayBuffer());
     const filename = file.name;
     const safeFilename = path.basename(filename).replace(/[^a-zA-Z0-9_.-]/g, "_");
 
-    // Guardar en la base de datos
+    // Guardar en la base de datos (con playlistId si se proporciona)
     const base64Content = buffer.toString("base64");
     await prisma.programLogo.upsert({
       where: { name: safeFilename },
-      update: { base64: base64Content },
-      create: { name: safeFilename, base64: base64Content }
+      update: { base64: base64Content, playlistId: playlistId || null },
+      create: { name: safeFilename, base64: base64Content, playlistId: playlistId || null }
     });
 
     // Opcionalmente guardar localmente en disco (si es posible)
@@ -100,10 +105,37 @@ export async function POST(request) {
       console.warn(`[Program Logos API] Could not save logo to local disk (expected on Vercel):`, fsErr.message);
     }
 
-    return NextResponse.json({ success: true, filename: safeFilename });
+    return NextResponse.json({ success: true, filename: safeFilename, playlistId: playlistId || null });
   } catch (error) {
     console.error("[Program Logos API POST] Error uploading logo:", error);
     return NextResponse.json({ error: "Failed to upload logo" }, { status: 500 });
+  }
+}
+
+// PATCH: actualizar solo el playlistId vinculado a un logo existente
+export async function PATCH(request) {
+  try {
+    if (!(await verifyAppAuth(request))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { filename, playlistId } = await request.json();
+    if (!filename) {
+      return NextResponse.json({ error: "Filename is required" }, { status: 400 });
+    }
+
+    const safeFilename = path.basename(filename);
+
+    await prisma.programLogo.update({
+      where: { name: safeFilename },
+      data: { playlistId: playlistId || null }
+    });
+
+    console.log(`[Program Logos API] Updated playlistId for logo "${safeFilename}": ${playlistId || "null"}`);
+    return NextResponse.json({ success: true, filename: safeFilename, playlistId: playlistId || null });
+  } catch (error) {
+    console.error("[Program Logos API PATCH] Error updating logo playlistId:", error);
+    return NextResponse.json({ error: "Failed to update logo" }, { status: 500 });
   }
 }
 
@@ -137,8 +169,6 @@ export async function DELETE(request) {
         console.log(`[Program Logos API] Deleted logo locally: ${safeFilename}`);
       } catch (fsErr) {
         console.warn("[Program Logos API DELETE] Failed to delete from disk (expected on Vercel):", fsErr.message);
-        // En Vercel, fs.unlinkSync fallará con EROFS, pero lo ignoramos y devolvemos éxito
-        // porque ya se eliminó de la base de datos y no se volverá a listar ni servir.
       }
     }
 
@@ -148,4 +178,3 @@ export async function DELETE(request) {
     return NextResponse.json({ error: "Failed to delete logo" }, { status: 500 });
   }
 }
-

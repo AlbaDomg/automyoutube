@@ -73,10 +73,11 @@ model Playlist {
 }
 
 model ProgramLogo {
-  id        String   @id @default(uuid())
-  name      String   @unique
-  base64    String
-  createdAt DateTime @default(now())
+  id         String   @id @default(uuid())
+  name       String   @unique
+  base64     String
+  playlistId String?  // ID de la playlist de YouTube vinculada (ej. PLxxx)
+  createdAt  DateTime @default(now())
 }
 
 

@@ -68,7 +68,7 @@ export async function GET(request) {
     } while (nextPageToken);
 
     // 2. Obtener nombres de programas activos desde el catálogo de logos en la base de datos
-    let programNames = ["HORA GALEGA"]; // Valor por defecto
+    let programNames = [];
     try {
       const dbLogos = await prisma.programLogo.findMany({
         select: { name: true }
@@ -80,7 +80,7 @@ export async function GET(request) {
         if (fs.existsSync(STATIC_LOGOS_DIR)) {
           const files = fs.readdirSync(STATIC_LOGOS_DIR);
           const imageExtensions = [".png", ".jpg", ".jpeg", ".svg", ".webp"];
-          const logos = files.filter(file => 
+          const logos = files.filter(file =>
             imageExtensions.includes(path.extname(file).toLowerCase())
           );
           logos.forEach(logo => {

@@ -85,46 +85,56 @@ function findBestPlaylist(playlists, programName) {
   return best || null;
 }
 
-// Helper para encontrar el logotipo ideal basado en el nombre de la lista de reproducción
-function findBestLogoForPlaylist(playlistTitle, logosCatalog) {
-  if (!playlistTitle || !logosCatalog || logosCatalog.length === 0) return "none";
+// Helper para encontrar el logotipo ideal basado en la playlist.
+// logosCatalog es array de { name, playlistId } o strings (compatibilidad).
+// Prioridad 0: coincidencia directa por playlistId. Prioridad 1-3: por nombre.
+function findBestLogoForPlaylist(playlistId, playlistTitle, logosCatalog) {
+  if (!logosCatalog || logosCatalog.length === 0) return "none";
+
+  // Normalizar catálogo a objetos
+  const catalog = logosCatalog.map(l => typeof l === "string" ? { name: l, playlistId: null } : l);
+
+  // Prioridad 0: coincidencia directa por playlistId vinculado en el gestor de logos
+  if (playlistId) {
+    const directMatch = catalog.find(l => l.playlistId && l.playlistId === playlistId);
+    if (directMatch) return directMatch.name;
+  }
+
+  // Si no hay título, no podemos hacer coincidencia por nombre
+  if (!playlistTitle) return "none";
 
   const cleanPl = playlistTitle.toUpperCase().replace(/_/g, " ").trim();
   const slugPl = slugify(cleanPl);
   const normPl = slugPl.replace(/hola/g, "hora");
 
-  // Fase 1: Coincidencia exacta
-  let best = logosCatalog.find(logo => {
-    const cleanLogo = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
+  // Fase 1: Coincidencia exacta por nombre
+  let best = catalog.find(l => {
+    const cleanLogo = l.name.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
     if (cleanPl === cleanLogo) return true;
-
     const slugLogo = slugify(cleanLogo);
     const normLogo = slugLogo.replace(/hola/g, "hora");
     return normPl === normLogo;
   });
+  if (best) return best.name;
 
-  if (best) return best;
-
-  // Fase 2: El nombre de la playlist contiene el logotipo del programa
-  best = logosCatalog.find(logo => {
-    const cleanLogo = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
-    const slugLogo = slugify(cleanLogo);
-    const normLogo = slugLogo.replace(/hola/g, "hora");
+  // Fase 2: El nombre de la playlist contiene el nombre del logo
+  best = catalog.find(l => {
+    const cleanLogo = l.name.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
+    const normLogo = slugify(cleanLogo).replace(/hola/g, "hora");
     return normLogo.length > 2 && normPl.includes(normLogo);
   });
+  if (best) return best.name;
 
-  if (best) return best;
-
-  // Fase 3: El logotipo del programa contiene el nombre de la playlist
-  best = logosCatalog.find(logo => {
-    const cleanLogo = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
-    const slugLogo = slugify(cleanLogo);
-    const normLogo = slugLogo.replace(/hola/g, "hora");
+  // Fase 3: El nombre del logo contiene el nombre de la playlist
+  best = catalog.find(l => {
+    const cleanLogo = l.name.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
+    const normLogo = slugify(cleanLogo).replace(/hola/g, "hora");
     return normPl.length > 2 && normLogo.includes(normPl);
   });
 
-  return best || "none";
+  return best ? best.name : "none";
 }
+
 
 // Helper para actualizar el sufijo de programa del título
 function updateTitleSuffix(title, programName) {
@@ -141,15 +151,18 @@ function updateTitleSuffix(title, programName) {
 
 // Helper para actualizar la URL de programa y asegurar la presencia del bloque social en la descripción
 function updateDescriptionUrl(description, programName) {
-  let slug = "horagalega";
-  if (programName && programName !== "none") {
-    const cleanProg = programName.replace(/\.[^/.]+$/, "").replace(/_/g, " ").trim();
-    slug = slugify(cleanProg);
-  }
-
   const descStr = (description || "").trim();
 
-  // Si ya tiene el bloque de redes sociales o un enlace de tvg.gal, solo nos aseguramos de que el link de tvg.gal/slug esté actualizado
+  // Si no hay programa detectado, devolver la descripción sin modificar
+  if (!programName || programName === "none") {
+    return descStr;
+  }
+
+  const cleanProg = programName.replace(/\.[^/.]+$/, "").replace(/_/g, " ").trim();
+  const slug = slugify(cleanProg);
+  if (!slug) return descStr;
+
+  // Si ya tiene el bloque de redes sociales o un enlace de tvg.gal, actualizar el link
   if (descStr.includes("seguirnos en todas as nosas redes sociais") || descStr.includes("tvg.gal/")) {
     const urlRegex = /tvg\.gal\/[a-z0-9]+/gi;
     if (urlRegex.test(descStr)) {
@@ -158,7 +171,7 @@ function updateDescriptionUrl(description, programName) {
     return descStr;
   }
 
-  // Si no tiene el bloque de redes sociales, se lo añadimos con el slug correspondiente
+  // Si no tiene el bloque de redes sociales, añadirlo con el slug correspondiente
   const socialBlock = `\n\nPodes ver o programa completo en tvg.gal/${slug}\n\n🔔 Subscríbete á canle oficial da Televisión de Galicia en YouTube: https://www.youtube.com/tvg\n\n🌐 Visita a nosa páxina web: https://agalega.gal/\n\n📲 E tamén podes seguirnos en todas as nosas redes sociais:\nFacebook: https://www.facebook.com/televisiondegalicia\nTwitter: https://x.com/tvgalicia\nInstagram: https://www.instagram.com/tvgalicia\nTikTok: https://www.tiktok.com/@tvgalicia`;
 
   return descStr ? `${descStr}${socialBlock}` : socialBlock.trim();
@@ -284,7 +297,8 @@ export default function Dashboard() {
     if (!playlistId || playlistId === "") return "none";
     const playlist = playlists.find(pl => pl.id === playlistId);
     if (!playlist) return "none";
-    return findBestLogoForPlaylist(playlist.title, programLogosCatalog);
+    // Pasa playlistId para coincidencia directa (prioridad 0) y title para fallback por nombre
+    return findBestLogoForPlaylist(playlistId, playlist.title, programLogosCatalog);
   };
 
   // Cambiar playlist y actualizar automáticamente logotipo, título y descripción en el editor individual
@@ -623,10 +637,12 @@ export default function Dashboard() {
       const res = await fetch("/api/program-logos", { cache: "no-store" });
       const data = await res.json();
       if (data.logos) {
+        // Guardar objetos completos { name, playlistId }
         setProgramLogosCatalog(data.logos);
 
         // Auto-subir Hora_Galega.png si no está en el catálogo y el canvas ya está listo
-        if (!data.logos.includes("Hora_Galega.png") && defaultProgramLogoCanvasRef.current) {
+        const logoNames = data.logoNames || data.logos.map(l => l.name || l);
+        if (!logoNames.includes("Hora_Galega.png") && defaultProgramLogoCanvasRef.current) {
           const canvas = defaultProgramLogoCanvasRef.current;
           canvas.toBlob(async (blob) => {
             if (!blob) return;
@@ -695,7 +711,8 @@ export default function Dashboard() {
 
           if (detectedProg) {
             const found = programLogosCatalog.find(logo => {
-              const cleanLogoName = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
+              const logoName = typeof logo === "string" ? logo : logo.name;
+              const cleanLogoName = logoName.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
               const slugLogo = slugify(cleanLogoName);
               const slugProg = slugify(detectedProg);
               return (
@@ -706,7 +723,7 @@ export default function Dashboard() {
               );
             });
             if (found) {
-              setSelectedProgramLogo(found);
+              setSelectedProgramLogo(typeof found === "string" ? found : found.name);
             } else {
               setSelectedProgramLogo("none");
             }
@@ -1211,7 +1228,8 @@ export default function Dashboard() {
         }
         if (detectedProg !== "none") {
           const found = programLogosCatalog.find(logo => {
-            const cleanLogoName = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
+            const logoName = typeof logo === "string" ? logo : logo.name;
+            const cleanLogoName = logoName.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
             const slugLogo = slugify(cleanLogoName);
             const slugProg = slugify(detectedProg);
             return (
@@ -1222,7 +1240,7 @@ export default function Dashboard() {
             );
           });
           if (found) {
-            detectedProg = found;
+            detectedProg = typeof found === "string" ? found : found.name;
           } else {
             detectedProg = "none";
           }
@@ -1295,7 +1313,8 @@ export default function Dashboard() {
             }
             if (detectedProg !== "none") {
               const found = programLogosCatalog.find(logo => {
-                const cleanLogoName = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
+                const logoName = typeof logo === "string" ? logo : logo.name;
+                const cleanLogoName = logoName.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
                 const slugLogo = slugify(cleanLogoName);
                 const slugProg = slugify(detectedProg);
                 return (
@@ -1306,7 +1325,7 @@ export default function Dashboard() {
                 );
               });
               if (found) {
-                detectedProg = found;
+                detectedProg = typeof found === "string" ? found : found.name;
               } else {
                 detectedProg = "none";
               }
@@ -1403,12 +1422,26 @@ export default function Dashboard() {
         // Mapear usando el ID sugerido por Gemini
         const matchedVideo = activePrivateVideos.find(pv => pv.id === v.matchedVideoId) || null;
 
+        // Detectar si el programa corresponde a alguna lista de reproducción
+        let matchedPlaylistId = "";
+        if (v.programName && playlists.length > 0) {
+          const foundPlaylist = findBestPlaylist(playlists, v.programName);
+          if (foundPlaylist) {
+            matchedPlaylistId = foundPlaylist.id;
+          }
+        }
+
         // Detectar si el programa corresponde a algún logo del catálogo
         let matchedLogo = "none";
-        if (v.programName) {
+        if (matchedPlaylistId) {
+          matchedLogo = getMatchedLogoForPlaylist(matchedPlaylistId);
+        }
+
+        if (matchedLogo === "none" && v.programName) {
           const cleanProg = v.programName.toUpperCase().replace(/_/g, " ").trim();
           const found = programLogosCatalog.find(logo => {
-            const cleanLogoName = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
+            const logoName = typeof logo === "string" ? logo : logo.name;
+            const cleanLogoName = logoName.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
             const slugLogo = slugify(cleanLogoName);
             const slugProg = slugify(cleanProg);
             return (
@@ -1419,16 +1452,7 @@ export default function Dashboard() {
             );
           });
           if (found) {
-            matchedLogo = found;
-          }
-        }
-
-        // Detectar si el programa corresponde a alguna lista de reproducción
-        let matchedPlaylistId = "";
-        if (v.programName && playlists.length > 0) {
-          const foundPlaylist = findBestPlaylist(playlists, v.programName);
-          if (foundPlaylist) {
-            matchedPlaylistId = foundPlaylist.id;
+            matchedLogo = typeof found === "string" ? found : found.name;
           }
         }
 
@@ -2717,11 +2741,14 @@ export default function Dashboard() {
                                     }}
                                   >
                                     <option value="none">Ninguno (Sin logo)</option>
-                                    {programLogosCatalog.map(logo => (
-                                      <option key={logo} value={logo}>
-                                        {logo.replace(/\.[^/.]+$/, "").replace(/_/g, " ")}
-                                      </option>
-                                    ))}
+                                    {programLogosCatalog.map(logo => {
+                                      const logoName = typeof logo === "string" ? logo : logo.name;
+                                      return (
+                                        <option key={logoName} value={logoName}>
+                                          {logoName.replace(/\.[^/.]+$/, "").replace(/_/g, " ")}
+                                        </option>
+                                      );
+                                    })}
                                   </select>
                                 </div>
                               </div>
@@ -3270,63 +3297,66 @@ export default function Dashboard() {
                                   >
                                     Ninguno (Sin logotipo)
                                   </li>
-                                  {programLogosCatalog.map((logo) => (
-                                    <li
-                                      key={logo}
-                                      style={{
-                                        display: "flex",
-                                        justifyContent: "space-between",
-                                        alignItems: "center",
-                                        padding: "0.4rem",
-                                        borderRadius: "4px"
-                                      }}
-                                    >
-                                      <span
-                                        style={{ cursor: "pointer", flex: 1 }}
-                                        onClick={() => {
-                                          handleLogoChange(logo);
-                                          setLogoDropdownOpen(false);
-                                        }}
-                                      >
-                                        {logo.replace(/\.[^/.]+$/, "").replace(/_/g, " ")}
-                                      </span>
-                                      <button
-                                        type="button"
-                                        aria-label={`Eliminar ${logo}`}
+                                  {programLogosCatalog.map((logo) => {
+                                    const logoName = typeof logo === "string" ? logo : logo.name;
+                                    return (
+                                      <li
+                                        key={logoName}
                                         style={{
-                                          background: "transparent",
-                                          border: "none",
-                                          color: "#ef4444",
-                                          cursor: "pointer",
-                                          fontSize: "0.9rem",
-                                          padding: "0 0.2rem"
-                                        }}
-                                        onClick={async (e) => {
-                                          e.stopPropagation();
-                                          if (!confirm(`¿Eliminar el logotipo "${logo}"?`)) return;
-                                          try {
-                                            const res = await fetch("/api/program-logos", {
-                                              method: "DELETE",
-                                              headers: { "Content-Type": "application/json" },
-                                              body: JSON.stringify({ filename: logo }),
-                                            });
-                                            if (res.ok) {
-                                              await fetchProgramLogosCatalog();
-                                              if (selectedProgramLogo === logo) setSelectedProgramLogo("none");
-                                            } else {
-                                              const data = await res.json();
-                                              alert("Error al eliminar logotipo: " + (data.error || "error desconocido"));
-                                            }
-                                          } catch (err) {
-                                            console.error("Error al eliminar logotipo:", err);
-                                            alert("Error de red o de cliente: " + err.message);
-                                          }
+                                          display: "flex",
+                                          justifyContent: "space-between",
+                                          alignItems: "center",
+                                          padding: "0.4rem",
+                                          borderRadius: "4px"
                                         }}
                                       >
-                                        ✖
-                                      </button>
-                                    </li>
-                                  ))}
+                                        <span
+                                          style={{ cursor: "pointer", flex: 1 }}
+                                          onClick={() => {
+                                            handleLogoChange(logoName);
+                                            setLogoDropdownOpen(false);
+                                          }}
+                                        >
+                                          {logoName.replace(/\.[^/.]+$/, "").replace(/_/g, " ")}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          aria-label={`Eliminar ${logoName}`}
+                                          style={{
+                                            background: "transparent",
+                                            border: "none",
+                                            color: "#ef4444",
+                                            cursor: "pointer",
+                                            fontSize: "0.9rem",
+                                            padding: "0 0.2rem"
+                                          }}
+                                          onClick={async (e) => {
+                                            e.stopPropagation();
+                                            if (!confirm(`¿Eliminar el logotipo "${logoName}"?`)) return;
+                                            try {
+                                              const res = await fetch("/api/program-logos", {
+                                                method: "DELETE",
+                                                headers: { "Content-Type": "application/json" },
+                                                body: JSON.stringify({ filename: logoName }),
+                                              });
+                                              if (res.ok) {
+                                                await fetchProgramLogosCatalog();
+                                                if (selectedProgramLogo === logoName) setSelectedProgramLogo("none");
+                                              } else {
+                                                const data = await res.json();
+                                                alert("Error al eliminar logotipo: " + (data.error || "error desconocido"));
+                                              }
+                                            } catch (err) {
+                                              console.error("Error al eliminar logotipo:", err);
+                                              alert("Error de red o de cliente: " + err.message);
+                                            }
+                                          }}
+                                        >
+                                          ✖
+                                        </button>
+                                      </li>
+                                    );
+                                  })}
                                 </ul>
                               )}
                             </div>
@@ -3817,64 +3847,111 @@ export default function Dashboard() {
 
             {/* Listado de logotipos existentes */}
             <h3 style={{ fontSize: "0.9rem", fontWeight: "600", marginBottom: "0.5rem" }}>Logotipos Registrados ({programLogosCatalog.length})</h3>
-            <div style={{ maxHeight: "250px", overflowY: "auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", padding: "0.25rem" }}>
+            <div style={{ maxHeight: "250px", overflowY: "auto", display: "grid", gridTemplateColumns: "1fr", gap: "0.5rem", padding: "0.25rem" }}>
               {programLogosCatalog.length === 0 ? (
-                <div style={{ gridColumn: "span 2", fontSize: "0.8rem", color: "var(--text-muted)", textAlign: "center", padding: "1rem" }}>
+                <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", textAlign: "center", padding: "1rem" }}>
                   No hay logotipos registrados en el catálogo.
                 </div>
               ) : (
-                programLogosCatalog.map(logo => (
-                  <div key={logo} style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    padding: "0.5rem",
-                    background: "var(--bg-card, #0f172a)",
-                    border: "1px solid var(--border-color, #334155)",
-                    borderRadius: "8px",
-                    gap: "0.5rem"
-                  }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", minWidth: 0, flex: 1 }}>
-                      <img src={`/program_logos/${logo}`} alt="" style={{ width: "32px", height: "32px", objectFit: "contain", borderRadius: "4px", background: "rgba(255,255,255,0.05)" }} />
-                      <span style={{ fontSize: "0.75rem", fontWeight: "600", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
-                        {logo.replace(/\.[^/.]+$/, "").replace(/_/g, " ")}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      aria-label={`Eliminar ${logo}`}
-                      style={{
-                        background: "transparent",
-                        border: "none",
-                        color: "#ef4444",
-                        cursor: "pointer",
-                        fontSize: "0.85rem",
-                        padding: "0.25rem"
-                      }}
-                      onClick={async () => {
-                        if (!confirm(`¿Eliminar el logotipo "${logo}"?`)) return;
-                        try {
-                          const res = await fetch("/api/program-logos", {
-                            method: "DELETE",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ filename: logo }),
-                          });
-                          if (res.ok) {
-                            await fetchProgramLogosCatalog();
-                          } else {
-                            const data = await res.json();
-                            alert("Error al eliminar logotipo: " + (data.error || "error desconocido"));
+                programLogosCatalog.map(logo => {
+                  const logoName = typeof logo === "string" ? logo : logo.name;
+                  const logoPlaylistId = typeof logo === "string" ? null : logo.playlistId;
+                  return (
+                    <div key={logoName} style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "0.5rem",
+                      background: "var(--bg-card, #0f172a)",
+                      border: "1px solid var(--border-color, #334155)",
+                      borderRadius: "8px",
+                      gap: "0.5rem"
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", minWidth: 0, flex: 1 }}>
+                        <img src={`/program_logos/${logoName}`} alt="" style={{ width: "32px", height: "32px", objectFit: "contain", borderRadius: "4px", background: "rgba(255,255,255,0.05)" }} />
+                        <span style={{ fontSize: "0.75rem", fontWeight: "600", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+                          {logoName.replace(/\.[^/.]+$/, "").replace(/_/g, " ")}
+                        </span>
+                      </div>
+                      
+                      {/* Vinculación de Playlist */}
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                        <select
+                          value={logoPlaylistId || ""}
+                          onChange={async (e) => {
+                            const val = e.target.value;
+                            try {
+                              const res = await fetch("/api/program-logos", {
+                                method: "PATCH",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ filename: logoName, playlistId: val || null }),
+                              });
+                              if (res.ok) {
+                                await fetchProgramLogosCatalog();
+                              } else {
+                                const data = await res.json();
+                                alert("Error al vincular playlist: " + (data.error || "error desconocido"));
+                              }
+                            } catch (err) {
+                              console.error(logoName, err);
+                              alert("Error de red al vincular playlist");
+                            }
+                          }}
+                          style={{
+                            padding: "0.25rem 0.5rem",
+                            background: "var(--bg-surface-secondary, #1e293b)",
+                            border: "1px solid var(--border-color, #334155)",
+                            borderRadius: "6px",
+                            color: "#fff",
+                            fontSize: "0.7rem",
+                            maxWidth: "180px"
+                          }}
+                        >
+                          <option value="">-- Sin Playlist --</option>
+                          {playlists.map(pl => (
+                            <option key={pl.id} value={pl.id}>
+                              {pl.title}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <button
+                        type="button"
+                        aria-label={`Eliminar ${logoName}`}
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          color: "#ef4444",
+                          cursor: "pointer",
+                          fontSize: "0.85rem",
+                          padding: "0.25rem"
+                        }}
+                        onClick={async () => {
+                          if (!confirm(`¿Eliminar el logotipo "${logoName}"?`)) return;
+                          try {
+                            const res = await fetch("/api/program-logos", {
+                              method: "DELETE",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ filename: logoName }),
+                            });
+                            if (res.ok) {
+                              await fetchProgramLogosCatalog();
+                            } else {
+                              const data = await res.json();
+                              alert("Error al eliminar logotipo: " + (data.error || "error desconocido"));
+                            }
+                          } catch (err) {
+                            console.error("Error al eliminar logotipo:", err);
+                            alert("Error de red o de cliente: " + err.message);
                           }
-                        } catch (err) {
-                          console.error("Error al eliminar logotipo:", err);
-                          alert("Error de red o de cliente: " + err.message);
-                        }
-                      }}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>
