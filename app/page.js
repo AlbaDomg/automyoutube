@@ -1503,14 +1503,15 @@ export default function Dashboard() {
         return item;
       });
 
+      setParsedVideos(mapped);
+      setSelectedYoutubeVideo(null); // Cerrar editor individual
+
       clearInterval(progressInterval);
       setAnalyzeProgress(100);
       
       // Esperar brevemente para mostrar el 100%
       await new Promise(r => setTimeout(r, 400));
 
-      setParsedVideos(mapped);
-      setSelectedYoutubeVideo(null); // Cerrar editor individual
       alert(`¡Documento procesado con éxito! Se han detectado ${data.videos.length} videos. Por favor, revisa el mapeo de cada video antes de sincronizar.`);
     } catch (err) {
       clearInterval(progressInterval);
@@ -2438,7 +2439,7 @@ export default function Dashboard() {
 
                       <div className={styles.inlineEditContent} style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: "1.5rem" }}>
                         {/* Columna Izquierda: Vinculación y Portada */}
-                        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "1rem", alignSelf: "start" }}>
                           {/* Selector de Video Privado */}
                           <div className={styles.inputGroup} style={{ margin: 0 }}>
                             <label style={{ fontSize: "0.8rem", fontWeight: "600" }}>Seleccionar vídeo manualmente:</label>
