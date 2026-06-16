@@ -98,7 +98,7 @@ export async function POST(request) {
           title: title || '',
           description: description || '',
           tags: cleanedTags,
-          scheduledAt: new Date(scheduledAt),
+          scheduledAt: new Date(scheduledAt.includes('Z') || scheduledAt.includes('+') ? scheduledAt : scheduledAt + 'Z'),
           status: 'SCHEDULED',
           youtubeId: youtubeVideoId,
           thumbnailBase64: thumbnail || null,
