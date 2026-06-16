@@ -171,13 +171,13 @@ function renderDescriptionPreview(text) {
   
   return lines.map((line, idx) => {
     // Buscar enlaces de redes sociales oficiales
-    const fbMatch = line.match(/^Facebook:\s*(https?:\/\/(?:www\.)?facebook\.com\/([a-zA-Z0-9_\-\.]+)\/?)/i);
-    const twMatch = line.match(/^(?:Twitter|X):\s*(https?:\/\/(?:www\.)?(?:x|twitter)\.com\/([a-zA-Z0-9_\-\.]+)\/?)/i);
-    const igMatch = line.match(/^Instagram:\s*(https?:\/\/(?:www\.)?instagram\.com\/([a-zA-Z0-9_\-\.]+)\/?)/i);
-    const ttMatch = line.match(/^TikTok:\s*(https?:\/\/(?:www\.)?tiktok\.com\/@?([a-zA-Z0-9_\-\.]+)\/?)/i);
-    const ytSubMatch = line.match(/^(🔔\s*Subscríbete\s+[^:]+):\s*(https?:\/\/[^\s]+)/i);
-    const webMatch = line.match(/^(🌐\s*Visita\s+[^:]+):\s*(https?:\/\/[^\s]+)/i);
-    const generalUrlMatch = line.match(/^(Podes\s+ver\s+[^:]+):\s*(https?:\/\/[^\s]+)/i);
+    const fbMatch = line.match(/Facebook:\s*(https?:\/\/(?:www\.)?facebook\.com\/([a-zA-Z0-9_\-\.]+)\/?)/i);
+    const twMatch = line.match(/(?:Twitter|X):\s*(https?:\/\/(?:www\.)?(?:x|twitter)\.com\/([a-zA-Z0-9_\-\.]+)\/?)/i);
+    const igMatch = line.match(/Instagram:\s*(https?:\/\/(?:www\.)?instagram\.com\/([a-zA-Z0-9_\-\.]+)\/?)/i);
+    const ttMatch = line.match(/TikTok:\s*(https?:\/\/(?:www\.)?tiktok\.com\/@?([a-zA-Z0-9_\-\.]+)\/?)/i);
+    const ytSubMatch = line.match(/(🔔\s*Subscríbete\s+[^:]+):\s*(https?:\/\/[^\s]+)/i);
+    const webMatch = line.match(/(🌐\s*Visita\s+[^:]+):\s*(https?:\/\/[^\s]+)/i);
+    const generalUrlMatch = line.match(/(📺\s*Podes\s+ver\s+[^:]+|Podes\s+ver\s+[^:]+):\s*(https?:\/\/[^\s]+)/i);
 
     const pillStyle = {
       display: "inline-flex",
@@ -2705,6 +2705,22 @@ export default function Dashboard() {
                               required
                               style={{ fontSize: "0.8rem", lineHeight: "1.4" }}
                             />
+                            {item.description && (
+                              <div style={{
+                                marginTop: "0.5rem",
+                                padding: "0.75rem",
+                                background: "rgba(255, 255, 255, 0.01)",
+                                borderRadius: "8px",
+                                border: "1px solid var(--border-color, #334155)",
+                              }}>
+                                <span style={{ fontSize: "0.7rem", fontWeight: "600", color: "var(--text-secondary)", display: "block", marginBottom: "0.5rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                                  🔗 Enlaces interactivos detectados
+                                </span>
+                                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                                  {renderDescriptionPreview(item.description)}
+                                </div>
+                              </div>
+                            )}
 
                           </div>
 
@@ -2894,6 +2910,22 @@ export default function Dashboard() {
                       value={updateForm.description}
                       onChange={(e) => setUpdateForm({ ...updateForm, description: e.target.value })}
                     />
+                    {updateForm.description && (
+                      <div style={{
+                        marginTop: "0.5rem",
+                        padding: "0.75rem",
+                        background: "rgba(255, 255, 255, 0.01)",
+                        borderRadius: "8px",
+                        border: "1px solid var(--border-color)",
+                      }}>
+                        <span style={{ fontSize: "0.7rem", fontWeight: "600", color: "var(--text-secondary)", display: "block", marginBottom: "0.5rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          🔗 Enlaces interactivos detectados
+                        </span>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                          {renderDescriptionPreview(updateForm.description)}
+                        </div>
+                      </div>
+                    )}
 
                   </div>
 
