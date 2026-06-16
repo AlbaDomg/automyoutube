@@ -277,8 +277,13 @@ Response format:
       }
     }
 
+    const cleanProgramNames = availableLogos.map(l => l.replace(/\.[^/.]+$/, "").replace(/_/g, " ").toUpperCase().trim());
+
     const prompt = `
 Analiza el documento de referencia adjunto. Este documento contiene la planificación o tabla con los metadatos de los videos de redes sociales/YouTube de uno o varios programas de televisión.
+El nombre del archivo de este documento subido es: "${file.name}".
+Los nombres de programas/logotipos válidos registrados en el sistema son: ${JSON.stringify(cleanProgramNames)}.
+
 Extrae la información de los vídeos que estén definidos y listados en la tabla o el texto del documento.
 
 REGLA CRÍTICA DE FILTRADO (MUY IMPORTANTE): Debes ignorar por completo cualquier fila, celda o sección de vídeo que esté vacía o que sirva como plantilla sin contenido real (por ejemplo, si el documento tiene una fila llamada 'Vídeo 4' o 'Vídeo 5' pero no contiene un título ni una descripción redactados en sus celdas correspondientes). Únicamente debes extraer y devolver los vídeos que tengan un título y una descripción/sinopsis reales y definidos en el documento.
@@ -288,14 +293,15 @@ Para CADA vídeo válido detectado en el documento, extrae de forma EXACTA y LIT
 2. La descripción del video (generalmente de una columna llamada 'Sinopse', 'Sinopsis', 'Descripción' o similar).
 
 Además, genera usando IA para cada vídeo:
-1. El nombre del programa de televisión al que corresponde el contenido (por ejemplo: "HORA GALEGA", "LUAR", "A COROA", "HOLA", etc.).
-   - FUENTES DE INFORMACIÓN: Utiliza tanto el texto del documento (planilla) como la información del video coincidente de YouTube si está disponible.
+1. El nombre del programa de televisión al que corresponde el contenido de la lista de programas válidos.
+   - FUENTES DE INFORMACIÓN: Utiliza tanto el texto del documento (planilla) como el nombre del archivo del documento "${file.name}" y la información del video coincidente de YouTube si está disponible.
    - PRIORIDAD DE DETECCIÓN (CRÍTICA):
      a) La prioridad número 1 es el contenido literal del documento (la planilla). Si el titular o la sinopsis de la planilla contienen palabras clave asociadas a un programa (por ejemplo, "Luar", "Hola", "A Coroa", "Hora Galega"), ese es el programa correcto.
-     b) La prioridad número 2 es la información del vídeo coincidente de YouTube (su título y descripción). Puedes usarlo para identificar el programa (por ejemplo, si tiene un sufijo como "| LUAR" o un enlace como "tvg.gal/luar").
-     c) REGLA DE CONFLICTO: Si hay un conflicto (por ejemplo, la planilla habla claramente del programa "HOLA", pero el vídeo coincidente de YouTube tiene el título con "| LUAR"), prevalece siempre la planilla (el programa es "HOLA"). No te dejes guiar por sufijos obsoletos de YouTube si el texto del documento indica otra cosa.
-     d) Si no se puede identificar ningún programa por ninguna vía, devuelve el campo "programName" como una cadena vacía "". NO inventes un nombre de programa.
-   - Devuélvelo en el campo "programName" en MAYÚSCULAS.
+     b) La prioridad número 2 es el nombre del archivo del documento ("${file.name}"). Si el nombre del archivo contiene indicios claros o el nombre de alguno de los programas registrados (ej. si se llama "Luar_12_05.pdf" o contiene "LUAR", "HG", "Hora_Galega", etc.), asócialo como el programa de los vídeos que no especifiquen otro dentro del texto.
+     c) La prioridad número 3 es la información del vídeo coincidente de YouTube (su título, descripción o detectedProgramName). Puedes usarlo para identificar el programa (por ejemplo, si tiene un sufijo como "| LUAR" o un enlace como "tvg.gal/luar").
+     d) REGLA DE CONFLICTO: Si hay un conflicto (por ejemplo, el nombre del archivo o la planilla indica claramente el programa "HOLA", pero el vídeo coincidente de YouTube tiene el título con "| LUAR"), prevalece siempre el documento / nombre de archivo (el programa es "HOLA"). No te dejes guiar por sufijos obsoletos de YouTube si el documento indica otra cosa.
+     e) Si no se puede identificar ningún programa por ninguna vía, devuelve el campo "programName" como una cadena vacía "". NO inventes un nombre de programa.
+   - Devuélvelo en el campo "programName" en MAYÚSCULAS y exactamente como figura en el catálogo de programas válidos si coincide.
 2. Una frase SEO de alto impacto de exactamente 4 palabras en Gallego (Galician) para imprimir en la miniatura, basada en el tema de ese video.
    - REGLA CRÍTICA: NO debes copiar simplemente las primeras 4 palabras del título. Debe ser una frase creada con sentido lógico coherente completo.
    - ESTRUCTURA DE DISEÑO: Imagina la frase dividida conceptualmente en un "título de 2 palabras" y un "subtítulo de 2 palabras" que tengan relación y coherencia entre sí (por ejemplo: "ALERTA MOS" + "EVITA PICADURAS", o "CONCURSO TVG" + "PREMIO FINAL", o "MANTER BATEAS" + "CONSELLO PRÁCTICO").
@@ -303,14 +309,15 @@ Además, genera usando IA para cada vídeo:
    - REGLA DE FORMATO ESTRICTO: La frase debe contener EXCLUSIVAMENTE las 4 palabras en gallego separadas por espacios. NO incluyas barras (/), guiones (-), comillas, ni ningún signo de puntuación en el texto.
 
 ${annotatedYoutubeVideos && annotatedYoutubeVideos.length > 0 
-  ? `Se te proporciona la lista de vídeos en estado privado u oculto actualmente subidos al canal de YouTube (cada uno tiene su 'id', 'title', 'description', 'detectedProgramLogo' y 'detectedProgramName'):
+  ? `Se te proporciona la lista de vídeos en estado privado u oculto actualmente subidos al canal de YouTube (cada uno tiene su 'id', 'title', 'description', 'fileName' (nombre original de archivo subido), 'detectedProgramLogo' y 'detectedProgramName'):
 ${JSON.stringify(annotatedYoutubeVideos)}
 
 Analiza semánticamente el contenido y temática de cada uno de los vídeos que extraigas del documento de la planilla y compáralo con esta lista de YouTube.
 REGLAS DE VINCULACIÓN:
 1. Si encuentras una correspondencia clara por título o descripción, asocia el campo "matchedVideoId" de ese vídeo con el "id" del vídeo de YouTube correspondiente de la lista.
-2. Si un vídeo de YouTube tiene un título o descripción genérica que no aporta coincidencia textual directa, usa la información del programa: si el programa del vídeo de la planilla (programName, ej. "LUAR") coincide con el del vídeo de YouTube (detectedProgramName, ej. "LUAR"), y no hay otros vídeos de YouTube que encajen mejor, asocia su "matchedVideoId" con el "id" de ese vídeo de YouTube correspondientemente.
-3. Si no encuentras ninguna correspondencia lógica, deja "matchedVideoId" como una cadena vacía "".`
+2. Si un vídeo de YouTube tiene un título o descripción genérica que no aporta coincidencia textual directa (por ejemplo, 'MVI_1234.MP4', 'Video_1.mp4' o la fecha), pero su nombre de archivo de origen ('fileName') coincide semánticamente con el tema o titular del vídeo del documento (por ejemplo, habla de la misma entrevista, concurso o tema), asocia su "matchedVideoId" con el "id" de ese vídeo de YouTube correspondientemente.
+3. Si el programa del vídeo de la planilla (programName) coincide con el del vídeo de YouTube (detectedProgramName), y no hay otros vídeos de YouTube que encajen mejor, utilízalo como criterio para asociar su "matchedVideoId" con el "id" de ese vídeo.
+4. Si no encuentras ninguna correspondencia lógica, deja "matchedVideoId" como una cadena vacía "".`
   : 'Deja el campo "matchedVideoId" como una cadena vacía "" para todos los vídeos.'
 }
 
