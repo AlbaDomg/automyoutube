@@ -189,74 +189,9 @@ export async function POST(request) {
       for (const video of youtubeVideos) {
         let programLogoName = detectProgramLocally(video.title, video.description, video.fileName, availableLogos);
         
-        // Si no se puede detectar por texto localmente, analizar visualmente su miniatura
-        if (!programLogoName && video.id) {
-          console.log(`[Analyze PDF] Video ${video.id} has generic text metadata. Attempting visual analysis of default thumbnail...`);
-          try {
-            const thumbnailUrl = `https://i.ytimg.com/vi/${video.id}/hqdefault.jpg`;
-            const imageResponse = await fetch(thumbnailUrl);
-            if (imageResponse.ok) {
-              const arrayBufferImage = await imageResponse.arrayBuffer();
-              const imageBase64 = Buffer.from(arrayBufferImage).toString('base64');
-              
-              const detectPrompt = `
-Analyze the provided YouTube video thumbnail frame.
-Your task is to identify which television program this frame/scene belongs to.
-The possible program names/logos are:
-${JSON.stringify(availableLogos.map(l => l.replace(/\.[^/.]+$/, "").replace(/_/g, " ").toUpperCase()))}
-
-Identify the program by looking at screen logos/watermarks (usually in corners), watermarks in video scenes, graphic style, or overlay texts.
-Respond strictly in JSON format with the matching program name in uppercase.
-If it is "HORA GALEGA" or the logo has "HORA GALEGA", respond "HORA GALEGA".
-If you cannot identify any of the matching programs from the list, respond "NONE".
-
-Response format:
-{
-  "detectedProgram": "PROGRAM_NAME_OR_NONE"
-}
-`;
-              const visionResponse = await callGeminiWithRetry(() => ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: [
-                  {
-                    role: 'user',
-                    parts: [
-                      {
-                        inlineData: {
-                          data: imageBase64,
-                          mimeType: 'image/jpeg'
-                        }
-                      },
-                      { text: detectPrompt }
-                    ]
-                  }
-                ],
-                config: {
-                  responseMimeType: 'application/json',
-                }
-              }));
-              
-              const visionResult = JSON.parse(visionResponse.text);
-              const detected = visionResult.detectedProgram ? visionResult.detectedProgram.toUpperCase().trim() : "NONE";
-              if (detected && detected !== "NONE") {
-                const foundLogo = availableLogos.find(logo => {
-                  const cleanLogoName = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
-                  return cleanLogoName === detected || slugify(cleanLogoName) === slugify(detected);
-                });
-                if (foundLogo) {
-                  programLogoName = foundLogo;
-                } else if (detected === "HORA GALEGA") {
-                  programLogoName = "Hora_Galega.png";
-                }
-              }
-              console.log(`[Analyze PDF] Visual detection result for video ${video.id}: ${programLogoName || "NONE"}`);
-            } else {
-              console.warn(`[Analyze PDF] Failed to fetch thumbnail for video ${video.id} (HTTP status: ${imageResponse.status})`);
-            }
-          } catch (visionErr) {
-            console.warn(`[Analyze PDF] Visual program detection failed for video ${video.id}:`, visionErr.message);
-          }
-        }
+        // La detección visual de miniaturas mediante IA de Gemini ha sido desactivada
+        // para evitar agotar la cuota de la API Key (errores 429 RESOURCE_EXHAUSTED)
+        // al procesar lotes con varios vídeos. Se prioriza la detección de texto local.
         
         annotatedYoutubeVideos.push({
           id: video.id,
