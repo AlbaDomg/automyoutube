@@ -26,7 +26,7 @@ function extractYoutubeId(input) {
     if (match && match[1]) {
       return match[1];
     }
-  } catch (e) {}
+  } catch (e) { }
   const cleanIdPattern = /^([a-zA-Z0-9_-]{11})/;
   const match = trimmed.match(cleanIdPattern);
   if (match && match[1]) {
@@ -56,7 +56,7 @@ function findBestPlaylist(playlists, programName) {
   let best = playlists.find(pl => {
     const cleanPl = pl.title.toUpperCase().replace(/_/g, " ").trim();
     if (cleanPl === cleanProg) return true;
-    
+
     const slugPl = slugify(cleanPl);
     const normPl = slugPl.replace(/hola/g, "hora");
     return normPl === normProg;
@@ -88,23 +88,23 @@ function findBestPlaylist(playlists, programName) {
 // Helper para encontrar el logotipo ideal basado en el nombre de la lista de reproducción
 function findBestLogoForPlaylist(playlistTitle, logosCatalog) {
   if (!playlistTitle || !logosCatalog || logosCatalog.length === 0) return "none";
-  
+
   const cleanPl = playlistTitle.toUpperCase().replace(/_/g, " ").trim();
   const slugPl = slugify(cleanPl);
   const normPl = slugPl.replace(/hola/g, "hora");
-  
+
   // Fase 1: Coincidencia exacta
   let best = logosCatalog.find(logo => {
     const cleanLogo = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
     if (cleanPl === cleanLogo) return true;
-    
+
     const slugLogo = slugify(cleanLogo);
     const normLogo = slugLogo.replace(/hola/g, "hora");
     return normPl === normLogo;
   });
-  
+
   if (best) return best;
-  
+
   // Fase 2: El nombre de la playlist contiene el logotipo del programa
   best = logosCatalog.find(logo => {
     const cleanLogo = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
@@ -112,7 +112,7 @@ function findBestLogoForPlaylist(playlistTitle, logosCatalog) {
     const normLogo = slugLogo.replace(/hola/g, "hora");
     return normLogo.length > 2 && normPl.includes(normLogo);
   });
-  
+
   if (best) return best;
 
   // Fase 3: El logotipo del programa contiene el nombre de la playlist
@@ -122,7 +122,7 @@ function findBestLogoForPlaylist(playlistTitle, logosCatalog) {
     const normLogo = slugLogo.replace(/hola/g, "hora");
     return normPl.length > 2 && normLogo.includes(normPl);
   });
-  
+
   return best || "none";
 }
 
@@ -131,7 +131,7 @@ function updateTitleSuffix(title, programName) {
   let cleanTitle = (title || "").trim();
   const suffixRegex = /\s*\|\s*[a-zA-Z0-9_\sÀ-ÿ\-]+$/i;
   cleanTitle = cleanTitle.replace(suffixRegex, "").trim();
-  
+
   if (programName && programName !== "none") {
     const cleanProg = programName.replace(/\.[^/.]+$/, "").replace(/_/g, " ").toUpperCase().trim();
     cleanTitle = `${cleanTitle} | ${cleanProg}`;
@@ -146,9 +146,9 @@ function updateDescriptionUrl(description, programName) {
     const cleanProg = programName.replace(/\.[^/.]+$/, "").replace(/_/g, " ").trim();
     slug = slugify(cleanProg);
   }
-  
+
   const descStr = (description || "").trim();
-  
+
   // Si ya tiene el bloque de redes sociales o un enlace de tvg.gal, solo nos aseguramos de que el link de tvg.gal/slug esté actualizado
   if (descStr.includes("seguirnos en todas as nosas redes sociais") || descStr.includes("tvg.gal/")) {
     const urlRegex = /tvg\.gal\/[a-z0-9]+/gi;
@@ -157,10 +157,10 @@ function updateDescriptionUrl(description, programName) {
     }
     return descStr;
   }
-  
+
   // Si no tiene el bloque de redes sociales, se lo añadimos con el slug correspondiente
   const socialBlock = `\n\nPodes ver o programa completo en tvg.gal/${slug}\n\n🔔 Subscríbete á canle oficial da Televisión de Galicia en YouTube: https://www.youtube.com/tvg\n\n🌐 Visita a nosa páxina web: https://agalega.gal/\n\n📲 E tamén podes seguirnos en todas as nosas redes sociais:\nFacebook: https://www.facebook.com/televisiondegalicia\nTwitter: https://x.com/tvgalicia\nInstagram: https://www.instagram.com/tvgalicia\nTikTok: https://www.tiktok.com/@tvgalicia`;
-  
+
   return descStr ? `${descStr}${socialBlock}` : socialBlock.trim();
 }
 
@@ -358,7 +358,7 @@ export default function Dashboard() {
         if (res.ok) {
           const data = await res.json();
           setIsAuthRequired(data.required);
-          
+
           if (data.required) {
             setIsAuthenticated(data.authenticated);
             if (data.authenticated && data.user) {
@@ -391,10 +391,10 @@ export default function Dashboard() {
             if (savedDocName) {
               setPendingDocumentName(savedDocName);
             }
-            
+
             // 1. Obtener videos privados para que el mapeo/visualización funcione
             const activePrivateVideos = await fetchPrivateVideos();
-            
+
             // 2. Regenerar miniaturas automáticas que falten tras un pequeño retardo
             setTimeout(() => {
               parsed.forEach(video => {
@@ -582,14 +582,14 @@ export default function Dashboard() {
     setLogoUploadProgress(0);
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/program-logos", true);
-    
+
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) {
         const percentComplete = Math.round((event.loaded / event.total) * 100);
         setLogoUploadProgress(percentComplete);
       }
     };
-    
+
     xhr.onload = () => {
       setLogoUploadProgress(null);
       if (xhr.status >= 200 && xhr.status < 300) {
@@ -607,12 +607,12 @@ export default function Dashboard() {
         onError(new Error(`Error del servidor (${xhr.status})`));
       }
     };
-    
+
     xhr.onerror = () => {
       setLogoUploadProgress(null);
       onError(new Error("Error de red o conexión"));
     };
-    
+
     const formData = new FormData();
     formData.append("file", file);
     xhr.send(formData);
@@ -676,7 +676,7 @@ export default function Dashboard() {
           // Auto-detectar del título o descripción
           const title = selectedYoutubeVideo.title || "";
           const desc = selectedYoutubeVideo.description || "";
-          
+
           // Buscar sufijo del título: "| NOMBRE"
           const suffixMatch = title.match(/\|\s*([a-zA-Z0-9_\sÀ-ÿ\-]+)$/);
           let detectedProg = "";
@@ -692,7 +692,7 @@ export default function Dashboard() {
               }
             }
           }
-          
+
           if (detectedProg) {
             const found = programLogosCatalog.find(logo => {
               const cleanLogoName = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
@@ -1163,7 +1163,7 @@ export default function Dashboard() {
   const handleSelectVideo = (video) => {
     setSelectedYoutubeVideo(video);
     setYoutubeId(video.id);
-    
+
     // Buscar si ya hay una actualización programada para este video
     const scheduledUpdate = scheduledUpdates.find(u => u.youtubeId === video.id);
 
@@ -1211,14 +1211,14 @@ export default function Dashboard() {
         }
       }
     }
-    
+
     setUpdateForm({
       title: video.title || "",
       description: updateDescriptionUrl(video.description || "", detectedProg),
       tags: video.tags || "",
       isScheduled: !!scheduledUpdate,
-      scheduledAt: scheduledUpdate && scheduledUpdate.scheduledAt 
-        ? toLocalDateTimeString(scheduledUpdate.scheduledAt) 
+      scheduledAt: scheduledUpdate && scheduledUpdate.scheduledAt
+        ? toLocalDateTimeString(scheduledUpdate.scheduledAt)
         : "",
       playlistId: scheduledUpdate && scheduledUpdate.playlistId ? scheduledUpdate.playlistId : ""
     });
@@ -1249,7 +1249,7 @@ export default function Dashboard() {
       if (data.length > 0) {
         const video = data[0];
         setSelectedYoutubeVideo(video);
-        
+
         // Buscar si ya hay una actualización programada para este video
         const scheduledUpdate = scheduledUpdates.find(u => u.youtubeId === task.youtubeId);
 
@@ -1297,20 +1297,20 @@ export default function Dashboard() {
             }
           }
         }
-        
+
         setUpdateForm({
           title: task.title || video.title || "",
           description: updateDescriptionUrl(task.description || video.description || "", detectedProg),
           tags: video.tags || "",
           isScheduled: !!scheduledUpdate,
-          scheduledAt: scheduledUpdate && scheduledUpdate.scheduledAt 
-            ? toLocalDateTimeString(scheduledUpdate.scheduledAt) 
+          scheduledAt: scheduledUpdate && scheduledUpdate.scheduledAt
+            ? toLocalDateTimeString(scheduledUpdate.scheduledAt)
             : "",
           playlistId: task.playlistId || (scheduledUpdate && scheduledUpdate.playlistId) || ""
         });
         setOptimizationSuggestions(null);
         handleResetThumbnailStates();
-        
+
         // Cargar miniatura automática con la frase SEO guardada o el fallback por defecto
         setThumbnailText(task.thumbnailText || (task.title ? task.title.split(/\s+/).slice(0, 4).join(" ") : ""));
         setIsAutoThumbnailEnabled(true);
@@ -1381,7 +1381,7 @@ export default function Dashboard() {
       }
 
       const data = await res.json();
-      
+
       // 3. Crear mapeo inicial usando el emparejamiento inteligente de Gemini
       const mapped = data.videos.map((v, i) => {
         // Mapear usando el ID sugerido por Gemini
@@ -1463,7 +1463,7 @@ export default function Dashboard() {
 
       clearInterval(progressInterval);
       setAnalyzeProgress(100);
-      
+
       // Esperar brevemente para mostrar el 100%
       await new Promise(r => setTimeout(r, 400));
 
@@ -1854,7 +1854,8 @@ export default function Dashboard() {
           height: "40px",
           animation: "spin 1s linear infinite"
         }} />
-        <style dangerouslySetInnerHTML={{__html: `
+        <style dangerouslySetInnerHTML={{
+          __html: `
           @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
@@ -1995,7 +1996,7 @@ export default function Dashboard() {
             }}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12.24 10.285V13.4h6.887c-.275 1.565-1.88 4.604-6.887 4.604-4.33 0-7.859-3.579-7.859-8s3.529-8 7.859-8c2.46 0 4.105 1.025 5.047 1.926l2.427-2.334C18.155 2.502 15.427 1.2 12.24 1.2 6.25 1.2 1.39 6.06 1.39 12s4.86 10.8 10.85 10.8c6.26 0 10.42-4.4 10.42-10.6 0-.715-.077-1.26-.172-1.915H12.24z"/>
+              <path d="M12.24 10.285V13.4h6.887c-.275 1.565-1.88 4.604-6.887 4.604-4.33 0-7.859-3.579-7.859-8s3.529-8 7.859-8c2.46 0 4.105 1.025 5.047 1.926l2.427-2.334C18.155 2.502 15.427 1.2 12.24 1.2 6.25 1.2 1.39 6.06 1.39 12s4.86 10.8 10.85 10.8c6.26 0 10.42-4.4 10.42-10.6 0-.715-.077-1.26-.172-1.915H12.24z" />
             </svg>
             Entrar con Google
           </button>
@@ -2125,7 +2126,8 @@ export default function Dashboard() {
             animation: "spin 1s linear infinite",
             marginBottom: "1rem"
           }} />
-          <style dangerouslySetInnerHTML={{__html: `
+          <style dangerouslySetInnerHTML={{
+            __html: `
             @keyframes spin {
               0% { transform: rotate(0deg); }
               100% { transform: rotate(360deg); }
@@ -2221,7 +2223,7 @@ export default function Dashboard() {
               }}
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M23.498 6.163a3.003 3.003 0 0 0-2.11-2.11C19.517 3.545 12 3.545 12 3.545s-7.517 0-9.388.508a3.003 3.003 0 0 0-2.11 2.11C0 8.033 0 12 0 12s0 3.967.502 5.837a3.003 3.003 0 0 0 2.11 2.11c1.871.508 9.388.508 9.388.508s7.517 0 9.388-.508a3.003 3.003 0 0 0 2.11-2.11C24 15.967 24 12 24 12s0-3.967-.502-5.837zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+                <path d="M23.498 6.163a3.003 3.003 0 0 0-2.11-2.11C19.517 3.545 12 3.545 12 3.545s-7.517 0-9.388.508a3.003 3.003 0 0 0-2.11 2.11C0 8.033 0 12 0 12s0 3.967.502 5.837a3.003 3.003 0 0 0 2.11 2.11c1.871.508 9.388.508 9.388.508s7.517 0 9.388-.508a3.003 3.003 0 0 0 2.11-2.11C24 15.967 24 12 24 12s0-3.967-.502-5.837zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
               </svg>
               Conectar canal de YouTube
             </button>
@@ -2262,8 +2264,8 @@ export default function Dashboard() {
         </div>
       ) : (
         <div className={styles.dashboardGrid}>
-        {/* Columna Izquierda: Sincronización, PDF Editor e Inline Form */}
-          
+          {/* Columna Izquierda: Sincronización, PDF Editor e Inline Form */}
+
           {/* Tarjeta de Selección y Carga */}
           <div className={styles.card}>
             <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
@@ -2278,13 +2280,13 @@ export default function Dashboard() {
                 <div className={styles.inputGroup}>
                   <div
                     className={styles.uploadArea}
-                    style={{ 
-                      padding: "1.5rem", 
-                      border: "2px dashed var(--border-color, #334155)", 
-                      borderRadius: "8px", 
-                      textAlign: "center", 
-                      cursor: "pointer", 
-                      background: "rgba(255,255,255,0.01)" 
+                    style={{
+                      padding: "1.5rem",
+                      border: "2px dashed var(--border-color, #334155)",
+                      borderRadius: "8px",
+                      textAlign: "center",
+                      cursor: "pointer",
+                      background: "rgba(255,255,255,0.01)"
                     }}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={(e) => {
@@ -2300,8 +2302,8 @@ export default function Dashboard() {
                   >
                     <div style={{ fontSize: "2.2rem", marginBottom: "0.5rem" }}>📄</div>
                     <p style={{ margin: 0, fontSize: "0.85rem", fontWeight: "600" }}>
-                      {documentFile 
-                        ? `Documento Seleccionado: ${documentFile.name}` 
+                      {documentFile
+                        ? `Documento Seleccionado: ${documentFile.name}`
                         : "Arrastra tu archivo PDF o Word (.docx) aquí o haz clic para explorar"
                       }
                     </p>
@@ -2325,10 +2327,10 @@ export default function Dashboard() {
                   onClick={handleAnalyzeFile}
                   disabled={isAnalyzingFile || !documentFile}
                   className={styles.btnSubmit}
-                  style={{ 
-                    marginTop: "1rem", 
-                    background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)", 
-                    opacity: (isAnalyzingFile || !documentFile) ? 0.6 : 1 
+                  style={{
+                    marginTop: "1rem",
+                    background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
+                    opacity: (isAnalyzingFile || !documentFile) ? 0.6 : 1
                   }}
                 >
                   {isAnalyzingFile ? "Procesando documento con IA..." : "⚡ Procesar Documento en Lote"}
@@ -2341,9 +2343,9 @@ export default function Dashboard() {
                       <span>{analyzeProgress}%</span>
                     </div>
                     <div className={styles.batchSyncProgressOuter} style={{ marginTop: 0 }}>
-                      <div 
-                        className={styles.batchSyncProgressInner} 
-                        style={{ 
+                      <div
+                        className={styles.batchSyncProgressInner}
+                        style={{
                           width: `${analyzeProgress}%`,
                           background: "linear-gradient(90deg, #a855f7 0%, #ec4899 100%)",
                           boxShadow: "0 0 10px rgba(168, 85, 247, 0.5)"
@@ -2387,21 +2389,21 @@ export default function Dashboard() {
 
                 {/* Resultados de la búsqueda */}
                 {searchResults.length > 0 && (
-                  <div style={{ 
-                    marginTop: "1rem", 
-                    background: "var(--bg-card, #0f172a)", 
-                    border: "1px solid var(--border-color, #334155)", 
-                    borderRadius: "12px", 
-                    maxHeight: "250px", 
-                    overflowY: "auto", 
-                    padding: "0.5rem" 
+                  <div style={{
+                    marginTop: "1rem",
+                    background: "var(--bg-card, #0f172a)",
+                    border: "1px solid var(--border-color, #334155)",
+                    borderRadius: "12px",
+                    maxHeight: "250px",
+                    overflowY: "auto",
+                    padding: "0.5rem"
                   }}>
                     {searchResults.map(video => (
-                      <div key={video.id} style={{ 
-                        display: "flex", 
-                        alignItems: "center", 
-                        gap: "0.75rem", 
-                        padding: "0.5rem", 
+                      <div key={video.id} style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.75rem",
+                        padding: "0.5rem",
                         borderBottom: "1px solid rgba(255,255,255,0.05)",
                         justifyContent: "space-between"
                       }}>
@@ -2411,8 +2413,8 @@ export default function Dashboard() {
                             <div style={{ fontSize: "0.8rem", fontWeight: "600", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
                               {video.title}
                             </div>
-                            <span style={{ 
-                              fontSize: "0.7rem", 
+                            <span style={{
+                              fontSize: "0.7rem",
                               color: video.privacyStatus === 'private' ? "#ef4444" : "#f59e0b",
                               background: video.privacyStatus === 'private' ? "rgba(239, 68, 68, 0.15)" : "rgba(245, 158, 11, 0.15)",
                               padding: "1px 6px",
@@ -2469,7 +2471,7 @@ export default function Dashboard() {
               <div style={{ display: "flex", flexDirection: "column", gap: "2rem", marginTop: "1.5rem" }}>
                 {parsedVideos.map((item, idx) => {
                   const matchedVideo = privateVideos.find(pv => pv.id === item.matchedVideoId);
-                  
+
                   return (
                     <div key={item.index} id={`batch-video-${item.index}`} style={{
                       border: "1px solid var(--border-color, #334155)",
@@ -3199,118 +3201,118 @@ export default function Dashboard() {
                             <span>Logotipo de Programa (Catálogo)</span>
                           </label>
                           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                               <div style={{ position: "relative", display: "inline-block", flex: 1 }}>
-                                 <button
-                                   type="button"
-                                   className={styles.btnSubmit}
-                                   style={{
-                                     padding: "0.4rem 0.6rem",
-                                     fontSize: "0.75rem",
-                                     background: "var(--bg-surface-solid, #1e293b)",
-                                     color: "var(--text-primary, #f8fafc)",
-                                     border: "1px solid var(--border-color, #334155)",
-                                     borderRadius: "6px",
-                                     cursor: "pointer",
-                                     width: "100%",
-                                     display: "flex",
-                                     justifyContent: "space-between",
-                                     alignItems: "center"
-                                   }}
-                                   onClick={() => setLogoDropdownOpen(!logoDropdownOpen)}
-                                 >
-                                   {selectedProgramLogo === "none"
-                                     ? "Ninguno (Sin logotipo)"
-                                     : selectedProgramLogo.replace(/\.[^/.]+$/, "").replace(/_/g, " ")}
-                                   <span style={{ marginLeft: "0.3rem" }}>▾</span>
-                                 </button>
-                                 {logoDropdownOpen && (
-                                   <ul
-                                     style={{
-                                       position: "absolute",
-                                       top: "100%",
-                                       left: 0,
-                                       right: 0,
-                                       marginTop: "0.2rem",
-                                       padding: "0.4rem",
-                                       background: "var(--bg-surface, #0f172a)",
-                                       border: "1px solid var(--border-color, #334155)",
-                                       borderRadius: "6px",
-                                       listStyle: "none",
-                                       maxHeight: "200px",
-                                       overflowY: "auto",
-                                       zIndex: 10,
-                                     }}
-                                   >
-                                     <li
-                                       key="none"
-                                       style={{ padding: "0.4rem", cursor: "pointer", borderRadius: "4px" }}
-                                       onClick={() => {
-                                         handleLogoChange("none");
-                                         setLogoDropdownOpen(false);
-                                       }}
-                                     >
-                                       Ninguno (Sin logotipo)
-                                     </li>
-                                     {programLogosCatalog.map((logo) => (
-                                       <li
-                                         key={logo}
-                                         style={{
-                                           display: "flex",
-                                           justifyContent: "space-between",
-                                           alignItems: "center",
-                                           padding: "0.4rem",
-                                           borderRadius: "4px"
-                                         }}
-                                       >
-                                         <span
-                                           style={{ cursor: "pointer", flex: 1 }}
-                                           onClick={() => {
-                                             handleLogoChange(logo);
-                                             setLogoDropdownOpen(false);
-                                           }}
-                                         >
-                                           {logo.replace(/\.[^/.]+$/, "").replace(/_/g, " ")}
-                                         </span>
-                                         <button
-                                           type="button"
-                                           aria-label={`Eliminar ${logo}`}
-                                           style={{
-                                             background: "transparent",
-                                             border: "none",
-                                             color: "#ef4444",
-                                             cursor: "pointer",
-                                             fontSize: "0.9rem",
-                                             padding: "0 0.2rem"
-                                           }}
-                                           onClick={async (e) => {
-                                             e.stopPropagation();
-                                             if (!confirm(`¿Eliminar el logotipo "${logo}"?`)) return;
-                                             try {
-                                               const res = await fetch("/api/program-logos", {
-                                                 method: "DELETE",
-                                                 headers: { "Content-Type": "application/json" },
-                                                 body: JSON.stringify({ filename: logo }),
-                                               });
-                                               if (res.ok) {
-                                                 await fetchProgramLogosCatalog();
-                                                 if (selectedProgramLogo === logo) setSelectedProgramLogo("none");
-                                               } else {
-                                                 const data = await res.json();
-                                                 alert("Error al eliminar logotipo: " + (data.error || "error desconocido"));
-                                               }
-                                             } catch (err) {
-                                               console.error("Error al eliminar logotipo:", err);
-                                               alert("Error de red o de cliente: " + err.message);
-                                             }
-                                           }}
-                                         >
-                                           ✖
-                                         </button>
-                                       </li>
-                                     ))}
-                                   </ul>
-                                 )}
-                               </div>
+                            <div style={{ position: "relative", display: "inline-block", flex: 1 }}>
+                              <button
+                                type="button"
+                                className={styles.btnSubmit}
+                                style={{
+                                  padding: "0.4rem 0.6rem",
+                                  fontSize: "0.75rem",
+                                  background: "var(--bg-surface-solid, #1e293b)",
+                                  color: "var(--text-primary, #f8fafc)",
+                                  border: "1px solid var(--border-color, #334155)",
+                                  borderRadius: "6px",
+                                  cursor: "pointer",
+                                  width: "100%",
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center"
+                                }}
+                                onClick={() => setLogoDropdownOpen(!logoDropdownOpen)}
+                              >
+                                {selectedProgramLogo === "none"
+                                  ? "Ninguno (Sin logotipo)"
+                                  : selectedProgramLogo.replace(/\.[^/.]+$/, "").replace(/_/g, " ")}
+                                <span style={{ marginLeft: "0.3rem" }}>▾</span>
+                              </button>
+                              {logoDropdownOpen && (
+                                <ul
+                                  style={{
+                                    position: "absolute",
+                                    top: "100%",
+                                    left: 0,
+                                    right: 0,
+                                    marginTop: "0.2rem",
+                                    padding: "0.4rem",
+                                    background: "var(--bg-surface, #0f172a)",
+                                    border: "1px solid var(--border-color, #334155)",
+                                    borderRadius: "6px",
+                                    listStyle: "none",
+                                    maxHeight: "200px",
+                                    overflowY: "auto",
+                                    zIndex: 10,
+                                  }}
+                                >
+                                  <li
+                                    key="none"
+                                    style={{ padding: "0.4rem", cursor: "pointer", borderRadius: "4px" }}
+                                    onClick={() => {
+                                      handleLogoChange("none");
+                                      setLogoDropdownOpen(false);
+                                    }}
+                                  >
+                                    Ninguno (Sin logotipo)
+                                  </li>
+                                  {programLogosCatalog.map((logo) => (
+                                    <li
+                                      key={logo}
+                                      style={{
+                                        display: "flex",
+                                        justifyContent: "space-between",
+                                        alignItems: "center",
+                                        padding: "0.4rem",
+                                        borderRadius: "4px"
+                                      }}
+                                    >
+                                      <span
+                                        style={{ cursor: "pointer", flex: 1 }}
+                                        onClick={() => {
+                                          handleLogoChange(logo);
+                                          setLogoDropdownOpen(false);
+                                        }}
+                                      >
+                                        {logo.replace(/\.[^/.]+$/, "").replace(/_/g, " ")}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        aria-label={`Eliminar ${logo}`}
+                                        style={{
+                                          background: "transparent",
+                                          border: "none",
+                                          color: "#ef4444",
+                                          cursor: "pointer",
+                                          fontSize: "0.9rem",
+                                          padding: "0 0.2rem"
+                                        }}
+                                        onClick={async (e) => {
+                                          e.stopPropagation();
+                                          if (!confirm(`¿Eliminar el logotipo "${logo}"?`)) return;
+                                          try {
+                                            const res = await fetch("/api/program-logos", {
+                                              method: "DELETE",
+                                              headers: { "Content-Type": "application/json" },
+                                              body: JSON.stringify({ filename: logo }),
+                                            });
+                                            if (res.ok) {
+                                              await fetchProgramLogosCatalog();
+                                              if (selectedProgramLogo === logo) setSelectedProgramLogo("none");
+                                            } else {
+                                              const data = await res.json();
+                                              alert("Error al eliminar logotipo: " + (data.error || "error desconocido"));
+                                            }
+                                          } catch (err) {
+                                            console.error("Error al eliminar logotipo:", err);
+                                            alert("Error de red o de cliente: " + err.message);
+                                          }
+                                        }}
+                                      >
+                                        ✖
+                                      </button>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
                             <label
                               className={styles.btnSubmit}
                               style={{
@@ -3356,9 +3358,9 @@ export default function Dashboard() {
                                   <span>{logoUploadProgress}%</span>
                                 </div>
                                 <div className={styles.batchSyncProgressOuter} style={{ height: "4px", marginTop: 0 }}>
-                                  <div 
-                                    className={styles.batchSyncProgressInner} 
-                                    style={{ 
+                                  <div
+                                    className={styles.batchSyncProgressInner}
+                                    style={{
                                       width: `${logoUploadProgress}%`,
                                       background: "linear-gradient(90deg, #a855f7 0%, #ec4899 100%)",
                                       boxShadow: "0 0 6px rgba(168, 85, 247, 0.4)"
@@ -3468,7 +3470,7 @@ export default function Dashboard() {
           {scheduledUpdates.length > 0 && (
             <div className={styles.card} style={{ marginTop: "1.5rem" }}>
               <div className={styles.cardTitle} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span>Cola de Actualizaciones Programadas Locales</span>
+                <span>Videos Pendientes de Sincronización(Programados)</span>
                 <button
                   type="button"
                   onClick={handleExecuteScheduler}
@@ -3507,80 +3509,80 @@ export default function Dashboard() {
           )}
 
 
-        {/* Historial */}
-        <div className={styles.bottomGrid}>
-          <div className={styles.card} style={{ marginTop: "1.5rem" }}>
-            <div className={styles.cardTitle}>Historial: Sincronizaciones Realizadas</div>
-            
-            {loadingTasks ? (
-              <div className={styles.emptyState}>Cargando tareas...</div>
-            ) : tasks.filter(t => t.status === "COMPLETED").length === 0 ? (
-              <div className={styles.emptyState}>No hay videos sincronizados recientemente.</div>
-            ) : (
-              <div className={styles.tasksList}>
-                {tasks.filter(t => t.status === "COMPLETED").map(task => (
-                  <div key={task.id} className={styles.taskCardCompleted}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
-                      <h4 className={styles.taskCardTitle} style={{ textDecoration: "line-through", color: "var(--text-muted)" }}>
-                        {task.title}
-                      </h4>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          try {
-                            const res = await fetch(`/api/tasks?id=${task.id}`, { method: 'DELETE' });
-                            if (res.ok) {
-                              fetchTasks();
-                            } else {
-                              alert("Error al eliminar la tarea del historial local.");
+          {/* Historial */}
+          <div className={styles.bottomGrid}>
+            <div className={styles.card} style={{ marginTop: "1.5rem" }}>
+              <div className={styles.cardTitle}>Historial: Sincronizaciones Realizadas</div>
+
+              {loadingTasks ? (
+                <div className={styles.emptyState}>Cargando tareas...</div>
+              ) : tasks.filter(t => t.status === "COMPLETED").length === 0 ? (
+                <div className={styles.emptyState}>No hay videos sincronizados recientemente.</div>
+              ) : (
+                <div className={styles.tasksList}>
+                  {tasks.filter(t => t.status === "COMPLETED").map(task => (
+                    <div key={task.id} className={styles.taskCardCompleted}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
+                        <h4 className={styles.taskCardTitle} style={{ textDecoration: "line-through", color: "var(--text-muted)" }}>
+                          {task.title}
+                        </h4>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              const res = await fetch(`/api/tasks?id=${task.id}`, { method: 'DELETE' });
+                              if (res.ok) {
+                                fetchTasks();
+                              } else {
+                                alert("Error al eliminar la tarea del historial local.");
+                              }
+                            } catch (err) {
+                              console.error(err);
                             }
-                          } catch (err) {
-                            console.error(err);
-                          }
-                        }}
-                        className={styles.historyActionBtnDelete}
-                      >✕</button>
-                    </div>
-                    
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: "0.5rem" }}>
-                      <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                        <div><strong>ID YouTube:</strong> <code>{task.youtubeId}</code></div>
-                        {task.completedAt && (
-                          <div><strong>Sincronizado el:</strong> {formatDate(task.completedAt)}</div>
-                        )}
+                          }}
+                          className={styles.historyActionBtnDelete}
+                        >✕</button>
                       </div>
-                      <a
-                        href={`https://studio.youtube.com/video/${task.youtubeId}/edit`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={styles.btnSubmit}
-                        style={{
-                          width: "auto",
-                          fontSize: "0.75rem",
-                          padding: "0.3rem 0.75rem",
-                          background: "#0284c7",
-                          border: "none",
-                          textDecoration: "none",
-                          color: "#fff",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "0.25rem",
-                          borderRadius: "4px",
-                          fontWeight: "500",
-                          height: "fit-content"
-                        }}
-                      >
-                        ✏️ Editar en YouTube
-                      </a>
+
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: "0.5rem" }}>
+                        <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                          <div><strong>ID YouTube:</strong> <code>{task.youtubeId}</code></div>
+                          {task.completedAt && (
+                            <div><strong>Sincronizado el:</strong> {formatDate(task.completedAt)}</div>
+                          )}
+                        </div>
+                        <a
+                          href={`https://studio.youtube.com/video/${task.youtubeId}/edit`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={styles.btnSubmit}
+                          style={{
+                            width: "auto",
+                            fontSize: "0.75rem",
+                            padding: "0.3rem 0.75rem",
+                            background: "#0284c7",
+                            border: "none",
+                            textDecoration: "none",
+                            color: "#fff",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "0.25rem",
+                            borderRadius: "4px",
+                            fontWeight: "500",
+                            height: "fit-content"
+                          }}
+                        >
+                          ✏️ Editar en YouTube
+                        </a>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
-    )}
+      )}
 
       {/* Modal de Configuración */}
       {showSettings && (
@@ -3745,9 +3747,9 @@ export default function Dashboard() {
                       <span>{logoUploadProgress}%</span>
                     </div>
                     <div className={styles.batchSyncProgressOuter} style={{ height: "6px", marginTop: 0 }}>
-                      <div 
-                        className={styles.batchSyncProgressInner} 
-                        style={{ 
+                      <div
+                        className={styles.batchSyncProgressInner}
+                        style={{
                           width: `${logoUploadProgress}%`,
                           background: "linear-gradient(90deg, #a855f7 0%, #ec4899 100%)",
                           boxShadow: "0 0 8px rgba(168, 85, 247, 0.4)"
@@ -3842,8 +3844,8 @@ export default function Dashboard() {
                 <span>{syncProgress.current} de {syncProgress.total}</span>
               </div>
               <div className={styles.batchSyncProgressOuter}>
-                <div 
-                  className={styles.batchSyncProgressInner} 
+                <div
+                  className={styles.batchSyncProgressInner}
                   style={{ width: `${syncProgress.total > 0 ? (syncProgress.current / syncProgress.total) * 100 : 0}%` }}
                 />
               </div>
