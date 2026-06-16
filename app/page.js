@@ -213,6 +213,8 @@ export default function Dashboard() {
   const [isSyncingBatch, setIsSyncingBatch] = useState(false);
   const [syncProgress, setSyncProgress] = useState({ current: 0, total: 0, status: "" });
   const [autoIncrement, setAutoIncrement] = useState(true);
+  const [batchScheduleEnabled, setBatchScheduleEnabled] = useState(false);
+  const [batchScheduleDate, setBatchScheduleDate] = useState("");
 
   // Estado de edición/actualización de YouTube
   const [selectedYoutubeVideo, setSelectedYoutubeVideo] = useState(null);
@@ -1596,6 +1598,95 @@ export default function Dashboard() {
     alert("¡Sincronización en lote finalizada!");
   };
 
+  // Programar todos los videos mapeados en lote con la misma fecha/hora
+  const handleScheduleAllVideos = async () => {
+    const matchedItems = parsedVideos.filter(v => v.matchedVideoId);
+    if (matchedItems.length === 0) {
+      alert("No hay ningún video mapeado con YouTube para programar.");
+      return;
+    }
+    if (!batchScheduleDate) {
+      alert("Selecciona una fecha y hora antes de programar.");
+      return;
+    }
+    if (!confirm(`Se va a programar la sincronización de ${matchedItems.length} videos para el ${batchScheduleDate}. ¿Deseas continuar?`)) {
+      return;
+    }
+
+    setIsSyncingBatch(true);
+    setSyncProgress({ current: 0, total: matchedItems.length, status: "Programando sincronizaciones..." });
+
+    let currentCount = 0;
+    for (let i = 0; i < parsedVideos.length; i++) {
+      const item = parsedVideos[i];
+      if (!item.matchedVideoId) continue;
+
+      currentCount++;
+      setSyncProgress({
+        current: currentCount,
+        total: matchedItems.length,
+        status: `Programando vídeo ${item.index}: "${item.title}"...`
+      });
+
+      setParsedVideos(prev => {
+        const list = [...prev];
+        list[i].isSyncing = true;
+        list[i].syncError = null;
+        return list;
+      });
+
+      try {
+        const res = await fetch("/api/youtube/update", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            youtubeVideoId: item.matchedVideoId,
+            title: item.title,
+            description: item.description,
+            thumbnail: item.isAutoThumbnailEnabled ? item.generatedThumbnailBase64 : null,
+            scheduledAt: batchScheduleDate,
+            playlistId: item.playlistId || null,
+          }),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.error || "Fallo al programar");
+        }
+
+        setParsedVideos(prev => {
+          const list = [...prev];
+          const targetIdx = list.findIndex(x => x.index === item.index);
+          if (targetIdx !== -1) {
+            list[targetIdx].isSyncing = false;
+            list[targetIdx].isSynced = true;
+            list[targetIdx].isScheduled = true;
+            list[targetIdx].scheduledAt = batchScheduleDate;
+          }
+          return list;
+        });
+      } catch (err) {
+        console.error(`Error programando video index ${item.index}:`, err);
+        setParsedVideos(prev => {
+          const list = [...prev];
+          const targetIdx = list.findIndex(x => x.index === item.index);
+          if (targetIdx !== -1) {
+            list[targetIdx].isSyncing = false;
+            list[targetIdx].syncError = err.message;
+          }
+          return list;
+        });
+      }
+    }
+
+    setSyncProgress(prev => ({ ...prev, status: "Programación finalizada." }));
+    setIsSyncingBatch(false);
+    fetchTasks();
+    fetchScheduledUpdates();
+    setBatchScheduleEnabled(false);
+    alert(`¡${matchedItems.length} videos programados para sincronizar el ${batchScheduleDate}!`);
+  };
+
   // Guardar cambios en YouTube y marcar tarea como completada (realizada)
   const handleSaveYoutubeVideoChanges = async (e) => {
     e.preventDefault();
@@ -2763,34 +2854,113 @@ export default function Dashboard() {
                 })}
               </div>
 
-              {/* Botón de Sincronización en Lote */}
+              {/* Programar Lote Completo */}
               <div style={{
                 marginTop: "2rem",
                 paddingTop: "1.5rem",
                 borderTop: "1px solid var(--border-color, #334155)",
-                display: "flex",
-                gap: "1rem"
               }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (confirm("¿Descartar el documento actual y todos los cambios no guardados?")) {
-                      setParsedVideos([]);
-                      setDocumentFile(null);
-                    }
-                  }}
-                  className={styles.btnCancel}
-                  style={{ flex: 1 }}
-                >Descartar Todo</button>
-                <button
-                  type="button"
-                  onClick={handleSyncAllVideos}
-                  disabled={isSyncingBatch}
-                  className={styles.btnSubmit}
-                  style={{ flex: 2, background: "linear-gradient(135deg, #10b981 0%, #059669 100%)", boxShadow: "0 4px 15px rgba(16, 185, 129, 0.3)" }}
-                >
-                  🚀 Sincronizar todos los videos ({parsedVideos.filter(v => v.matchedVideoId).length} mapeados)
-                </button>
+                {/* Toggle para activar programación de lote */}
+                <div style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.75rem",
+                  marginBottom: batchScheduleEnabled ? "1rem" : "0",
+                  padding: "0.75rem 1rem",
+                  background: batchScheduleEnabled ? "rgba(245, 158, 11, 0.08)" : "rgba(255,255,255,0.03)",
+                  borderRadius: "10px",
+                  border: `1px solid ${batchScheduleEnabled ? "rgba(245, 158, 11, 0.3)" : "var(--border-color, #334155)"}`,
+                  transition: "all 0.3s ease"
+                }}>
+                  <input
+                    type="checkbox"
+                    id="batchScheduleToggle"
+                    checked={batchScheduleEnabled}
+                    onChange={e => setBatchScheduleEnabled(e.target.checked)}
+                    style={{ width: "16px", height: "16px", accentColor: "#f59e0b", cursor: "pointer" }}
+                  />
+                  <label htmlFor="batchScheduleToggle" style={{ cursor: "pointer", fontSize: "0.85rem", fontWeight: "600", color: batchScheduleEnabled ? "#f59e0b" : "var(--text-muted)" }}>
+                    ⏰ Programar sincronización del lote completo
+                  </label>
+                  {batchScheduleEnabled && (
+                    <span style={{ marginLeft: "auto", fontSize: "0.7rem", color: "#f59e0b", background: "rgba(245,158,11,0.15)", padding: "2px 8px", borderRadius: "10px" }}>
+                      {parsedVideos.filter(v => v.matchedVideoId).length} videos
+                    </span>
+                  )}
+                </div>
+
+                {/* Selector de fecha/hora para el lote */}
+                {batchScheduleEnabled && (
+                  <div style={{
+                    background: "rgba(245, 158, 11, 0.06)",
+                    border: "1px solid rgba(245, 158, 11, 0.25)",
+                    borderRadius: "12px",
+                    padding: "1rem 1.25rem",
+                    marginBottom: "1rem",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "0.75rem"
+                  }}>
+                    <div style={{ fontSize: "0.8rem", color: "#f59e0b", fontWeight: "600", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                      📅 Selecciona la fecha y hora de sincronización para todos los videos del lote:
+                    </div>
+                    <DateTimePicker
+                      value={batchScheduleDate}
+                      onChange={e => setBatchScheduleDate(e.target.value)}
+                      placeholder="Seleccionar fecha y hora del lote..."
+                      required={false}
+                    />
+                    {batchScheduleDate && (
+                      <div style={{ fontSize: "0.75rem", color: "rgba(245,158,11,0.8)", display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                        ✅ Todos los videos se programarán para: <strong>{batchScheduleDate}</strong>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Botones de acción */}
+                <div style={{ display: "flex", gap: "1rem" }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm("¿Descartar el documento actual y todos los cambios no guardados?")) {
+                        setParsedVideos([]);
+                        setDocumentFile(null);
+                      }
+                    }}
+                    className={styles.btnCancel}
+                    style={{ flex: 1 }}
+                  >Descartar Todo</button>
+
+                  {batchScheduleEnabled ? (
+                    <button
+                      type="button"
+                      onClick={handleScheduleAllVideos}
+                      disabled={isSyncingBatch || !batchScheduleDate}
+                      className={styles.btnSubmit}
+                      style={{
+                        flex: 2,
+                        background: batchScheduleDate
+                          ? "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)"
+                          : "rgba(245,158,11,0.3)",
+                        boxShadow: batchScheduleDate ? "0 4px 15px rgba(245, 158, 11, 0.4)" : "none",
+                        cursor: batchScheduleDate ? "pointer" : "not-allowed"
+                      }}
+                    >
+                      ⏰ Programar {parsedVideos.filter(v => v.matchedVideoId).length} videos
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleSyncAllVideos}
+                      disabled={isSyncingBatch}
+                      className={styles.btnSubmit}
+                      style={{ flex: 2, background: "linear-gradient(135deg, #10b981 0%, #059669 100%)", boxShadow: "0 4px 15px rgba(16, 185, 129, 0.3)" }}
+                    >
+                      🚀 Sincronizar todos los videos ({parsedVideos.filter(v => v.matchedVideoId).length} mapeados)
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           )}
