@@ -707,8 +707,6 @@ export default function Dashboard() {
             });
             if (found) {
               setSelectedProgramLogo(found);
-            } else if (detectedProg === "HORA GALEGA") {
-              setSelectedProgramLogo("Hora_Galega.png");
             } else {
               setSelectedProgramLogo("none");
             }
@@ -1225,8 +1223,6 @@ export default function Dashboard() {
           });
           if (found) {
             detectedProg = found;
-          } else if (detectedProg === "HORA GALEGA") {
-            detectedProg = "Hora_Galega.png";
           } else {
             detectedProg = "none";
           }
@@ -1311,8 +1307,6 @@ export default function Dashboard() {
               });
               if (found) {
                 detectedProg = found;
-              } else if (detectedProg === "HORA GALEGA") {
-                detectedProg = "Hora_Galega.png";
               } else {
                 detectedProg = "none";
               }
@@ -1409,27 +1403,23 @@ export default function Dashboard() {
         // Mapear usando el ID sugerido por Gemini
         const matchedVideo = activePrivateVideos.find(pv => pv.id === v.matchedVideoId) || null;
 
-        // Detectar si el programa corresponde a algún logo del catálogo (evitando seleccionar Hora Galega por defecto de forma genérica, pero asignándolo si corresponde)
+        // Detectar si el programa corresponde a algún logo del catálogo
         let matchedLogo = "none";
         if (v.programName) {
           const cleanProg = v.programName.toUpperCase().replace(/_/g, " ").trim();
-          if (cleanProg === "HORA GALEGA") {
-            matchedLogo = "Hora_Galega.png";
-          } else {
-            const found = programLogosCatalog.find(logo => {
-              const cleanLogoName = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
-              const slugLogo = slugify(cleanLogoName);
-              const slugProg = slugify(cleanProg);
-              return (
-                cleanLogoName === cleanProg ||
-                slugLogo === slugProg ||
-                (slugLogo.length > 3 && slugProg.includes(slugLogo)) ||
-                (slugProg.length > 3 && slugLogo.includes(slugProg))
-              );
-            });
-            if (found) {
-              matchedLogo = found;
-            }
+          const found = programLogosCatalog.find(logo => {
+            const cleanLogoName = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
+            const slugLogo = slugify(cleanLogoName);
+            const slugProg = slugify(cleanProg);
+            return (
+              cleanLogoName === cleanProg ||
+              slugLogo === slugProg ||
+              (slugLogo.length > 3 && slugProg.includes(slugLogo)) ||
+              (slugProg.length > 3 && slugLogo.includes(slugProg))
+            );
+          });
+          if (found) {
+            matchedLogo = found;
           }
         }
 
