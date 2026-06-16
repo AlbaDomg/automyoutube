@@ -159,156 +159,12 @@ function updateDescriptionUrl(description, programName) {
   }
   
   // Si no tiene el bloque de redes sociales, se lo añadimos con el slug correspondiente
-  const socialBlock = `\n\n📺 Podes ver o programa completo en tvg.gal/${slug}\n\n🔔 Subscríbete á canle oficial da Televisión de Galicia en YouTube: https://www.youtube.com/tvg\n\n🌐 Visita a nosa páxina web: https://agalega.gal/\n\n📲 E tamén podes seguirnos en todas as nosas redes sociais:\n• 📘 Facebook: https://www.facebook.com/televisiondegalicia\n• 🐦 Twitter: https://x.com/tvgalicia\n• 📸 Instagram: https://www.instagram.com/tvgalicia\n• 🎵 TikTok: https://www.tiktok.com/@tvgalicia`;
+  const socialBlock = `\n\nPodes ver o programa completo en tvg.gal/${slug}\n\n🔔 Subscríbete á canle oficial da Televisión de Galicia en YouTube: https://www.youtube.com/tvg\n\n🌐 Visita a nosa páxina web: https://agalega.gal/\n\n📲 E tamén podes seguirnos en todas as nosas redes sociais:\nFacebook: https://www.facebook.com/televisiondegalicia\nTwitter: https://x.com/tvgalicia\nInstagram: https://www.instagram.com/tvgalicia\nTikTok: https://www.tiktok.com/@tvgalicia`;
   
   return descStr ? `${descStr}${socialBlock}` : socialBlock.trim();
 }
 
-// Helper para renderizar la descripción con vista previa de enlaces de redes (pills) estilo YouTube
-function renderDescriptionPreview(text) {
-  if (!text) return null;
-  const lines = text.split("\n");
-  
-  return lines.map((line, idx) => {
-    // Buscar enlaces de redes sociales oficiales
-    const fbMatch = line.match(/Facebook:\s*(https?:\/\/(?:www\.)?facebook\.com\/([a-zA-Z0-9_\-\.]+)\/?)/i);
-    const twMatch = line.match(/(?:Twitter|X):\s*(https?:\/\/(?:www\.)?(?:x|twitter)\.com\/([a-zA-Z0-9_\-\.]+)\/?)/i);
-    const igMatch = line.match(/Instagram:\s*(https?:\/\/(?:www\.)?instagram\.com\/([a-zA-Z0-9_\-\.]+)\/?)/i);
-    const ttMatch = line.match(/TikTok:\s*(https?:\/\/(?:www\.)?tiktok\.com\/@?([a-zA-Z0-9_\-\.]+)\/?)/i);
-    const ytSubMatch = line.match(/(🔔\s*Subscríbete\s+[^:]+):\s*(https?:\/\/[^\s]+)/i);
-    const webMatch = line.match(/(🌐\s*Visita\s+[^:]+):\s*(https?:\/\/[^\s]+)/i);
-    const generalUrlMatch = line.match(/(📺\s*Podes\s+ver\s+[^:]+|Podes\s+ver\s+[^:]+):\s*(https?:\/\/[^\s]+)/i);
 
-    const pillStyle = {
-      display: "inline-flex",
-      alignItems: "center",
-      gap: "6px",
-      background: "rgba(255, 255, 255, 0.08)",
-      border: "1px solid rgba(255, 255, 255, 0.15)",
-      borderRadius: "16px",
-      padding: "3px 12px",
-      fontSize: "0.8rem",
-      color: "#f1f5f9",
-      textDecoration: "none",
-      marginLeft: "6px",
-      verticalAlign: "middle",
-      boxShadow: "0 1px 3px rgba(0,0,0,0.1)"
-    };
-
-    const labelStyle = {
-      fontWeight: "500",
-      color: "#94a3b8"
-    };
-
-    if (fbMatch) {
-      const url = fbMatch[1];
-      const username = fbMatch[2];
-      return (
-        <div key={idx} style={{ marginBottom: "6px" }}>
-          <span style={labelStyle}>Facebook: </span>
-          <a href={url} target="_blank" rel="noopener noreferrer" style={pillStyle}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="#1877f2" style={{ display: "inline-block", verticalAlign: "middle" }}>
-              <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-            </svg>
-            <span style={{ fontSize: "0.75rem", opacity: 0.9 }}>/ {username}</span>
-          </a>
-        </div>
-      );
-    }
-
-    if (twMatch) {
-      const url = twMatch[1];
-      const username = twMatch[2];
-      return (
-        <div key={idx} style={{ marginBottom: "6px" }}>
-          <span style={labelStyle}>Twitter: </span>
-          <a href={url} target="_blank" rel="noopener noreferrer" style={pillStyle}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="#ffffff" style={{ display: "inline-block", verticalAlign: "middle" }}>
-              <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
-            </svg>
-            <span style={{ fontSize: "0.75rem", opacity: 0.9 }}>/ {username}</span>
-          </a>
-        </div>
-      );
-    }
-
-    if (igMatch) {
-      const url = igMatch[1];
-      const username = igMatch[2];
-      return (
-        <div key={idx} style={{ marginBottom: "6px" }}>
-          <span style={labelStyle}>Instagram: </span>
-          <a href={url} target="_blank" rel="noopener noreferrer" style={pillStyle}>
-            <svg width="14" height="14" viewBox="0 0 24 24" style={{ display: "inline-block", verticalAlign: "middle" }}>
-              <defs>
-                <linearGradient id="ig-grad" x1="0%" y1="100%" x2="100%" y2="0%">
-                  <stop offset="0%" stopColor="#f09433" />
-                  <stop offset="25%" stopColor="#e6683c" />
-                  <stop offset="50%" stopColor="#dc2743" />
-                  <stop offset="75%" stopColor="#cc2366" />
-                  <stop offset="100%" stopColor="#bc1888" />
-                </linearGradient>
-              </defs>
-              <path fill="url(#ig-grad)" d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.051.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z"/>
-            </svg>
-            <span style={{ fontSize: "0.75rem", opacity: 0.9 }}>/ {username}</span>
-          </a>
-        </div>
-      );
-    }
-
-    if (ttMatch) {
-      const url = ttMatch[1];
-      const username = ttMatch[2];
-      return (
-        <div key={idx} style={{ marginBottom: "6px" }}>
-          <span style={labelStyle}>TikTok: </span>
-          <a href={url} target="_blank" rel="noopener noreferrer" style={pillStyle}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="#ffffff" style={{ display: "inline-block", verticalAlign: "middle" }}>
-              <path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.17-2.86-.74-3.95-1.72-.1.65-.18 1.3-.19 1.96-.02 2.64-.78 5.24-2.52 7.22-1.7 1.97-4.22 3.14-6.83 3.13-2.92.05-5.83-1.38-7.39-3.88-1.61-2.52-1.76-5.83-.4-8.48 1.25-2.48 3.73-4.14 6.5-4.41V7.99c-1.7.19-3.27 1.13-4.04 2.67-.84 1.63-.76 3.67.23 5.2 1.01 1.58 2.89 2.52 4.77 2.37 1.83-.08 3.53-1.23 4.13-2.97.47-1.31.43-2.73.44-4.1V.02z"/>
-            </svg>
-            <span style={{ fontSize: "0.75rem", opacity: 0.9 }}>/ {username}</span>
-          </a>
-        </div>
-      );
-    }
-
-    if (ytSubMatch) {
-      const text = ytSubMatch[1];
-      const url = ytSubMatch[2];
-      return (
-        <div key={idx} style={{ marginBottom: "6px" }}>
-          <span style={labelStyle}>{text}: </span>
-          <a href={url} target="_blank" rel="noopener noreferrer" style={{ color: "#38bdf8", textDecoration: "none" }}>{url}</a>
-        </div>
-      );
-    }
-
-    if (webMatch) {
-      const text = webMatch[1];
-      const url = webMatch[2];
-      return (
-        <div key={idx} style={{ marginBottom: "6px" }}>
-          <span style={labelStyle}>{text}: </span>
-          <a href={url} target="_blank" rel="noopener noreferrer" style={{ color: "#38bdf8", textDecoration: "none" }}>{url}</a>
-        </div>
-      );
-    }
-
-    if (generalUrlMatch) {
-      const text = generalUrlMatch[1];
-      const url = generalUrlMatch[2];
-      return (
-        <div key={idx} style={{ marginBottom: "6px" }}>
-          <span style={{ color: "var(--text-main)" }}>{text}: </span>
-          <a href={url} target="_blank" rel="noopener noreferrer" style={{ color: "#38bdf8", textDecoration: "none" }}>{url}</a>
-        </div>
-      );
-    }
-
-    return <div key={idx} style={{ minHeight: "1.2em" }}>{line}</div>;
-  });
-}
 
 export default function Dashboard() {
   // Estados de autenticación de la aplicación (Google Sign-In)
@@ -350,6 +206,9 @@ export default function Dashboard() {
   const [logoUploadProgress, setLogoUploadProgress] = useState(null);
   const [analyzeProgress, setAnalyzeProgress] = useState(0);
   const [parsedVideos, setParsedVideos] = useState([]);
+  const [pendingDocumentName, setPendingDocumentName] = useState("");
+  const [isInitialLoadDone, setIsInitialLoadDone] = useState(false);
+  const [savedPdfName, setSavedPdfName] = useState("");
   const [privateVideos, setPrivateVideos] = useState([]);
   const [isSyncingBatch, setIsSyncingBatch] = useState(false);
   const [syncProgress, setSyncProgress] = useState({ current: 0, total: 0, status: "" });
@@ -515,6 +374,82 @@ export default function Dashboard() {
     };
     checkAuthStatus();
   }, []);
+
+  // Restaurar videos pendientes desde localStorage al cargar/autenticarse
+  useEffect(() => {
+    const restorePendingVideos = async () => {
+      if (typeof window === 'undefined') return;
+      const savedVideos = localStorage.getItem("pending_videos_to_edit");
+      const savedDocName = localStorage.getItem("pending_videos_document_name");
+      if (savedVideos) {
+        try {
+          const parsed = JSON.parse(savedVideos);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setParsedVideos(parsed);
+            if (savedDocName) {
+              setPendingDocumentName(savedDocName);
+            }
+            
+            // 1. Obtener videos privados para que el mapeo/visualización funcione
+            const activePrivateVideos = await fetchPrivateVideos();
+            
+            // 2. Regenerar miniaturas automáticas que falten tras un pequeño retardo
+            setTimeout(() => {
+              parsed.forEach(video => {
+                if (video.isAutoThumbnailEnabled && !video.generatedThumbnailBase64) {
+                  regenerateThumbnailForIndex(video.index, {}, activePrivateVideos);
+                }
+              });
+            }, 1200);
+          }
+        } catch (e) {
+          console.error("Error al restaurar los vídeos pendientes:", e);
+        }
+      }
+      setIsInitialLoadDone(true);
+    };
+
+    if (isAuthenticated) {
+      restorePendingVideos();
+    }
+  }, [isAuthenticated]);
+
+  // Guardar estado de videos pendientes en localStorage al modificarse
+  useEffect(() => {
+    if (!isInitialLoadDone) return;
+    if (typeof window === 'undefined') return;
+
+    if (parsedVideos.length > 0) {
+      try {
+        localStorage.setItem("pending_videos_to_edit", JSON.stringify(parsedVideos));
+        if (documentFile) {
+          localStorage.setItem("pending_videos_document_name", documentFile.name);
+          setPendingDocumentName(documentFile.name);
+        }
+      } catch (error) {
+        console.warn("Límite de localStorage excedido, guardando vídeos sin imágenes base64...", error);
+        // Quitar base64 pesado para evitar QuotaExceededError
+        const optimizedList = parsedVideos.map(v => ({
+          ...v,
+          generatedThumbnailBase64: null,
+          customBgBase64: null
+        }));
+        try {
+          localStorage.setItem("pending_videos_to_edit", JSON.stringify(optimizedList));
+          if (documentFile) {
+            localStorage.setItem("pending_videos_document_name", documentFile.name);
+            setPendingDocumentName(documentFile.name);
+          }
+        } catch (fallbackErr) {
+          console.error("Fallo crítico al guardar estado de vídeos optimizado:", fallbackErr);
+        }
+      }
+    } else {
+      localStorage.removeItem("pending_videos_to_edit");
+      localStorage.removeItem("pending_videos_document_name");
+      setPendingDocumentName("");
+    }
+  }, [parsedVideos, documentFile, isInitialLoadDone]);
 
   // Precargar y enmascarar logotipo de la cadena (TVG) y plantilla de programa (Hora Galega)
   useEffect(() => {
@@ -978,7 +913,7 @@ export default function Dashboard() {
   };
 
   // Regenerar miniatura para un video específico del lote
-  const regenerateThumbnailForIndex = async (index, updatedFields = {}) => {
+  const regenerateThumbnailForIndex = async (index, updatedFields = {}, passedPrivateVideos = null) => {
     setParsedVideos(prev => {
       const list = [...prev];
       const idx = list.findIndex(v => v.index === index);
@@ -993,7 +928,7 @@ export default function Dashboard() {
         return list;
       }
 
-      const matchedVideo = privateVideos.find(pv => pv.id === current.matchedVideoId);
+      const matchedVideo = (passedPrivateVideos || privateVideos).find(pv => pv.id === current.matchedVideoId);
 
       generateSingleAutoThumbnail(
         current.thumbnailText,
@@ -1375,6 +1310,23 @@ export default function Dashboard() {
     }
   };
 
+  // Obtener videos privados del canal de YouTube
+  const fetchPrivateVideos = async () => {
+    try {
+      const ytRes = await fetch("/api/youtube/videos", { cache: "no-store" });
+      if (ytRes.ok) {
+        const activePrivateVideos = await ytRes.json();
+        setPrivateVideos(activePrivateVideos);
+        return activePrivateVideos;
+      } else {
+        console.warn("No se pudieron cargar los videos privados del canal.");
+      }
+    } catch (ytErr) {
+      console.warn("YouTube video fetch failed:", ytErr.message);
+    }
+    return [];
+  };
+
   // Analizar el documento (PDF o Word) con Gemini e iniciar mapeo automático
   const handleAnalyzeFile = async (e) => {
     e.preventDefault();
@@ -1397,18 +1349,7 @@ export default function Dashboard() {
 
     try {
       // 1. Obtener la lista de videos privados/ocultos de YouTube
-      let activePrivateVideos = [];
-      try {
-        const ytRes = await fetch("/api/youtube/videos", { cache: "no-store" });
-        if (ytRes.ok) {
-          activePrivateVideos = await ytRes.json();
-          setPrivateVideos(activePrivateVideos);
-        } else {
-          console.warn("No se pudieron cargar los videos privados del canal.");
-        }
-      } catch (ytErr) {
-        console.warn("YouTube video fetch failed:", ytErr.message);
-      }
+      const activePrivateVideos = await fetchPrivateVideos();
 
       // 2. Analizar el archivo (PDF o Word)
       const formData = new FormData();
@@ -2376,7 +2317,7 @@ export default function Dashboard() {
                     ⚡ Sincronizador
                   </h3>
                   <span style={{ fontSize: "0.8rem", color: "var(--text-muted)", fontWeight: "500" }}>
-                    Documento: <strong>{documentFile?.name}</strong> | Se detectaron {parsedVideos.length} videos
+                    Documento: <strong>{documentFile?.name || pendingDocumentName}</strong> | Se detectaron {parsedVideos.length} videos
                   </span>
                 </div>
                 <button
@@ -2705,22 +2646,7 @@ export default function Dashboard() {
                               required
                               style={{ fontSize: "0.8rem", lineHeight: "1.4" }}
                             />
-                            {item.description && (
-                              <div style={{
-                                marginTop: "0.5rem",
-                                padding: "0.75rem",
-                                background: "rgba(255, 255, 255, 0.01)",
-                                borderRadius: "8px",
-                                border: "1px solid var(--border-color, #334155)",
-                              }}>
-                                <span style={{ fontSize: "0.7rem", fontWeight: "600", color: "var(--text-secondary)", display: "block", marginBottom: "0.5rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                                  🔗 Enlaces interactivos detectados
-                                </span>
-                                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                                  {renderDescriptionPreview(item.description)}
-                                </div>
-                              </div>
-                            )}
+
 
                           </div>
 
@@ -2910,22 +2836,7 @@ export default function Dashboard() {
                       value={updateForm.description}
                       onChange={(e) => setUpdateForm({ ...updateForm, description: e.target.value })}
                     />
-                    {updateForm.description && (
-                      <div style={{
-                        marginTop: "0.5rem",
-                        padding: "0.75rem",
-                        background: "rgba(255, 255, 255, 0.01)",
-                        borderRadius: "8px",
-                        border: "1px solid var(--border-color)",
-                      }}>
-                        <span style={{ fontSize: "0.7rem", fontWeight: "600", color: "var(--text-secondary)", display: "block", marginBottom: "0.5rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          🔗 Enlaces interactivos detectados
-                        </span>
-                        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                          {renderDescriptionPreview(updateForm.description)}
-                        </div>
-                      </div>
-                    )}
+
 
                   </div>
 
