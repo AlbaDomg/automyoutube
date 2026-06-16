@@ -3138,7 +3138,6 @@ export default function Dashboard() {
                                                  body: JSON.stringify({ filename: logo }),
                                                });
                                                if (res.ok) {
-                                                 alert("Logotipo eliminado con éxito.");
                                                  await fetchProgramLogosCatalog();
                                                  if (selectedProgramLogo === logo) setSelectedProgramLogo("none");
                                                } else {
@@ -3750,7 +3749,6 @@ export default function Dashboard() {
                             body: JSON.stringify({ filename: logo }),
                           });
                           if (res.ok) {
-                            alert("Logotipo eliminado con éxito.");
                             await fetchProgramLogosCatalog();
                           } else {
                             const data = await res.json();
