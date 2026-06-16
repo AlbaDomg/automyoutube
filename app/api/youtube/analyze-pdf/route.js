@@ -184,14 +184,93 @@ export async function POST(request) {
 
     // Detectar programa para vídeos de YouTube
     let annotatedYoutubeVideos = [];
+    let quotaExceeded = false;
+
     if (youtubeVideos && youtubeVideos.length > 0) {
       console.log(`[Analyze PDF] Processing ${youtubeVideos.length} YouTube videos for program detection...`);
       for (const video of youtubeVideos) {
         let programLogoName = detectProgramLocally(video.title, video.description, video.fileName, availableLogos);
         
-        // La detección visual de miniaturas mediante IA de Gemini ha sido desactivada
-        // para evitar agotar la cuota de la API Key (errores 429 RESOURCE_EXHAUSTED)
-        // al procesar lotes con varios vídeos. Se prioriza la detección de texto local.
+        // Si no se puede detectar por texto localmente, analizar visualmente su miniatura (si la cuota no se ha excedido)
+        if (!programLogoName && video.id && !quotaExceeded) {
+          console.log(`[Analyze PDF] Video ${video.id} has generic text metadata. Attempting visual analysis of default thumbnail...`);
+          try {
+            const thumbnailUrl = `https://i.ytimg.com/vi/${video.id}/hqdefault.jpg`;
+            const imageResponse = await fetch(thumbnailUrl);
+            if (imageResponse.ok) {
+              const arrayBufferImage = await imageResponse.arrayBuffer();
+              const imageBase64 = Buffer.from(arrayBufferImage).toString('base64');
+              
+              const detectPrompt = `
+Analyze the provided YouTube video thumbnail frame.
+Your task is to identify which television program this frame/scene belongs to.
+The possible program names/logos are:
+${JSON.stringify(availableLogos.map(l => l.replace(/\.[^/.]+$/, "").replace(/_/g, " ").toUpperCase()))}
+
+Identify the program by looking at screen logos/watermarks (usually in corners), watermarks in video scenes, graphic style, or overlay texts.
+Respond strictly in JSON format with the matching program name in uppercase.
+If it is "HORA GALEGA" or the logo has "HORA GALEGA", respond "HORA GALEGA".
+If you cannot identify any of the matching programs from the list, respond "NONE".
+
+Response format:
+{
+  "detectedProgram": "PROGRAM_NAME_OR_NONE"
+}
+`;
+              // Llamada directa sin reintentos largos para prevenir timeouts de pasarela en Vercel
+              const visionResponse = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: [
+                  {
+                    role: 'user',
+                    parts: [
+                      {
+                        inlineData: {
+                          data: imageBase64,
+                          mimeType: 'image/jpeg'
+                        }
+                      },
+                      { text: detectPrompt }
+                    ]
+                  }
+                ],
+                config: {
+                  responseMimeType: 'application/json',
+                }
+              });
+              
+              const visionResult = JSON.parse(visionResponse.text);
+              const detected = visionResult.detectedProgram ? visionResult.detectedProgram.toUpperCase().trim() : "NONE";
+              if (detected && detected !== "NONE") {
+                const foundLogo = availableLogos.find(logo => {
+                  const cleanLogoName = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
+                  return cleanLogoName === detected || slugify(cleanLogoName) === slugify(detected);
+                });
+                if (foundLogo) {
+                  programLogoName = foundLogo;
+                } else if (detected === "HORA GALEGA") {
+                  programLogoName = "Hora_Galega.png";
+                }
+              }
+              console.log(`[Analyze PDF] Visual detection result for video ${video.id}: ${programLogoName || "NONE"}`);
+            } else {
+              console.warn(`[Analyze PDF] Failed to fetch thumbnail for video ${video.id} (HTTP status: ${imageResponse.status})`);
+            }
+          } catch (visionErr) {
+            console.warn(`[Analyze PDF] Visual program detection failed for video ${video.id}:`, visionErr.message);
+            // Si el fallo es de cuota/rate limit (429), activamos la bandera para omitir las siguientes miniaturas
+            const isQuotaErr = visionErr.message && (
+              visionErr.message.includes('429') ||
+              visionErr.message.includes('RESOURCE_EXHAUSTED') ||
+              visionErr.message.includes('quota') ||
+              visionErr.message.includes('Quota exceeded')
+            );
+            if (isQuotaErr) {
+              console.warn(`[Analyze PDF] Quota exceeded during visual detection. Skipping subsequent video thumbnail analyses to preserve main call...`);
+              quotaExceeded = true;
+            }
+          }
+        }
         
         annotatedYoutubeVideos.push({
           id: video.id,
