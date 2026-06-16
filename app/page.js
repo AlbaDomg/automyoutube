@@ -1068,7 +1068,29 @@ export default function Dashboard() {
       const res = await fetch("/api/videos", { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
-        setScheduledUpdates(data.filter(v => v.status === "SCHEDULED" || v.status === "UPLOADING"));
+        const active = data.filter(v => v.status === "SCHEDULED" || v.status === "UPLOADING");
+        setScheduledUpdates(active);
+
+        // Auto-ejecutar scheduler si hay videos cuya hora ya ha pasado
+        const now = new Date();
+        const overdue = active.filter(v => v.status === "SCHEDULED" && v.scheduledAt && new Date(v.scheduledAt) <= now);
+        if (overdue.length > 0) {
+          console.log(`[Auto-Scheduler] ${overdue.length} video(s) vencido(s). Ejecutando scheduler automáticamente...`);
+          try {
+            await fetch("/api/cron/scheduler", { cache: "no-store" });
+            // Recargar tras ejecutar para reflejar los cambios
+            setTimeout(async () => {
+              const res2 = await fetch("/api/videos", { cache: "no-store" });
+              if (res2.ok) {
+                const data2 = await res2.json();
+                setScheduledUpdates(data2.filter(v => v.status === "SCHEDULED" || v.status === "UPLOADING"));
+              }
+              await fetchTasks();
+            }, 2000);
+          } catch (cronErr) {
+            console.error("[Auto-Scheduler] Error al auto-ejecutar scheduler:", cronErr);
+          }
+        }
       }
     } catch (err) {
       console.error("Error al obtener cola de actualizaciones programadas:", err);
