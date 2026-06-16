@@ -32,7 +32,6 @@ function detectProgramLocally(title, description, fileName, availableLogos) {
         const targetSlug = abbreviations[part];
         const found = availableLogos.find(logo => slugify(logo.replace(/\.[^/.]+$/, "")) === targetSlug);
         if (found) return found;
-        if (targetSlug === "horagalega") return "Hora_Galega.png";
       }
     }
 
@@ -56,10 +55,7 @@ function detectProgramLocally(title, description, fileName, availableLogos) {
     // 3. Intentar detectar desde el enlace de la descripción (ej. tvg.gal/luar)
     const descMatch = (description || "").match(/tvg\.gal\/([a-z0-9]+)/i);
     if (descMatch) {
-      const slug = descMatch[1].toLowerCase();
-      if (slug !== "horagalega") {
-        detectedProg = slug.toUpperCase();
-      }
+      detectedProg = descMatch[1].toUpperCase();
     }
   }
 
@@ -76,7 +72,6 @@ function detectProgramLocally(title, description, fileName, availableLogos) {
       );
     });
     if (found) return found;
-    if (detectedProg === "HORA GALEGA") return "Hora_Galega.png";
   }
   return null;
 }
@@ -208,8 +203,7 @@ The possible program names/logos are:
 ${JSON.stringify(availableLogos.map(l => l.replace(/\.[^/.]+$/, "").replace(/_/g, " ").toUpperCase()))}
 
 Identify the program by looking at screen logos/watermarks (usually in corners), watermarks in video scenes, graphic style, or overlay texts.
-Respond strictly in JSON format with the matching program name in uppercase.
-If it is "HORA GALEGA" or the logo has "HORA GALEGA", respond "HORA GALEGA".
+Respond strictly in JSON format with the matching program name from the list above, in uppercase.
 If you cannot identify any of the matching programs from the list, respond "NONE".
 
 Response format:
@@ -248,8 +242,6 @@ Response format:
                 });
                 if (foundLogo) {
                   programLogoName = foundLogo;
-                } else if (detected === "HORA GALEGA") {
-                  programLogoName = "Hora_Galega.png";
                 }
               }
               console.log(`[Analyze PDF] Visual detection result for video ${video.id}: ${programLogoName || "NONE"}`);
@@ -286,7 +278,7 @@ Response format:
     }
 
     const prompt = `
-Analiza el documento de referencia adjunto. Este documento contiene la planificación o tabla con los metadatos de los videos de redes para "Hora Galega" u otros programas.
+Analiza el documento de referencia adjunto. Este documento contiene la planificación o tabla con los metadatos de los videos de redes sociales/YouTube de uno o varios programas de televisión.
 Extrae la información de los vídeos que estén definidos y listados en la tabla o el texto del documento.
 
 REGLA CRÍTICA DE FILTRADO (MUY IMPORTANTE): Debes ignorar por completo cualquier fila, celda o sección de vídeo que esté vacía o que sirva como plantilla sin contenido real (por ejemplo, si el documento tiene una fila llamada 'Vídeo 4' o 'Vídeo 5' pero no contiene un título ni una descripción redactados en sus celdas correspondientes). Únicamente debes extraer y devolver los vídeos que tengan un título y una descripción/sinopsis reales y definidos en el documento.
@@ -302,7 +294,7 @@ Además, genera usando IA para cada vídeo:
      a) La prioridad número 1 es el contenido literal del documento (la planilla). Si el titular o la sinopsis de la planilla contienen palabras clave asociadas a un programa (por ejemplo, "Luar", "Hola", "A Coroa", "Hora Galega"), ese es el programa correcto.
      b) La prioridad número 2 es la información del vídeo coincidente de YouTube (su título y descripción). Puedes usarlo para identificar el programa (por ejemplo, si tiene un sufijo como "| LUAR" o un enlace como "tvg.gal/luar").
      c) REGLA DE CONFLICTO: Si hay un conflicto (por ejemplo, la planilla habla claramente del programa "HOLA", pero el vídeo coincidente de YouTube tiene el título con "| LUAR"), prevalece siempre la planilla (el programa es "HOLA"). No te dejes guiar por sufijos obsoletos de YouTube si el texto del documento indica otra cosa.
-     d) Si no se puede identificar ningún programa a través de la planilla ni de YouTube, asume "HORA GALEGA" como valor por defecto.
+     d) Si no se puede identificar ningún programa por ninguna vía, devuelve el campo "programName" como una cadena vacía "". NO inventes un nombre de programa.
    - Devuélvelo en el campo "programName" en MAYÚSCULAS.
 2. Una frase SEO de alto impacto de exactamente 4 palabras en Gallego (Galician) para imprimir en la miniatura, basada en el tema de ese video.
    - REGLA CRÍTICA: NO debes copiar simplemente las primeras 4 palabras del título. Debe ser una frase creada con sentido lógico coherente completo.
@@ -397,14 +389,13 @@ Responde obligatoriamente en formato JSON con la siguiente estructura exacta:
       return NextResponse.json({ error: 'El documento no contiene videos con el formato esperado.' }, { status: 400 });
     }
 
-    // Añadir el bloque social por defecto a la descripción de cada video
-    const socialBlock = `\n\nPodes ver o programa completo en tvg.gal/horagalega\n\n🔔 Subscríbete á canle oficial da Televisión de Galicia en YouTube: https://www.youtube.com/tvg\n\n🌐 Visita a nosa páxina web: https://agalega.gal/\n\n📲 E tamén podes seguirnos en todas as nosas redes sociais:\nFacebook: https://www.facebook.com/televisiondegalicia\nTwitter: https://x.com/tvgalicia\nInstagram: https://www.instagram.com/tvgalicia\nTikTok: https://www.tiktok.com/@tvgalicia`;
+
 
     const processedVideos = parsedResult.videos.map(v => {
       const baseDesc = v.description || '';
       
-      // Personalizar el enlace del programa en el bloque social
-      let programUrlSlug = 'horagalega';
+      // Personalizar el enlace del programa en el bloque social (solo si se detectó un programa)
+      let programUrlSlug = '';
       if (v.programName && v.programName.trim()) {
         const cleanedSlug = v.programName.toLowerCase()
           .normalize("NFD")
@@ -415,19 +406,21 @@ Responde obligatoriamente en formato JSON con la siguiente estructura exacta:
         }
       }
       
-      const customSocialBlock = `\n\nPodes ver o programa completo en tvg.gal/${programUrlSlug}\n\n🔔 Subscríbete á canle oficial da Televisión de Galicia en YouTube: https://www.youtube.com/tvg\n\n🌐 Visita a nosa páxina web: https://agalega.gal/\n\n📲 E tamén podes seguirnos en todas as nosas redes sociais:\nFacebook: https://www.facebook.com/televisiondegalicia\nTwitter: https://x.com/tvgalicia\nInstagram: https://www.instagram.com/tvgalicia\nTikTok: https://www.tiktok.com/@tvgalicia`;
       let finalDesc = baseDesc.trim();
-      if (finalDesc) {
-        if (finalDesc.includes("seguirnos en todas as nosas redes sociais") || finalDesc.includes("tvg.gal/")) {
-          const urlRegex = /tvg\.gal\/[a-z0-9]+/gi;
-          if (urlRegex.test(finalDesc)) {
-            finalDesc = finalDesc.replace(urlRegex, `tvg.gal/${programUrlSlug}`);
+      if (programUrlSlug) {
+        const customSocialBlock = `\n\nPodes ver o programa completo en tvg.gal/${programUrlSlug}\n\n🔔 Subscríbete á canle oficial da Televisión de Galicia en YouTube: https://www.youtube.com/tvg\n\n🌐 Visita a nosa páxina web: https://agalega.gal/\n\n📲 E tamén podes seguirnos en todas as nosas redes sociais:\nFacebook: https://www.facebook.com/televisiondegalicia\nTwitter: https://x.com/tvgalicia\nInstagram: https://www.instagram.com/tvgalicia\nTikTok: https://www.tiktok.com/@tvgalicia`;
+        if (finalDesc) {
+          if (finalDesc.includes("seguirnos en todas as nosas redes sociais") || finalDesc.includes("tvg.gal/")) {
+            const urlRegex = /tvg\.gal\/[a-z0-9]+/gi;
+            if (urlRegex.test(finalDesc)) {
+              finalDesc = finalDesc.replace(urlRegex, `tvg.gal/${programUrlSlug}`);
+            }
+          } else {
+            finalDesc = finalDesc + customSocialBlock;
           }
         } else {
-          finalDesc = finalDesc + customSocialBlock;
+          finalDesc = customSocialBlock.trim();
         }
-      } else {
-        finalDesc = customSocialBlock.trim();
       }
       
       // Asegurarse de que el título tenga el formato "Título | NOMBRE_DEL_PROGRAMA"
