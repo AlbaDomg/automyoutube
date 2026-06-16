@@ -347,6 +347,8 @@ export default function Dashboard() {
   const [searchResults, setSearchResults] = useState([]);
   const [documentFile, setDocumentFile] = useState(null);
   const [isAnalyzingFile, setIsAnalyzingFile] = useState(false);
+  const [logoUploadProgress, setLogoUploadProgress] = useState(null);
+  const [analyzeProgress, setAnalyzeProgress] = useState(0);
   const [parsedVideos, setParsedVideos] = useState([]);
   const [privateVideos, setPrivateVideos] = useState([]);
   const [isSyncingBatch, setIsSyncingBatch] = useState(false);
@@ -638,6 +640,46 @@ export default function Dashboard() {
       }
     };
   }, [isAuthenticated]);
+
+  const uploadLogoWithProgress = (file, onSuccess, onError) => {
+    setLogoUploadProgress(0);
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/program-logos", true);
+    
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        const percentComplete = Math.round((event.loaded / event.total) * 100);
+        setLogoUploadProgress(percentComplete);
+      }
+    };
+    
+    xhr.onload = () => {
+      setLogoUploadProgress(null);
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data = JSON.parse(xhr.responseText);
+          if (data.success) {
+            onSuccess(data);
+          } else {
+            onError(new Error(data.error || "Error desconocido"));
+          }
+        } catch (e) {
+          onError(e);
+        }
+      } else {
+        onError(new Error(`Error del servidor (${xhr.status})`));
+      }
+    };
+    
+    xhr.onerror = () => {
+      setLogoUploadProgress(null);
+      onError(new Error("Error de red o conexión"));
+    };
+    
+    const formData = new FormData();
+    formData.append("file", file);
+    xhr.send(formData);
+  };
 
   const fetchProgramLogosCatalog = async () => {
     try {
@@ -1342,7 +1384,17 @@ export default function Dashboard() {
     }
 
     setIsAnalyzingFile(true);
+    setAnalyzeProgress(5);
     setParsedVideos([]);
+
+    const progressInterval = setInterval(() => {
+      setAnalyzeProgress((prev) => {
+        if (prev >= 95) return 95;
+        const step = prev < 50 ? 8 : (prev < 80 ? 4 : 1);
+        return Math.min(prev + step, 95);
+      });
+    }, 500);
+
     try {
       // 1. Obtener la lista de videos privados/ocultos de YouTube
       let activePrivateVideos = [];
@@ -1451,12 +1503,20 @@ export default function Dashboard() {
         return item;
       });
 
+      clearInterval(progressInterval);
+      setAnalyzeProgress(100);
+      
+      // Esperar brevemente para mostrar el 100%
+      await new Promise(r => setTimeout(r, 400));
+
       setParsedVideos(mapped);
       setSelectedYoutubeVideo(null); // Cerrar editor individual
       alert(`¡Documento procesado con éxito! Se han detectado ${data.videos.length} videos. Por favor, revisa el mapeo de cada video antes de sincronizar.`);
     } catch (err) {
+      clearInterval(progressInterval);
       alert("Error al procesar el archivo: " + err.message);
     } finally {
+      clearInterval(progressInterval);
       setIsAnalyzingFile(false);
     }
   };
@@ -2199,6 +2259,25 @@ export default function Dashboard() {
                 >
                   {isAnalyzingFile ? "Procesando documento con IA..." : "⚡ Procesar Documento en Lote"}
                 </button>
+
+                {isAnalyzingFile && (
+                  <div style={{ marginTop: "1rem" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.80rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>
+                      <span>Analizando contenido con Gemini...</span>
+                      <span>{analyzeProgress}%</span>
+                    </div>
+                    <div className={styles.batchSyncProgressOuter} style={{ marginTop: 0 }}>
+                      <div 
+                        className={styles.batchSyncProgressInner} 
+                        style={{ 
+                          width: `${analyzeProgress}%`,
+                          background: "linear-gradient(90deg, #a855f7 0%, #ec4899 100%)",
+                          boxShadow: "0 0 10px rgba(168, 85, 247, 0.5)"
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Bloque 2: Buscador Manual por Título */}
@@ -3083,7 +3162,8 @@ export default function Dashboard() {
                               style={{
                                 padding: "0.4rem 0.6rem",
                                 fontSize: "0.75rem",
-                                cursor: "pointer",
+                                cursor: logoUploadProgress !== null ? "not-allowed" : "pointer",
+                                opacity: logoUploadProgress !== null ? 0.6 : 1,
                                 display: "inline-block",
                                 textAlign: "center",
                                 whiteSpace: "nowrap",
@@ -3092,35 +3172,47 @@ export default function Dashboard() {
                                 color: "#fff",
                               }}
                             >
-                              Subir Logo
+                              {logoUploadProgress !== null ? "Subiendo..." : "Subir Logo"}
                               <input
                                 type="file"
                                 accept="image/png"
+                                disabled={logoUploadProgress !== null}
                                 onChange={async (e) => {
                                   const file = e.target.files[0];
                                   if (file) {
-                                    const formData = new FormData();
-                                    formData.append("file", file);
-                                    try {
-                                      const res = await fetch("/api/program-logos", {
-                                        method: "POST",
-                                        body: formData,
-                                      });
-                                      const data = await res.json();
-                                      if (data.success) {
+                                    uploadLogoWithProgress(
+                                      file,
+                                      async (data) => {
                                         await fetchProgramLogosCatalog();
                                         setSelectedProgramLogo(data.filename);
-                                      } else {
-                                        alert("Error subiendo logotipo: " + data.error);
+                                      },
+                                      (err) => {
+                                        alert("Error subiendo logotipo: " + err.message);
                                       }
-                                    } catch (err) {
-                                      console.error("Error subiendo logotipo:", err);
-                                    }
+                                    );
                                   }
                                 }}
                                 style={{ display: "none" }}
                               />
                             </label>
+                            {logoUploadProgress !== null && (
+                              <div style={{ width: "100%", marginTop: "0.5rem" }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "0.15rem" }}>
+                                  <span>Subiendo...</span>
+                                  <span>{logoUploadProgress}%</span>
+                                </div>
+                                <div className={styles.batchSyncProgressOuter} style={{ height: "4px", marginTop: 0 }}>
+                                  <div 
+                                    className={styles.batchSyncProgressInner} 
+                                    style={{ 
+                                      width: `${logoUploadProgress}%`,
+                                      background: "linear-gradient(90deg, #a855f7 0%, #ec4899 100%)",
+                                      boxShadow: "0 0 6px rgba(168, 85, 247, 0.4)"
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -3551,49 +3643,65 @@ export default function Dashboard() {
 
             {/* Subir nuevo logo */}
             <div style={{ marginBottom: "1.5rem", padding: "1rem", background: "rgba(255,255,255,0.02)", borderRadius: "8px", border: "1px solid var(--border-color, #334155)" }}>
-              <label
-                className={styles.btnSubmit}
-                style={{
-                  padding: "0.5rem 1rem",
-                  fontSize: "0.8rem",
-                  cursor: "pointer",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "0.5rem",
-                  width: "auto",
-                  margin: 0,
-                  background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
-                  color: "#fff"
-                }}
-              >
-                📤 Subir Nuevo Logotipo (PNG)
-                <input
-                  type="file"
-                  accept="image/png"
-                  onChange={async (e) => {
-                    const file = e.target.files[0];
-                    if (file) {
-                      const formData = new FormData();
-                      formData.append("file", file);
-                      try {
-                        const res = await fetch("/api/program-logos", {
-                          method: "POST",
-                          body: formData,
-                        });
-                        const data = await res.json();
-                        if (data.success) {
-                          await fetchProgramLogosCatalog();
-                        } else {
-                          alert("Error subiendo logotipo: " + data.error);
-                        }
-                      } catch (err) {
-                        console.error("Error subiendo logotipo:", err);
-                      }
-                    }
+              <div style={{ display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
+                <label
+                  className={styles.btnSubmit}
+                  style={{
+                    padding: "0.5rem 1rem",
+                    fontSize: "0.8rem",
+                    cursor: logoUploadProgress !== null ? "not-allowed" : "pointer",
+                    opacity: logoUploadProgress !== null ? 0.6 : 1,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                    width: "auto",
+                    margin: 0,
+                    background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
+                    color: "#fff"
                   }}
-                  style={{ display: "none" }}
-                />
-              </label>
+                >
+                  {logoUploadProgress !== null ? "Subiendo..." : "📤 Subir Nuevo Logotipo (PNG)"}
+                  <input
+                    type="file"
+                    accept="image/png"
+                    disabled={logoUploadProgress !== null}
+                    onChange={async (e) => {
+                      const file = e.target.files[0];
+                      if (file) {
+                        uploadLogoWithProgress(
+                          file,
+                          async (data) => {
+                            await fetchProgramLogosCatalog();
+                          },
+                          (err) => {
+                            alert("Error subiendo logotipo: " + err.message);
+                          }
+                        );
+                      }
+                    }}
+                    style={{ display: "none" }}
+                  />
+                </label>
+
+                {logoUploadProgress !== null && (
+                  <div style={{ flex: 1, minWidth: "150px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>
+                      <span>Subiendo archivo...</span>
+                      <span>{logoUploadProgress}%</span>
+                    </div>
+                    <div className={styles.batchSyncProgressOuter} style={{ height: "6px", marginTop: 0 }}>
+                      <div 
+                        className={styles.batchSyncProgressInner} 
+                        style={{ 
+                          width: `${logoUploadProgress}%`,
+                          background: "linear-gradient(90deg, #a855f7 0%, #ec4899 100%)",
+                          boxShadow: "0 0 8px rgba(168, 85, 247, 0.4)"
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Listado de logotipos existentes */}
