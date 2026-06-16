@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, Fragment } from "react";
+import { useState, useEffect, useRef, Fragment, useMemo } from "react";
 import styles from "./page.module.css";
 import DateTimePicker from "@/components/DateTimePicker";
 
@@ -1226,6 +1226,18 @@ export default function Dashboard() {
 
   // Cargar una tarea pendiente en el editor
   const handleWorkOnTask = async (task) => {
+    if (task.isLocal) {
+      const el = document.getElementById(`batch-video-${task.index}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.style.transition = 'box-shadow 0.3s ease';
+        el.style.boxShadow = '0 0 25px rgba(168, 85, 247, 0.8)';
+        setTimeout(() => {
+          el.style.boxShadow = '';
+        }, 2500);
+      }
+      return;
+    }
     setYoutubeId(task.youtubeId);
     setLoadingYoutubeVideo(true);
     try {
@@ -1701,6 +1713,34 @@ export default function Dashboard() {
     const minutes = pad(d.getMinutes());
     return `${year}-${month}-${day}T${hours}:${minutes}`;
   };
+
+  const combinedPendingTasks = useMemo(() => {
+    // 1. Tareas de la base de datos
+    const dbPending = tasks.filter(t => t.status === "PENDIENTE_SINCRONIZACION" || t.status === "PENDING" || t.status === "SCHEDULED");
+
+    // 2. Videos locales del editor en lote que están mapeados y no sincronizados aún
+    const localPending = parsedVideos
+      .filter(v => v.matchedVideoId && !v.isSynced)
+      .map(v => {
+        const scheduledUpdate = scheduledUpdates.find(u => u.youtubeId === v.matchedVideoId);
+        return {
+          id: `local-${v.index}-${v.matchedVideoId}`,
+          youtubeId: v.matchedVideoId,
+          title: v.title,
+          description: v.description,
+          status: v.isScheduled || !!scheduledUpdate ? "SCHEDULED" : "PENDING",
+          dueDate: v.scheduledAt ? new Date(v.scheduledAt) : (scheduledUpdate ? new Date(scheduledUpdate.scheduledAt) : null),
+          isLocal: true,
+          index: v.index
+        };
+      });
+
+    // Evitar duplicados por youtubeId (si la tarea de la base de datos ya existe)
+    const dbYoutubeIds = new Set(dbPending.map(t => t.youtubeId));
+    const filteredLocal = localPending.filter(l => !dbYoutubeIds.has(l.youtubeId));
+
+    return [...dbPending, ...filteredLocal];
+  }, [tasks, parsedVideos, scheduledUpdates]);
 
   if (checkingAuth) {
     return (
@@ -2339,7 +2379,7 @@ export default function Dashboard() {
                   const matchedVideo = privateVideos.find(pv => pv.id === item.matchedVideoId);
                   
                   return (
-                    <div key={item.index} style={{
+                    <div key={item.index} id={`batch-video-${item.index}`} style={{
                       border: "1px solid var(--border-color, #334155)",
                       borderRadius: "16px",
                       padding: "1.5rem",
@@ -3295,107 +3335,9 @@ export default function Dashboard() {
             </div>
           )}
 
-        {/* Fila 3: Videos Pendientes e Historial (en dos columnas abajo) */}
+
+        {/* Historial */}
         <div className={styles.bottomGrid}>
-          
-          {/* Pendientes de Sincronización */}
-          <div className={styles.card}>
-            <div className={styles.cardTitle} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span>Videos Pendientes</span>
-              <button onClick={fetchTasks} className={styles.refreshBtn} title="Actualizar">🔄</button>
-            </div>
-
-             {loadingTasks ? (
-              <div className={styles.emptyState}>Cargando...</div>
-            ) : tasks.filter(t => t.status === "PENDIENTE_SINCRONIZACION" || t.status === "PENDING" || t.status === "SCHEDULED").length === 0 ? (
-              <div className={styles.emptyState}>No hay videos pendientes de sincronización. ¡Buen trabajo!</div>
-            ) : (
-              <div className={styles.tasksList}>
-                {tasks.filter(t => t.status === "PENDIENTE_SINCRONIZACION" || t.status === "PENDING" || t.status === "SCHEDULED").map(task => {
-                  const isScheduled = task.status === "SCHEDULED";
-                  const scheduledUpdate = scheduledUpdates.find(u => u.youtubeId === task.youtubeId);
-                  const scheduledDateStr = scheduledUpdate ? formatDate(scheduledUpdate.scheduledAt) : null;
-
-                  return (
-                    <div key={task.id} className={styles.taskCardPending} style={isScheduled ? { borderLeftColor: "#f59e0b" } : undefined}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
-                        <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", flex: 1 }}>
-                          <h4 className={styles.taskCardTitle}>{task.title}</h4>
-                          {isScheduled ? (
-                            <span style={{
-                              background: "rgba(245, 158, 11, 0.15)",
-                              color: "#f59e0b",
-                              padding: "2px 8px",
-                              borderRadius: "12px",
-                              fontSize: "0.7rem",
-                              width: "fit-content",
-                              whiteSpace: "nowrap"
-                            }}>Programada</span>
-                          ) : (
-                            <span style={{
-                              background: "rgba(168, 85, 247, 0.15)",
-                              color: "#a855f7",
-                              padding: "2px 8px",
-                              borderRadius: "12px",
-                              fontSize: "0.7rem",
-                              width: "fit-content",
-                              whiteSpace: "nowrap"
-                            }}>Pendiente Sync</span>
-                          )}
-                        </div>
-                        <button
-                          onClick={async () => {
-                            const confirmMsg = isScheduled 
-                              ? "¿Deseas eliminar esta tarea y cancelar su sincronización programada?"
-                              : "¿Deseas eliminar esta tarea pendiente?";
-                            if (confirm(confirmMsg)) {
-                              try {
-                                const res = await fetch(`/api/tasks?id=${task.id}`, { method: 'DELETE' });
-                                if (res.ok) {
-                                  fetchTasks();
-                                  fetchScheduledUpdates();
-                                }
-                              } catch (err) {
-                                console.error(err);
-                              }
-                            }
-                          }}
-                          className={styles.taskActionBtnDelete}
-                          style={{ marginTop: "2px" }}
-                        >✕</button>
-                      </div>
-                      <p className={styles.taskCardDesc} style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{task.description}</p>
-                      
-                      {isScheduled && scheduledDateStr && (
-                        <div style={{ fontSize: "0.7rem", color: "#f59e0b", marginTop: "0.25rem", fontWeight: "500" }}>
-                          ⏰ Programado: {scheduledDateStr}
-                        </div>
-                      )}
-
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.5rem" }}>
-                        <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>ID: {task.youtubeId}</span>
-                        <button
-                          onClick={() => handleWorkOnTask(task)}
-                          className={styles.btnSubmit}
-                          style={{
-                            width: "auto",
-                            fontSize: "0.75rem",
-                            padding: "0.3rem 0.75rem",
-                            background: isScheduled ? "#f59e0b" : "#a855f7",
-                            border: "none"
-                          }}
-                        >
-                          Cargar en Editor
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Completadas */}
           <div className={styles.card} style={{ marginTop: "1.5rem" }}>
             <div className={styles.cardTitle}>Historial: Sincronizaciones Realizadas</div>
             
@@ -3465,7 +3407,6 @@ export default function Dashboard() {
               </div>
             )}
           </div>
-
         </div>
       </div>
     )}
