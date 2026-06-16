@@ -287,9 +287,11 @@ Response format:
 
     const prompt = `
 Analiza el documento de referencia adjunto. Este documento contiene la planificación o tabla con los metadatos de los videos de redes para "Hora Galega" u otros programas.
-Extrae la información de TODOS los vídeos que estén definidos y listados en la tabla o el texto del documento.
+Extrae la información de los vídeos que estén definidos y listados en la tabla o el texto del documento.
 
-Para CADA vídeo detectado en el documento, extrae de forma EXACTA y LITERAL (copia y pega sin modificar, resumir, formatear ni optimizar):
+REGLA CRÍTICA DE FILTRADO (MUY IMPORTANTE): Debes ignorar por completo cualquier fila, celda o sección de vídeo que esté vacía o que sirva como plantilla sin contenido real (por ejemplo, si el documento tiene una fila llamada 'Vídeo 4' o 'Vídeo 5' pero no contiene un título ni una descripción redactados en sus celdas correspondientes). Únicamente debes extraer y devolver los vídeos que tengan un título y una descripción/sinopsis reales y definidos en el documento.
+
+Para CADA vídeo válido detectado en el documento, extrae de forma EXACTA y LITERAL (copia y pega sin modificar, resumir, formatear ni optimizar):
 1. El título del video (generalmente de una columna llamada 'Titular', 'Título', 'Tema' o similar).
 2. La descripción del video (generalmente de una columna llamada 'Sinopse', 'Sinopsis', 'Descripción' o similar).
 
