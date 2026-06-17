@@ -229,6 +229,12 @@ export default function Dashboard() {
   const [batchScheduleEnabled, setBatchScheduleEnabled] = useState(false);
   const [batchScheduleDate, setBatchScheduleDate] = useState("");
 
+  // Estados para búsqueda de videos en lote y filtrado de playlists
+  const [batchVideoSearch, setBatchVideoSearch] = useState({}); // { [index]: { query, results, loading } }
+  const [playlistFilterSingle, setPlaylistFilterSingle] = useState('');
+  const [playlistFilterSingleOpen, setPlaylistFilterSingleOpen] = useState(false);
+  const [playlistFilterBatch, setPlaylistFilterBatch] = useState({}); // { [index]: { query, open } }
+
   // Estado de edición/actualización de YouTube
   const [selectedYoutubeVideo, setSelectedYoutubeVideo] = useState(null);
   const [updateForm, setUpdateForm] = useState({
@@ -1374,6 +1380,23 @@ export default function Dashboard() {
       console.warn("YouTube video fetch failed:", ytErr.message);
     }
     return [];
+  };
+
+  // Buscar videos en YouTube para vincular a un item del editor en lote
+  const handleBatchVideoSearch = async (index, query) => {
+    if (!query || !query.trim()) return;
+    setBatchVideoSearch(prev => ({ ...prev, [index]: { ...prev[index], query, loading: true, results: [] } }));
+    try {
+      const res = await fetch(`/api/youtube/videos?q=${encodeURIComponent(query)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setBatchVideoSearch(prev => ({ ...prev, [index]: { query, results: data, loading: false } }));
+      } else {
+        setBatchVideoSearch(prev => ({ ...prev, [index]: { query, results: [], loading: false } }));
+      }
+    } catch {
+      setBatchVideoSearch(prev => ({ ...prev, [index]: { query, results: [], loading: false } }));
+    }
   };
 
   // Analizar el documento (PDF o Word) con Gemini e iniciar mapeo automático
@@ -2556,33 +2579,82 @@ export default function Dashboard() {
                       <div className={styles.inlineEditContent} style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: "1.5rem" }}>
                         {/* Columna Izquierda: Vinculación y Portada */}
                         <div style={{ display: "flex", flexDirection: "column", gap: "1rem", alignSelf: "start" }}>
-                          {/* Selector de Video Privado */}
+                          {/* Buscador de Vídeo para Vincular */}
                           <div className={styles.inputGroup} style={{ margin: 0 }}>
-                            <label style={{ fontSize: "0.8rem", fontWeight: "600" }}>Seleccionar vídeo manualmente:</label>
-                            <select
-                              value={item.matchedVideoId}
-                              onChange={(e) => {
-                                const newId = e.target.value;
-                                regenerateThumbnailForIndex(item.index, { matchedVideoId: newId });
-                              }}
-                              style={{
-                                padding: "0.5rem",
-                                background: "var(--bg-surface, #0f172a)",
+                            <label style={{ fontSize: "0.8rem", fontWeight: "600" }}>Buscar vídeo para vincular:</label>
+                            <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.25rem" }}>
+                              <input
+                                type="text"
+                                placeholder="Palabras clave del título..."
+                                value={batchVideoSearch[item.index]?.query ?? ''}
+                                onChange={(e) => setBatchVideoSearch(prev => ({
+                                  ...prev,
+                                  [item.index]: { ...prev[item.index], query: e.target.value }
+                                }))}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    handleBatchVideoSearch(item.index, batchVideoSearch[item.index]?.query || '');
+                                  }
+                                }}
+                                style={{ flex: 1, fontSize: "0.8rem", padding: "0.4rem 0.5rem" }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleBatchVideoSearch(item.index, batchVideoSearch[item.index]?.query || '')}
+                                disabled={batchVideoSearch[item.index]?.loading || !batchVideoSearch[item.index]?.query?.trim()}
+                                className={styles.btnSubmit}
+                                style={{ width: "auto", fontSize: "0.75rem", padding: "0.4rem 0.65rem", whiteSpace: "nowrap" }}
+                              >
+                                {batchVideoSearch[item.index]?.loading ? "..." : "🔍"}
+                              </button>
+                            </div>
+                            {batchVideoSearch[item.index]?.results?.length > 0 && (
+                              <div style={{
+                                marginTop: "0.4rem",
+                                background: "var(--bg-card, #0f172a)",
                                 border: "1px solid var(--border-color, #334155)",
-                                borderRadius: "6px",
-                                color: "#fff",
-                                fontSize: "0.8rem",
-                                width: "100%",
-                                marginTop: "0.25rem"
-                              }}
-                            >
-                              <option value="">--Vincula un video específico--</option>
-                              {privateVideos.map(pv => (
-                                <option key={pv.id} value={pv.id}>
-                                  {pv.title} ({pv.privacyStatus === 'private' ? 'Privado' : 'Oculto'})
-                                </option>
-                              ))}
-                            </select>
+                                borderRadius: "8px",
+                                maxHeight: "160px",
+                                overflowY: "auto",
+                                padding: "0.3rem"
+                              }}>
+                                {batchVideoSearch[item.index].results.map(vid => (
+                                  <div key={vid.id} style={{
+                                    display: "flex", alignItems: "center", gap: "0.5rem",
+                                    padding: "0.4rem",
+                                    borderBottom: "1px solid rgba(255,255,255,0.04)",
+                                    justifyContent: "space-between"
+                                  }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flex: 1, minWidth: 0 }}>
+                                      <img src={vid.thumbnail} alt="" style={{ width: "52px", aspectRatio: "16/9", objectFit: "cover", borderRadius: "3px", flexShrink: 0 }} />
+                                      <span style={{ fontSize: "0.73rem", fontWeight: "600", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                        {vid.title}
+                                      </span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        regenerateThumbnailForIndex(item.index, { matchedVideoId: vid.id });
+                                        setBatchVideoSearch(prev => ({ ...prev, [item.index]: { query: '', results: [], loading: false } }));
+                                      }}
+                                      className={styles.btnSubmit}
+                                      style={{ width: "auto", fontSize: "0.7rem", padding: "0.25rem 0.5rem", flexShrink: 0 }}
+                                    >
+                                      Vincular
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {item.matchedVideoId && (
+                              <button
+                                type="button"
+                                onClick={() => regenerateThumbnailForIndex(item.index, { matchedVideoId: '' })}
+                                style={{ marginTop: "0.3rem", background: "none", border: "none", color: "#94a3b8", fontSize: "0.7rem", cursor: "pointer", padding: 0 }}
+                              >
+                                ✕ Quitar vinculación
+                              </button>
+                            )}
                           </div>
 
                           {/* Previsualización del vídeo actual mapeado */}
@@ -2828,28 +2900,67 @@ export default function Dashboard() {
 
                           </div>
 
-                          {/* Playlist */}
+                          {/* Playlist - Buscador con filtro */}
                           <div className={styles.inputGroup} style={{ margin: 0 }}>
                             <label style={{ fontSize: "0.8rem", fontWeight: "600" }}>Añadir a Lista de Reproducción:</label>
-                            <select
-                              value={item.playlistId || ""}
-                              onChange={(e) => {
-                                handleBatchPlaylistChange(item.index, e.target.value);
-                              }}
-                              style={{
-                                padding: "0.5rem",
-                                background: "var(--bg-surface, #0f172a)",
-                                border: "1px solid var(--border-color, #334155)",
-                                borderRadius: "6px",
-                                color: "#fff",
-                                fontSize: "0.8rem"
-                              }}
-                            >
-                              <option value="">-- Ninguna lista --</option>
-                              {playlists.map(pl => (
-                                <option key={pl.id} value={pl.id}>{pl.title}</option>
-                              ))}
-                            </select>
+                            <div style={{ position: "relative", marginTop: "0.25rem" }}>
+                              <input
+                                type="text"
+                                placeholder={playlists.find(pl => pl.id === item.playlistId)?.title || "Buscar playlist..."}
+                                value={playlistFilterBatch[item.index]?.query ?? ''}
+                                onFocus={() => setPlaylistFilterBatch(prev => ({ ...prev, [item.index]: { ...prev[item.index], query: prev[item.index]?.query ?? '', open: true } }))}
+                                onBlur={() => setTimeout(() => setPlaylistFilterBatch(prev => ({ ...prev, [item.index]: { ...prev[item.index], open: false } })), 150)}
+                                onChange={(e) => setPlaylistFilterBatch(prev => ({ ...prev, [item.index]: { query: e.target.value, open: true } }))}
+                                style={{
+                                  padding: "0.5rem",
+                                  background: "var(--bg-surface, #0f172a)",
+                                  border: "1px solid var(--border-color, #334155)",
+                                  borderRadius: "6px",
+                                  color: "#fff",
+                                  fontSize: "0.8rem",
+                                  width: "100%",
+                                  boxSizing: "border-box"
+                                }}
+                              />
+                              {playlistFilterBatch[item.index]?.open && (
+                                <ul style={{
+                                  position: "absolute", top: "100%", left: 0, right: 0,
+                                  background: "var(--bg-surface, #0f172a)",
+                                  border: "1px solid var(--border-color, #334155)",
+                                  borderRadius: "6px", margin: "0.2rem 0 0 0",
+                                  maxHeight: "180px", overflowY: "auto",
+                                  zIndex: 20, listStyle: "none", padding: "0.3rem"
+                                }}>
+                                  <li
+                                    style={{ padding: "0.4rem 0.6rem", cursor: "pointer", borderRadius: "4px", fontSize: "0.75rem", color: "var(--text-muted)" }}
+                                    onMouseDown={(e) => { e.preventDefault(); handleBatchPlaylistChange(item.index, ""); setPlaylistFilterBatch(prev => ({ ...prev, [item.index]: { query: '', open: false } })); }}
+                                  >
+                                    — Ninguna lista —
+                                  </li>
+                                  {playlists
+                                    .filter(pl => !playlistFilterBatch[item.index]?.query || pl.title.toLowerCase().includes((playlistFilterBatch[item.index].query || '').toLowerCase()))
+                                    .map(pl => (
+                                      <li
+                                        key={pl.id}
+                                        style={{
+                                          padding: "0.4rem 0.6rem", cursor: "pointer", borderRadius: "4px", fontSize: "0.75rem",
+                                          background: pl.id === item.playlistId ? "rgba(168,85,247,0.15)" : "transparent",
+                                          color: pl.id === item.playlistId ? "#a855f7" : "var(--text-primary)"
+                                        }}
+                                        onMouseDown={(e) => { e.preventDefault(); handleBatchPlaylistChange(item.index, pl.id); setPlaylistFilterBatch(prev => ({ ...prev, [item.index]: { query: '', open: false } })); }}
+                                      >
+                                        {pl.title}
+                                      </li>
+                                    ))
+                                  }
+                                </ul>
+                              )}
+                            </div>
+                            {item.playlistId && (
+                              <div style={{ fontSize: "0.7rem", color: "#10b981", marginTop: "0.2rem" }}>
+                                ✓ {playlists.find(pl => pl.id === item.playlistId)?.title || item.playlistId}
+                              </div>
+                            )}
                           </div>
 
                           {/* Programación */}
@@ -3435,33 +3546,70 @@ export default function Dashboard() {
                     <canvas ref={canvasRef} style={{ display: "none" }} />
                   </div>
 
-                  {/* Lista de reproducción */}
+                  {/* Lista de reproducción - Buscador con filtro */}
                   <div className={styles.inputGroup} style={{ marginTop: "1rem" }}>
-                    <label htmlFor="playlistSelect" style={{ fontSize: "0.85rem", fontWeight: "600" }}>
+                    <label htmlFor="playlistSearch" style={{ fontSize: "0.85rem", fontWeight: "600" }}>
                       Añadir a Lista de Reproducción de YouTube:
                     </label>
-                    <select
-                      id="playlistSelect"
-                      value={updateForm.playlistId || ""}
-                      onChange={(e) => handleSinglePlaylistChange(e.target.value)}
-                      style={{
-                        padding: "0.5rem",
-                        background: "var(--bg-surface, #0f172a)",
-                        border: "1px solid var(--border-color, #334155)",
-                        borderRadius: "6px",
-                        color: "#fff",
-                        width: "100%",
-                        fontSize: "0.85rem",
-                        marginTop: "0.25rem"
-                      }}
-                    >
-                      <option value="">-- Ninguna lista (No añadir) --</option>
-                      {playlists.map((playlist) => (
-                        <option key={playlist.id} value={playlist.id}>
-                          {playlist.title}
-                        </option>
-                      ))}
-                    </select>
+                    <div style={{ position: "relative", marginTop: "0.25rem" }}>
+                      <input
+                        id="playlistSearch"
+                        type="text"
+                        placeholder={playlists.find(pl => pl.id === updateForm.playlistId)?.title || "Buscar playlist..."}
+                        value={playlistFilterSingle}
+                        onFocus={() => setPlaylistFilterSingleOpen(true)}
+                        onBlur={() => setTimeout(() => setPlaylistFilterSingleOpen(false), 150)}
+                        onChange={(e) => { setPlaylistFilterSingle(e.target.value); setPlaylistFilterSingleOpen(true); }}
+                        style={{
+                          padding: "0.5rem",
+                          background: "var(--bg-surface, #0f172a)",
+                          border: "1px solid var(--border-color, #334155)",
+                          borderRadius: "6px",
+                          color: "#fff",
+                          width: "100%",
+                          fontSize: "0.85rem",
+                          boxSizing: "border-box"
+                        }}
+                      />
+                      {playlistFilterSingleOpen && (
+                        <ul style={{
+                          position: "absolute", top: "100%", left: 0, right: 0,
+                          background: "var(--bg-surface, #0f172a)",
+                          border: "1px solid var(--border-color, #334155)",
+                          borderRadius: "6px", margin: "0.2rem 0 0 0",
+                          maxHeight: "220px", overflowY: "auto",
+                          zIndex: 20, listStyle: "none", padding: "0.3rem"
+                        }}>
+                          <li
+                            style={{ padding: "0.5rem 0.75rem", cursor: "pointer", borderRadius: "4px", fontSize: "0.8rem", color: "var(--text-muted)" }}
+                            onMouseDown={(e) => { e.preventDefault(); handleSinglePlaylistChange(""); setPlaylistFilterSingle(""); setPlaylistFilterSingleOpen(false); }}
+                          >
+                            — Ninguna lista —
+                          </li>
+                          {playlists
+                            .filter(pl => !playlistFilterSingle || pl.title.toLowerCase().includes(playlistFilterSingle.toLowerCase()))
+                            .map(pl => (
+                              <li
+                                key={pl.id}
+                                style={{
+                                  padding: "0.5rem 0.75rem", cursor: "pointer", borderRadius: "4px", fontSize: "0.8rem",
+                                  background: pl.id === updateForm.playlistId ? "rgba(168,85,247,0.15)" : "transparent",
+                                  color: pl.id === updateForm.playlistId ? "#a855f7" : "var(--text-primary)"
+                                }}
+                                onMouseDown={(e) => { e.preventDefault(); handleSinglePlaylistChange(pl.id); setPlaylistFilterSingle(""); setPlaylistFilterSingleOpen(false); }}
+                              >
+                                {pl.title}
+                              </li>
+                            ))
+                          }
+                        </ul>
+                      )}
+                    </div>
+                    {updateForm.playlistId && (
+                      <div style={{ fontSize: "0.75rem", color: "#10b981", marginTop: "0.3rem" }}>
+                        ✓ {playlists.find(pl => pl.id === updateForm.playlistId)?.title || updateForm.playlistId}
+                      </div>
+                    )}
                   </div>
 
                   {/* Programación futura */}

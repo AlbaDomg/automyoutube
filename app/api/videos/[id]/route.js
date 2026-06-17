@@ -8,9 +8,26 @@ export async function DELETE(request, { params }) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { id } = params;
+    const { id } = await params;
     if (!id) {
       return NextResponse.json({ error: 'Missing video id' }, { status: 400 });
+    }
+
+    const video = await prisma.video.findUnique({ where: { id } });
+    if (video && video.youtubeId) {
+      try {
+        await prisma.videoTask.updateMany({
+          where: {
+            youtubeId: video.youtubeId,
+            status: 'SCHEDULED'
+          },
+          data: {
+            status: 'PENDING'
+          }
+        });
+      } catch (taskErr) {
+        console.error('[Delete Video] Error resetting task status:', taskErr);
+      }
     }
 
     await prisma.video.delete({ where: { id } });
