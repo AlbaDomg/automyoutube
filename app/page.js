@@ -2925,11 +2925,12 @@ export default function Dashboard() {
                               {playlistFilterBatch[item.index]?.open && (
                                 <ul style={{
                                   position: "absolute", top: "100%", left: 0, right: 0,
-                                  background: "var(--bg-surface, #0f172a)",
+                                  background: "#0f172a",
                                   border: "1px solid var(--border-color, #334155)",
                                   borderRadius: "6px", margin: "0.2rem 0 0 0",
                                   maxHeight: "180px", overflowY: "auto",
-                                  zIndex: 20, listStyle: "none", padding: "0.3rem"
+                                  zIndex: 20, listStyle: "none", padding: "0.3rem",
+                                  boxShadow: "0 8px 24px rgba(0,0,0,0.7)"
                                 }}>
                                   <li
                                     style={{ padding: "0.4rem 0.6rem", cursor: "pointer", borderRadius: "4px", fontSize: "0.75rem", color: "var(--text-muted)" }}
@@ -3574,11 +3575,12 @@ export default function Dashboard() {
                       {playlistFilterSingleOpen && (
                         <ul style={{
                           position: "absolute", top: "100%", left: 0, right: 0,
-                          background: "var(--bg-surface, #0f172a)",
+                          background: "#0f172a",
                           border: "1px solid var(--border-color, #334155)",
                           borderRadius: "6px", margin: "0.2rem 0 0 0",
                           maxHeight: "220px", overflowY: "auto",
-                          zIndex: 20, listStyle: "none", padding: "0.3rem"
+                          zIndex: 20, listStyle: "none", padding: "0.3rem",
+                          boxShadow: "0 8px 24px rgba(0,0,0,0.7)"
                         }}>
                           <li
                             style={{ padding: "0.5rem 0.75rem", cursor: "pointer", borderRadius: "4px", fontSize: "0.8rem", color: "var(--text-muted)" }}
