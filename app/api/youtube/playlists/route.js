@@ -67,21 +67,11 @@ export async function GET(request) {
       nextPageToken = response.data.nextPageToken;
     } while (nextPageToken);
 
-    // 2. Filtrar listas de reproducción: únicamente las creadas en el último año en YouTube
-    const oneYearAgo = new Date();
-    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
 
-    const filteredPlaylists = youtubePlaylists.filter(item => {
-      const publishedAt = item.snippet.publishedAt ? new Date(item.snippet.publishedAt) : null;
-      return publishedAt && publishedAt >= oneYearAgo;
-    });
-
-    console.log('test')
-
-    const activePlaylistIds = filteredPlaylists.map(item => item.id);
+    const activePlaylistIds = youtubePlaylists.map(item => item.id);
 
     // 5. Sincronizar las listas filtradas con la base de datos (upsert)
-    for (const item of filteredPlaylists) {
+    for (const item of youtubePlaylists) {
       await prisma.playlist.upsert({
         where: { id: item.id },
         update: {
