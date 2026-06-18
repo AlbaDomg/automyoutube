@@ -76,6 +76,8 @@ export async function GET(request) {
       return publishedAt && publishedAt >= oneYearAgo;
     });
 
+    console.log('test')
+
     const activePlaylistIds = filteredPlaylists.map(item => item.id);
 
     // 5. Sincronizar las listas filtradas con la base de datos (upsert)
