@@ -4004,7 +4004,13 @@ export default function Dashboard() {
                     </div>
                   )}
 
-                  <div className={styles.inlineEditActions} style={{ marginTop: "1rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                  <div className={styles.inlineEditActions} style={{
+                    marginTop: "1.5rem",
+                    display: "flex",
+                    gap: "0.75rem",
+                    flexWrap: "wrap",
+                    width: "100%"
+                  }}>
                     <button
                       type="button"
                       onClick={() => {
@@ -4013,7 +4019,16 @@ export default function Dashboard() {
                         handleResetThumbnailStates();
                       }}
                       className={styles.btnCancel}
-                      style={{ flex: 1, minWidth: "120px" }}
+                      style={{
+                        flex: 1,
+                        minWidth: "120px",
+                        padding: "0.75rem 1.25rem",
+                        borderRadius: "12px",
+                        fontSize: "0.8rem",
+                        fontWeight: "600",
+                        letterSpacing: "0.03em",
+                        textTransform: "uppercase"
+                      }}
                     >Cancelar</button>
 
                     {updateForm.isScheduled ? (
@@ -4023,50 +4038,133 @@ export default function Dashboard() {
                           onClick={(e) => handleSaveVideo(e, 'public')}
                           disabled={updatingYoutubeVideo}
                           className={styles.btnSubmit}
-                          style={{ flex: 1.5, minWidth: "150px", background: "linear-gradient(135deg, #10b981 0%, #059669 100%)", boxShadow: "0 4px 15px rgba(16, 185, 129, 0.3)" }}
+                          style={{
+                            flex: 1.5,
+                            minWidth: "180px",
+                            padding: "0.75rem 1.25rem",
+                            borderRadius: "12px",
+                            fontSize: "0.8rem",
+                            fontWeight: "700",
+                            letterSpacing: "0.03em",
+                            textTransform: "uppercase",
+                            color: "#fff",
+                            background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                            border: "1px solid rgba(16, 185, 129, 0.2)",
+                            boxShadow: "0 4px 15px rgba(16, 185, 129, 0.25)",
+                            cursor: "pointer",
+                            transition: "all 0.2s"
+                          }}
+                          onMouseEnter={e => {
+                            e.currentTarget.style.transform = "translateY(-1px)";
+                            e.currentTarget.style.boxShadow = "0 6px 20px rgba(16, 185, 129, 0.4)";
+                          }}
+                          onMouseLeave={e => {
+                            e.currentTarget.style.transform = "none";
+                            e.currentTarget.style.boxShadow = "0 4px 15px rgba(16, 185, 129, 0.25)";
+                          }}
                         >
-                          {updatingYoutubeVideo ? "Programando..." : "⏰ Programar como Público"}
+                          {updatingYoutubeVideo ? "Programando..." : "⏰ Programar Público"}
                         </button>
                         <button
                           type="button"
                           onClick={(e) => handleSaveVideo(e, 'private')}
                           disabled={updatingYoutubeVideo}
                           className={styles.btnSubmit}
-                          style={{ flex: 1.5, minWidth: "150px", background: "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)", boxShadow: "0 4px 15px rgba(59, 130, 246, 0.3)" }}
+                          style={{
+                            flex: 1.5,
+                            minWidth: "180px",
+                            padding: "0.75rem 1.25rem",
+                            borderRadius: "12px",
+                            fontSize: "0.8rem",
+                            fontWeight: "700",
+                            letterSpacing: "0.03em",
+                            textTransform: "uppercase",
+                            color: "#fff",
+                            background: "linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)",
+                            border: "1px solid rgba(59, 130, 246, 0.2)",
+                            boxShadow: "0 4px 15px rgba(59, 130, 246, 0.25)",
+                            cursor: "pointer",
+                            transition: "all 0.2s"
+                          }}
+                          onMouseEnter={e => {
+                            e.currentTarget.style.transform = "translateY(-1px)";
+                            e.currentTarget.style.boxShadow = "0 6px 20px rgba(59, 130, 246, 0.4)";
+                          }}
+                          onMouseLeave={e => {
+                            e.currentTarget.style.transform = "none";
+                            e.currentTarget.style.boxShadow = "0 4px 15px rgba(59, 130, 246, 0.25)";
+                          }}
                         >
-                          {updatingYoutubeVideo ? "Programando..." : "⏰ Programar como Privado"}
+                          {updatingYoutubeVideo ? "Programando..." : "⏰ Programar Privado"}
                         </button>
                       </>
-                    ) : selectedYoutubeVideo?.isLocal ? (
+                    ) : (
                       <>
                         <button
                           type="button"
                           onClick={(e) => handleSaveVideo(e, 'public')}
                           disabled={updatingYoutubeVideo}
                           className={styles.btnSubmit}
-                          style={{ flex: 1.5, minWidth: "150px", background: "linear-gradient(135deg, #10b981 0%, #059669 100%)", boxShadow: "0 4px 15px rgba(16, 185, 129, 0.3)" }}
+                          style={{
+                            flex: 1.5,
+                            minWidth: "180px",
+                            padding: "0.75rem 1.25rem",
+                            borderRadius: "12px",
+                            fontSize: "0.8rem",
+                            fontWeight: "700",
+                            letterSpacing: "0.03em",
+                            textTransform: "uppercase",
+                            color: "#fff",
+                            background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                            border: "1px solid rgba(16, 185, 129, 0.2)",
+                            boxShadow: "0 4px 15px rgba(16, 185, 129, 0.25)",
+                            cursor: "pointer",
+                            transition: "all 0.2s"
+                          }}
+                          onMouseEnter={e => {
+                            e.currentTarget.style.transform = "translateY(-1px)";
+                            e.currentTarget.style.boxShadow = "0 6px 20px rgba(16, 185, 129, 0.4)";
+                          }}
+                          onMouseLeave={e => {
+                            e.currentTarget.style.transform = "none";
+                            e.currentTarget.style.boxShadow = "0 4px 15px rgba(16, 185, 129, 0.25)";
+                          }}
                         >
-                          {updatingYoutubeVideo ? "Subiendo..." : "📤 Subir como Público"}
+                          {updatingYoutubeVideo ? "Publicando..." : "📤 Publicar Público"}
                         </button>
                         <button
                           type="button"
                           onClick={(e) => handleSaveVideo(e, 'private')}
                           disabled={updatingYoutubeVideo}
                           className={styles.btnSubmit}
-                          style={{ flex: 1.5, minWidth: "150px", background: "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)", boxShadow: "0 4px 15px rgba(59, 130, 246, 0.3)" }}
+                          style={{
+                            flex: 1.5,
+                            minWidth: "180px",
+                            padding: "0.75rem 1.25rem",
+                            borderRadius: "12px",
+                            fontSize: "0.8rem",
+                            fontWeight: "700",
+                            letterSpacing: "0.03em",
+                            textTransform: "uppercase",
+                            color: "#fff",
+                            background: "linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)",
+                            border: "1px solid rgba(59, 130, 246, 0.2)",
+                            boxShadow: "0 4px 15px rgba(59, 130, 246, 0.25)",
+                            cursor: "pointer",
+                            transition: "all 0.2s"
+                          }}
+                          onMouseEnter={e => {
+                            e.currentTarget.style.transform = "translateY(-1px)";
+                            e.currentTarget.style.boxShadow = "0 6px 20px rgba(59, 130, 246, 0.4)";
+                          }}
+                          onMouseLeave={e => {
+                            e.currentTarget.style.transform = "none";
+                            e.currentTarget.style.boxShadow = "0 4px 15px rgba(59, 130, 246, 0.25)";
+                          }}
                         >
-                          {updatingYoutubeVideo ? "Subiendo..." : "🔒 Subir como Privado"}
+                          {updatingYoutubeVideo ? "Publicando..." : "🔒 Publicar Privado"}
                         </button>
                       </>
-                    ) : (
-                      <button
-                        type="submit"
-                        disabled={updatingYoutubeVideo}
-                        className={styles.btnSubmit}
-                        style={{ flex: 2, minWidth: "180px" }}
-                      >
-                        {updatingYoutubeVideo ? "Sincronizando..." : "Guardar en YouTube"}
-                      </button>
                     )}
                   </div>
                 </div>
