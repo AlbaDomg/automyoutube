@@ -4166,6 +4166,7 @@ export default function Dashboard() {
                           }}
                         >
                           {updatingYoutubeVideo ? "Publicando..." : "📤 Publicar Público"}
+                          {updatingYoutubeVideo ? "Publicando..." : "📤 Público"}
                         </button>
                         <button
                           type="button"
@@ -4198,6 +4199,7 @@ export default function Dashboard() {
                           }}
                         >
                           {updatingYoutubeVideo ? "Publicando..." : "🔒 Publicar Privado"}
+                          {updatingYoutubeVideo ? "Publicando..." : "🔒 Privado"}
                         </button>
                       </>
                     )}
