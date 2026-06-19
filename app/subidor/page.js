@@ -495,6 +495,7 @@ export default function SubidorPage() {
       title: t.title,
       youtubeId: t.youtubeId,
       completedAt: t.completedAt,
+      privacyStatus: t.privacyStatus || null, // puede no existir en VideoTask
       isLocal: false
     }));
 
@@ -503,6 +504,7 @@ export default function SubidorPage() {
       title: v.title,
       youtubeId: v.youtubeId,
       completedAt: v.updatedAt,
+      privacyStatus: v.privacyStatus || null, // guardado por el editor al publicar
       isLocal: true
     }));
 
@@ -1111,32 +1113,32 @@ export default function SubidorPage() {
                       <div style={{ marginTop: "0.2rem", display: "flex", alignItems: "center", gap: "0.25rem" }}>
                         <strong>Privacidad:</strong>
                         {(() => {
-                          const ytVid = privateVideos.find(v => v.id === item.youtubeId);
-                          if (ytVid) {
-                            const isPrivate = ytVid.privacyStatus === 'private';
+                          const ps = item.privacyStatus;
+                          if (ps === 'public') {
                             return (
-                              <span style={{
-                                color: isPrivate ? '#f87171' : '#fbbf24',
-                                background: isPrivate ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-                                padding: '1px 6px',
-                                borderRadius: '8px',
-                                fontSize: '0.7rem',
-                                fontWeight: 'bold'
-                              }}>
-                                {isPrivate ? 'Privado' : 'Oculto'}
+                              <span style={{ color: '#34d399', background: 'rgba(52, 211, 153, 0.15)', padding: '1px 8px', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 'bold' }}>
+                                🌍 Público
                               </span>
                             );
                           }
+                          if (ps === 'unlisted') {
+                            return (
+                              <span style={{ color: '#fbbf24', background: 'rgba(245, 158, 11, 0.15)', padding: '1px 8px', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 'bold' }}>
+                                🔗 Oculto
+                              </span>
+                            );
+                          }
+                          if (ps === 'private') {
+                            return (
+                              <span style={{ color: '#f87171', background: 'rgba(239, 68, 68, 0.15)', padding: '1px 8px', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 'bold' }}>
+                                🔒 Privado
+                              </span>
+                            );
+                          }
+                          // Sin dato guardado en BD (videos anteriores a esta funcionalidad)
                           return (
-                            <span style={{
-                              color: '#34d399',
-                              background: 'rgba(52, 211, 153, 0.15)',
-                              padding: '1px 6px',
-                              borderRadius: '8px',
-                              fontSize: '0.7rem',
-                              fontWeight: 'bold'
-                            }}>
-                              Público
+                            <span style={{ color: '#94a3b8', background: 'rgba(148, 163, 184, 0.1)', padding: '1px 8px', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 'bold' }}>
+                              — Sin dato
                             </span>
                           );
                         })()}

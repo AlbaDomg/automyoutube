@@ -2455,6 +2455,7 @@ export default function Dashboard() {
               playlistId: updateForm.playlistId || null,
               thumbnailBase64: newThumbnailBase64 || null,
               status: newStatus,
+              privacyStatus: privacyStatus || 'private', // ← guardar estado real
               scheduledAt: isScheduled ? toUTCISOString(updateForm.scheduledAt) : null
             })
           });
