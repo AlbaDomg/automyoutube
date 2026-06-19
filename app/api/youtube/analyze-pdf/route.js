@@ -445,11 +445,13 @@ Responde obligatoriamente en formato JSON con la siguiente estructura exacta:
         }
       }
 
+      const cleanThumbnailText = ensureFourWords(v.thumbnailText || '', finalTitle);
+
       return {
         index: v.index,
         title: finalTitle,
         description: finalDesc,
-        thumbnailText: v.thumbnailText || '',
+        thumbnailText: cleanThumbnailText,
         matchedVideoId: v.matchedVideoId || '',
         programName: v.programName || ''
       };
@@ -465,4 +467,51 @@ Responde obligatoriamente en formato JSON con la siguiente estructura exacta:
     console.error('Error en API de análisis del archivo:', error);
     return NextResponse.json({ error: error.message || 'Fallo al analizar el archivo con Gemini' }, { status: 500 });
   }
+}
+
+// Función helper para garantizar exactamente 4 palabras en el texto de la miniatura
+function ensureFourWords(text, fallbackContext = "") {
+  if (!text) text = "";
+  // Limpiar caracteres especiales
+  let cleanText = text.replace(/[\/\-\"\']/g, " ").replace(/\s+/g, " ").trim();
+  let words = cleanText ? cleanText.split(/\s+/) : [];
+
+  // Filtrar palabras vacías
+  words = words.filter(w => w.trim().length > 0);
+
+  if (words.length === 4) {
+    return words.join(" ");
+  }
+
+  if (words.length > 4) {
+    return words.slice(0, 4).join(" ");
+  }
+
+  // Si tiene menos de 4 palabras, autocompletar usando palabras del contexto (título)
+  const contextWords = fallbackContext
+    ? fallbackContext.replace(/[^a-zA-Z0-9À-ÿ\s]/g, " ").replace(/\s+/g, " ").trim().split(/\s+/)
+    : [];
+
+  // Filtrar palabras significativas que no estén ya en la frase
+  const significantContextWords = contextWords.filter(w => w.length >= 3 && !words.map(x => x.toLowerCase()).includes(w.toLowerCase()));
+
+  const defaultPool = ["ALERTA", "AVISO", "INFO", "GALEGO", "HOXE", "NOVA", "TVG"];
+
+  for (const word of significantContextWords) {
+    if (words.length >= 4) break;
+    words.push(word);
+  }
+
+  for (const word of defaultPool) {
+    if (words.length >= 4) break;
+    if (!words.map(x => x.toLowerCase()).includes(word.toLowerCase())) {
+      words.push(word);
+    }
+  }
+
+  while (words.length < 4) {
+    words.push("HOXE");
+  }
+
+  return words.slice(0, 4).join(" ");
 }

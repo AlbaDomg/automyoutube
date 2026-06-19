@@ -108,13 +108,62 @@ Responde exclusivamente en formato JSON con la siguiente estructura exacta:
       throw new Error('Gemini no devolvió una estructura JSON válida');
     }
 
+    const finalThumbnailText = ensureFourWords(result.thumbnailText || '', title);
+
     return NextResponse.json({
       success: true,
-      thumbnailText: result.thumbnailText || ''
+      thumbnailText: finalThumbnailText
     });
 
   } catch (error) {
     console.error('Error en API de generación de frase SEO:', error);
     return NextResponse.json({ error: error.message || 'Fallo al generar la frase SEO con Gemini' }, { status: 500 });
   }
+}
+
+// Función helper para garantizar exactamente 4 palabras en el texto de la miniatura
+function ensureFourWords(text, fallbackContext = "") {
+  if (!text) text = "";
+  // Limpiar caracteres especiales
+  let cleanText = text.replace(/[\/\-\"\']/g, " ").replace(/\s+/g, " ").trim();
+  let words = cleanText ? cleanText.split(/\s+/) : [];
+
+  // Filtrar palabras vacías
+  words = words.filter(w => w.trim().length > 0);
+
+  if (words.length === 4) {
+    return words.join(" ");
+  }
+
+  if (words.length > 4) {
+    return words.slice(0, 4).join(" ");
+  }
+
+  // Si tiene menos de 4 palabras, autocompletar usando palabras significativas del contexto (título)
+  const contextWords = fallbackContext
+    ? fallbackContext.replace(/[^a-zA-Z0-9À-ÿ\s]/g, " ").replace(/\s+/g, " ").trim().split(/\s+/)
+    : [];
+
+  // Filtrar palabras significativas que no estén ya en la frase
+  const significantContextWords = contextWords.filter(w => w.length >= 3 && !words.map(x => x.toLowerCase()).includes(w.toLowerCase()));
+
+  const defaultPool = ["ALERTA", "AVISO", "INFO", "GALEGO", "HOXE", "NOVA", "TVG"];
+
+  for (const word of significantContextWords) {
+    if (words.length >= 4) break;
+    words.push(word);
+  }
+
+  for (const word of defaultPool) {
+    if (words.length >= 4) break;
+    if (!words.map(x => x.toLowerCase()).includes(word.toLowerCase())) {
+      words.push(word);
+    }
+  }
+
+  while (words.length < 4) {
+    words.push("HOXE");
+  }
+
+  return words.slice(0, 4).join(" ");
 }
