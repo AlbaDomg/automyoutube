@@ -298,12 +298,12 @@ Además, genera usando IA para cada vídeo:
    - PRIORIDAD DE DETECCIÓN (CRÍTICA):
      a) La prioridad número 1 es el contenido literal del documento (la planilla). Si el titular o la sinopsis de la planilla contienen palabras clave asociadas a un programa (por ejemplo, "Luar", "Hola", "A Coroa", "Hora Galega"), ese es el programa correcto.
      b) La prioridad número 2 es el nombre del archivo del documento ("${file.name}"). Si el nombre del archivo contiene indicios claros o el nombre de alguno de los programas registrados (ej. si se llama "Luar_12_05.pdf" o contiene "LUAR", "HG", "Hora_Galega", etc.), asócialo como el programa de los vídeos que no especifiquen otro dentro del texto.
-     c) La prioridad número 3 es la información del vídeo coincidente de YouTube (su título, descripción o detectedProgramName). Puedes usarlo para identificar el programa (por ejemplo, si tiene un sufijo como "| LUAR" o un enlace como "tvg.gal/luar").
+       c) La prioridad número 3 es la información del vídeo coincidente de YouTube (su título, descripción o 'detectedProgramName'). Puedes usarlo para identificar el programa (por ejemplo, si tiene un sufijo como "| LUAR" o un enlace como "tvg.gal/luar").
      d) REGLA DE CONFLICTO: Si hay un conflicto (por ejemplo, el nombre del archivo o la planilla indica claramente el programa "HOLA", pero el vídeo coincidente de YouTube tiene el título con "| LUAR"), prevalece siempre el documento / nombre de archivo (el programa es "HOLA"). No te dejes guiar por sufijos obsoletos de YouTube si el documento indica otra cosa.
      e) Si no se puede identificar ningún programa por ninguna vía, devuelve el campo "programName" como una cadena vacía "". NO inventes un nombre de programa.
    - Devuélvelo en el campo "programName" en MAYÚSCULAS y exactamente como figura en el catálogo de programas válidos si coincide.
-2. Una frase SEO de alto impacto de exactamente 4 palabras en Gallego (Galician) para imprimir en la miniatura, basada en el tema de ese video.
-   - REGLA CRÍTICA: NO debes copiar simplemente las primeras 4 palabras del título. Debe ser una frase creada con sentido lógico coherente completo.
+2. Una frase SEO de alto impacto de **EXACTAMENTE 4 (CUATRO) PALABRAS** en Gallego (Galician) para imprimir en la miniatura, basada en el tema de ese video.
+   - REGLA CRÍTICA: NO debes copiar simplemente las primeras 4 palabras del título. Debe ser una frase creada con sentido lógico y coherente.
    - ESTRUCTURA DE DISEÑO: Imagina la frase dividida conceptualmente en un "título de 2 palabras" y un "subtítulo de 2 palabras" que tengan relación y coherencia entre sí (por ejemplo: "ALERTA MOS" + "EVITA PICADURAS", o "CONCURSO TVG" + "PREMIO FINAL", o "MANTER BATEAS" + "CONSELLO PRÁCTICO").
    - Las palabras deben estar muy optimizadas para capturar el interés (SEO / CTR alto).
    - REGLA DE FORMATO ESTRICTO: La frase debe contener EXCLUSIVAMENTE las 4 palabras en gallego separadas por espacios. NO incluyas barras (/), guiones (-), comillas, ni ningún signo de puntuación en el texto.
