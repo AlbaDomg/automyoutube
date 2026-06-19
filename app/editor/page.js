@@ -1290,7 +1290,7 @@ export default function Dashboard() {
         setScheduledUpdates(active);
 
         // Cola de vídeos locales subidos (excluyendo los que ya están en proceso de subida o programados)
-        const queue = data.filter(v => (v.youtubeId === null || v.youtubeId === "") && v.status !== "UPLOADING" && v.status !== "SCHEDULED");
+        const queue = data.filter(v => v.status === "READY");
         setLocalVideosQueue(queue);
 
         // Vídeos locales completados
@@ -1466,13 +1466,13 @@ export default function Dashboard() {
   const handleSelectLocalVideo = async (video) => {
     setSelectedYoutubeVideo({
       id: video.id,
-      youtubeId: null, // indica que es un video local pendiente de subir
+      youtubeId: video.youtubeId || null, // Guardar el ID de YouTube si ya se subió
       title: video.title || "",
       description: video.description || "",
       tags: video.tags || "",
       playlistId: video.playlistId || "",
       scheduledAt: video.scheduledAt || null,
-      isLocal: true,
+      isLocal: !video.youtubeId, // Si ya se subió a YouTube, no lo tratamos como local
       filePath: video.filePath,
       fileName: video.filename || video.filePath || "",
       createdAt: video.createdAt
@@ -2413,11 +2413,12 @@ export default function Dashboard() {
         alert("¡El vídeo ha sido subido a YouTube y configurado correctamente!");
       } else {
         // Vídeo que ya está en YouTube: usar endpoint existente
+        const ytId = selectedYoutubeVideo.youtubeId || selectedYoutubeVideo.id;
         const res = await fetch("/api/youtube/update", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            youtubeVideoId: selectedYoutubeVideo.id,
+            youtubeVideoId: ytId,
             title: updateForm.title,
             description: updateForm.description,
             tags: updateForm.tags,
@@ -2434,6 +2435,31 @@ export default function Dashboard() {
         }
 
         const responseData = await res.json();
+
+        // Si viene de la cola local de pendientes (tiene youtubeId además del ID de la base de datos)
+        if (selectedYoutubeVideo.youtubeId) {
+          const isScheduled = updateForm.isScheduled;
+          const newStatus = isScheduled ? 'SCHEDULED' : 'COMPLETED';
+
+          const dbRes = await fetch(`/api/videos?id=${selectedYoutubeVideo.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: updateForm.title,
+              description: updateForm.description,
+              tags: updateForm.tags,
+              playlistId: updateForm.playlistId || null,
+              thumbnailBase64: newThumbnailBase64 || null,
+              status: newStatus,
+              scheduledAt: isScheduled ? toUTCISOString(updateForm.scheduledAt) : null
+            })
+          });
+
+          if (!dbRes.ok) {
+            console.warn("[Editor] Failed to update local database video status.");
+          }
+        }
+
         if (responseData.scheduled) {
           alert("¡Sincronización programada con éxito!");
         } else {

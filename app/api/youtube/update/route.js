@@ -229,13 +229,22 @@ export async function POST(request) {
       tags: tags ? tags.split(',').map(t => t.trim().replace(/^#/, '')).filter(Boolean) : currentSnippet.tags
     };
 
-    console.log(`[Update Video API] Updating YouTube metadata for video ${youtubeVideoId}...`);
+    console.log(`[Update Video API] Updating YouTube metadata and privacy status (${privacyStatus || 'no change'}) for video ${youtubeVideoId}...`);
+    
+    const requestBody = {
+      id: youtubeVideoId,
+      snippet: updatedSnippet
+    };
+
+    if (privacyStatus) {
+      requestBody.status = {
+        privacyStatus: privacyStatus
+      };
+    }
+
     await youtube.videos.update({
-      part: 'snippet',
-      requestBody: {
-        id: youtubeVideoId,
-        snippet: updatedSnippet
-      }
+      part: privacyStatus ? 'snippet,status' : 'snippet',
+      requestBody
     });
 
     // 3. Upload custom thumbnail if provided
