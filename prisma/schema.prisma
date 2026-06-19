@@ -41,6 +41,7 @@ model Video {
   playlistId      String?   // ID de la playlist a la que se añadirá el video
   userEmail       String?   // El correo del trabajador
   channelId       String?   // El ID del canal de YouTube
+  privacyStatus   String?   // 'public', 'private', 'unlisted', etc.
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 }

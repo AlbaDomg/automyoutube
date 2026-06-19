@@ -29,7 +29,7 @@ export async function GET(request) {
         where: { id: videoId }
       });
 
-      if (!video || video.channelId !== channel.id) {
+      if (!video || (video.channelId && video.channelId !== channel.id)) {
         return NextResponse.json({ error: 'Video not found' }, { status: 404 });
       }
 
@@ -37,7 +37,12 @@ export async function GET(request) {
     }
 
     const videos = await prisma.video.findMany({
-      where: { channelId: channel.id },
+      where: {
+        OR: [
+          { channelId: channel.id },
+          { channelId: null }
+        ]
+      },
       orderBy: { createdAt: 'desc' }
     });
 
@@ -74,7 +79,7 @@ export async function DELETE(request) {
       where: { id: videoId }
     });
 
-    if (!video || video.channelId !== channel.id) {
+    if (!video || (video.channelId && video.channelId !== channel.id)) {
       return NextResponse.json({ error: 'Video not found' }, { status: 404 });
     }
 
@@ -137,12 +142,12 @@ export async function PATCH(request) {
       where: { id: videoId }
     });
 
-    if (!video || video.channelId !== channel.id) {
+    if (!video || (video.channelId && video.channelId !== channel.id)) {
       return NextResponse.json({ error: 'Video not found' }, { status: 404 });
     }
 
     const body = await request.json();
-    const { title, description, tags, scheduledAt, status } = body;
+    const { title, description, tags, scheduledAt, status, thumbnailBase64 } = body;
 
     const updateData = {};
     if (title !== undefined) updateData.title = title;
@@ -154,6 +159,29 @@ export async function PATCH(request) {
     if (scheduledAt !== undefined) {
       updateData.scheduledAt = scheduledAt ? new Date(scheduledAt) : null;
     }
+    
+    // Asociar al canal del editor que está guardando/publicando el vídeo
+    if (channel) {
+      updateData.channelId = channel.id;
+    }
+
+    if (thumbnailBase64 !== undefined) {
+      updateData.thumbnailBase64 = thumbnailBase64;
+      if (thumbnailBase64) {
+        try {
+          const base64Data = thumbnailBase64.replace(/^data:image\/\w+;base64,/, "");
+          const buffer = Buffer.from(base64Data, 'base64');
+          const uploadsDir = path.join(process.cwd(), 'uploads');
+          if (!fs.existsSync(uploadsDir)) {
+            fs.mkdirSync(uploadsDir, { recursive: true });
+          }
+          fs.writeFileSync(path.join(uploadsDir, `${videoId}-thumbnail.jpg`), buffer);
+          console.log(`[API Videos PATCH] Guardada miniatura en disco para vídeo: ${videoId}`);
+        } catch (fsErr) {
+          console.error(`[API Videos PATCH] Error guardando miniatura en disco:`, fsErr);
+        }
+      }
+    }
 
     const updatedVideo = await prisma.video.update({
       where: { id: videoId },
@@ -164,6 +192,35 @@ export async function PATCH(request) {
   } catch (error) {
     console.error('Error updating video:', error);
     return NextResponse.json({ error: 'Failed to update video' }, { status: 500 });
+  }
+}
+
+export async function POST(request) {
+  try {
+    if (!(await verifyAppAuth(request))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const email = await getCurrentUserEmail(request);
+    const body = await request.json();
+    const { title, description, filename, filePath, playlistId } = body;
+
+    const video = await prisma.video.create({
+      data: {
+        filename: filename || 'Vídeo Lote',
+        filePath: filePath || 'PDF_PARSED',
+        title: title || '',
+        description: description || '',
+        status: 'READY',
+        playlistId: playlistId || null,
+        userEmail: email
+      }
+    });
+
+    return NextResponse.json({ success: true, video });
+  } catch (error) {
+    console.error('Error creating video:', error);
+    return NextResponse.json({ error: 'Failed to create video' }, { status: 500 });
   }
 }
 

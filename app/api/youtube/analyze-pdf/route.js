@@ -38,7 +38,7 @@ function detectProgramLocally(title, description, fileName, availableLogos) {
     // Buscar coincidencia de nombre completo del programa contenido en el archivo
     const sortedLogos = [...availableLogos].sort((a, b) => b.length - a.length);
     for (const logo of sortedLogos) {
-      const cleanLogoName = logo.replace(/\.[^/.]+$/, "").toUpperCase().replace(/_/g, " ").trim();
+      const cleanLogoName = logo.replace(/\.[^/.]+$/, "").replace(/_/g, " ");
       const slugLogo = slugify(cleanLogoName);
       if (slugLogo.length > 2 && slugFile.includes(slugLogo)) {
         return logo;

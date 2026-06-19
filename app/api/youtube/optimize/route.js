@@ -7,7 +7,7 @@ import { google } from 'googleapis';
 import { verifyAppAuth, getCurrentUserEmail } from '@/lib/auth';
 
 // Función helper con reintentos y backoff exponencial para llamadas a Gemini ante saturación (errores 503, 429, etc.)
-async function callGeminiWithRetry(fn, maxRetries = 3, delayMs = 3000) {
+async function callGeminiWithRetry(fn, maxRetries = 1, delayMs = 1000) {
   let attempt = 0;
   while (attempt < maxRetries) {
     try {
@@ -134,7 +134,7 @@ Respond in JSON format with the following keys:
     let response;
     try {
       response = await callGeminiWithRetry(() => ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.5-flash-lite',
         contents: [
           {
             role: 'user',
@@ -146,19 +146,21 @@ Respond in JSON format with the following keys:
         }
       }));
     } catch (err) {
-      // Si el modelo 2.5-flash ha agotado la cuota de la cuenta (429 / RESOURCE_EXHAUSTED),
-      // intentamos usar gemini-flash-latest como fallback automático.
-      const isQuotaExceeded = err.message && (
+      const isTransient = err.message && (
         err.message.includes('429') ||
         err.message.includes('RESOURCE_EXHAUSTED') ||
         err.message.includes('quota') ||
-        err.message.includes('Quota exceeded')
+        err.message.includes('Quota exceeded') ||
+        err.message.includes('503') ||
+        err.message.includes('UNAVAILABLE') ||
+        err.message.includes('high demand') ||
+        err.message.includes('overloaded')
       );
 
-      if (isQuotaExceeded) {
-        console.warn('[Gemini API] Límite de cuota excedido para gemini-2.5-flash. Intentando fallback con gemini-flash-latest...');
+      if (isTransient) {
+        console.warn('[Optimize API] gemini-2.5-flash-lite no disponible, usando fallback gemini-flash-lite-latest...');
         response = await callGeminiWithRetry(() => ai.models.generateContent({
-          model: 'gemini-flash-latest',
+          model: 'gemini-flash-lite-latest',
           contents: [
             {
               role: 'user',

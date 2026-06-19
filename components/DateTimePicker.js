@@ -1,6 +1,35 @@
 import React, { useState, useEffect, useRef } from "react";
 import styles from "./DateTimePicker.module.css";
 
+const parseValue = (val) => {
+  if (!val) {
+    const now = new Date();
+    return {
+      date: now,
+      hour: now.getHours() % 12 === 0 ? 12 : now.getHours() % 12,
+      minute: now.getMinutes(),
+      isPM: now.getHours() >= 12
+    };
+  }
+  const d = new Date(val.replace(" ", "T"));
+  if (isNaN(d.getTime())) {
+    const now = new Date();
+    return {
+      date: now,
+      hour: now.getHours() % 12 === 0 ? 12 : now.getHours() % 12,
+      minute: now.getMinutes(),
+      isPM: now.getHours() >= 12
+    };
+  }
+  const rawHour = d.getHours();
+  return {
+    date: d,
+    hour: rawHour % 12 === 0 ? 12 : rawHour % 12,
+    minute: d.getMinutes(),
+    isPM: rawHour >= 12
+  };
+};
+
 export default function DateTimePicker({
   value,
   onChange,
@@ -31,9 +60,14 @@ export default function DateTimePicker({
     "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
   ];
   const dayLabels = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
-  
-  // Parsing value on load
-  useEffect(() => {
+
+  // Sync internal state with value/showPicker during render
+  const [prevValue, setPrevValue] = useState(value);
+  const [prevShowPicker, setPrevShowPicker] = useState(showPicker);
+
+  if (value !== prevValue || showPicker !== prevShowPicker) {
+    setPrevValue(value);
+    setPrevShowPicker(showPicker);
     if (value) {
       const parsed = parseValue(value);
       setSelectedDate(parsed.date);
@@ -43,7 +77,7 @@ export default function DateTimePicker({
       setSelectedMinute(parsed.minute);
       setIsPM(parsed.isPM);
     }
-  }, [value, showPicker]);
+  }
 
   // Handle clicking outside to close
   useEffect(() => {
@@ -59,35 +93,6 @@ export default function DateTimePicker({
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [showPicker]);
-
-  const parseValue = (val) => {
-    if (!val) {
-      const now = new Date();
-      return {
-        date: now,
-        hour: now.getHours() % 12 === 0 ? 12 : now.getHours() % 12,
-        minute: now.getMinutes(),
-        isPM: now.getHours() >= 12
-      };
-    }
-    const d = new Date(val.replace(" ", "T"));
-    if (isNaN(d.getTime())) {
-      const now = new Date();
-      return {
-        date: now,
-        hour: now.getHours() % 12 === 0 ? 12 : now.getHours() % 12,
-        minute: now.getMinutes(),
-        isPM: now.getHours() >= 12
-      };
-    }
-    const rawHour = d.getHours();
-    return {
-      date: d,
-      hour: rawHour % 12 === 0 ? 12 : rawHour % 12,
-      minute: d.getMinutes(),
-      isPM: rawHour >= 12
-    };
-  };
 
   const getFormattedInputString = () => {
     if (!value) return "";

@@ -39,7 +39,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    let { youtubeVideoId, title, description, tags, thumbnail, scheduledAt, playlistId } = await request.json();
+    let { youtubeVideoId, title, description, tags, thumbnail, scheduledAt, playlistId, privacyStatus } = await request.json();
     youtubeVideoId = extractYoutubeId(youtubeVideoId);
 
     if (!youtubeVideoId) {
@@ -104,7 +104,8 @@ export async function POST(request) {
           thumbnailBase64: thumbnail || null,
           playlistId: playlistId || null,
           userEmail: email,
-          channelId: channel.id
+          channelId: channel.id,
+          privacyStatus: 'private'
         }
       });
 

@@ -12,7 +12,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { videoId, title, description, tags, scheduledAt } = await request.json();
+    const { videoId, title, description, tags, scheduledAt, privacyStatus } = await request.json();
 
     if (!videoId) {
       return NextResponse.json({ error: 'Missing videoId' }, { status: 400 });
@@ -49,12 +49,13 @@ export async function POST(request) {
         tags: formattedTags,
         scheduledAt: parsedScheduledAt,
         status: 'UPLOADING',
+        privacyStatus: privacyStatus || (parsedScheduledAt ? 'private' : 'public'),
         errorMessage: null
       }
     });
 
     // Ejecutar el proceso de subida de forma asíncrona en segundo plano para que no bloquee la petición (lo cual causaría un tiempo de espera agotado)
-    uploadToYouTubeBackground(updatedVideo.id, channel.dbId);
+    uploadToYouTubeBackground(updatedVideo.id, channel.dbId, privacyStatus);
 
     return NextResponse.json({
       success: true,
@@ -67,7 +68,7 @@ export async function POST(request) {
   }
 }
 
-async function uploadToYouTubeBackground(videoId, channelDbId) {
+async function uploadToYouTubeBackground(videoId, channelDbId, privacyStatus) {
   try {
     const video = await prisma.video.findUnique({ where: { id: videoId } });
     const channel = await prisma.channel.findUnique({ where: { dbId: channelDbId } });
@@ -111,6 +112,9 @@ async function uploadToYouTubeBackground(videoId, channelDbId) {
       finalTitle = finalTitle.substring(0, 100);
     }
 
+    const isScheduled = !!video.scheduledAt;
+    const isTargetPublic = video.privacyStatus === 'public';
+
     const requestBody = {
       snippet: {
         title: finalTitle,
@@ -118,11 +122,11 @@ async function uploadToYouTubeBackground(videoId, channelDbId) {
         tags: video.tags ? video.tags.split(',').map(t => t.trim().replace(/^#/, '')).filter(Boolean) : [],
       },
       status: {
-        privacyStatus: 'private' // Requerido para habilitar la programación
+        privacyStatus: isScheduled ? 'private' : (isTargetPublic ? 'public' : 'private')
       }
     };
 
-    if (video.scheduledAt) {
+    if (isScheduled && isTargetPublic) {
       requestBody.status.publishAt = video.scheduledAt.toISOString();
     }
 
