@@ -326,6 +326,14 @@ export default function Dashboard() {
   const pdfInputRef = useRef(null);
   const simpleVideoInputRef = useRef(null);
 
+  // Helper para contar palabras limpias de la frase SEO
+  const getWordCount = (text) => {
+    if (!text) return 0;
+    const clean = text.replace(/[\/\-\"\']/g, " ").replace(/\s+/g, " ").trim();
+    if (!clean) return 0;
+    return clean.split(/\s+/).length;
+  };
+
   // Helper para cargar imágenes de forma asíncrona en canvas
   const loadImage = (src) => {
     return new Promise((resolve, reject) => {
@@ -2100,6 +2108,20 @@ export default function Dashboard() {
       return;
     }
 
+    // Validar frase SEO de 4 palabras para miniaturas automáticas en lote
+    const invalidItems = matchedItems.filter(item => {
+      if (!item.isAutoThumbnailEnabled) return false;
+      const count = getWordCount(item.thumbnailText);
+      return count !== 4;
+    });
+
+    if (invalidItems.length > 0) {
+      alert(`No se puede sincronizar en lote porque los siguientes vídeos tienen una frase SEO que no es de exactamente 4 palabras:\n\n` +
+        invalidItems.map(item => `Vídeo ${item.index}: "${item.title}" (${getWordCount(item.thumbnailText)} palabras)`).join("\n") +
+        `\n\nPor favor, corrígelos antes de sincronizar.`);
+      return;
+    }
+
     if (!confirm(`Se van a sincronizar y actualizar ${matchedItems.length} videos en YouTube. ¿Deseas continuar?`)) {
       return;
     }
@@ -2195,6 +2217,21 @@ export default function Dashboard() {
       alert("Selecciona una fecha y hora antes de programar.");
       return;
     }
+
+    // Validar frase SEO de 4 palabras para miniaturas automáticas en lote
+    const invalidItems = matchedItems.filter(item => {
+      if (!item.isAutoThumbnailEnabled) return false;
+      const count = getWordCount(item.thumbnailText);
+      return count !== 4;
+    });
+
+    if (invalidItems.length > 0) {
+      alert(`No se puede programar en lote porque los siguientes vídeos tienen una frase SEO que no es de exactamente 4 palabras:\n\n` +
+        invalidItems.map(item => `Vídeo ${item.index}: "${item.title}" (${getWordCount(item.thumbnailText)} palabras)`).join("\n") +
+        `\n\nPor favor, corrígelos antes de programar.`);
+      return;
+    }
+
     if (!confirm(`Se va a programar la sincronización de ${matchedItems.length} videos para el ${batchScheduleDate}. ¿Deseas continuar?`)) {
       return;
     }
@@ -2277,6 +2314,16 @@ export default function Dashboard() {
   const handleSaveVideo = async (e, privacyStatus = "private") => {
     if (e) e.preventDefault();
     if (!selectedYoutubeVideo) return;
+
+    if (isAutoThumbnailEnabled) {
+      const cleanText = thumbnailText.replace(/[\/\-\"\']/g, " ").replace(/\s+/g, " ").trim();
+      const wordCount = cleanText ? cleanText.split(/\s+/).length : 0;
+      if (wordCount !== 4) {
+        alert(`La frase SEO de la miniatura debe tener exactamente 4 palabras. Actualmente tiene ${wordCount}. Por favor, corrígela.`);
+        return;
+      }
+    }
+
     setUpdatingYoutubeVideo(true);
     try {
       const isLocal = !!selectedYoutubeVideo.isLocal;
@@ -3458,35 +3505,22 @@ export default function Dashboard() {
                             <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.2rem" }}>
                               Archivo: <code>{video.filename}</code> | Creado: {formatDate(video.createdAt)}
                             </div>
-                            <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginTop: "0.4rem", flexWrap: "wrap" }}>
-                              <span style={{
-                                fontSize: "0.68rem",
-                                color: "#f87171",
-                                background: "rgba(239, 68, 68, 0.12)",
-                                border: "1px solid rgba(239, 68, 68, 0.3)",
-                                padding: "2px 7px",
-                                borderRadius: "6px",
-                                fontWeight: "600",
-                                whiteSpace: "nowrap"
-                              }}>
-                                🔒 Subido en Privado
-                              </span>
-                              <span style={{
-                                fontSize: "0.68rem",
-                                color: "#fbbf24",
-                                background: "rgba(245, 158, 11, 0.1)",
-                                border: "1px solid rgba(245, 158, 11, 0.3)",
-                                padding: "2px 7px",
-                                borderRadius: "6px",
-                                fontWeight: "600",
-                                whiteSpace: "nowrap"
-                              }}>
-                                ⏳ En proceso de edición...
-                              </span>
-                            </div>
                           </div>
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
+                          {/* Badge: siempre privado hasta que el editor lo publique */}
+                          <span style={{
+                            fontSize: "0.7rem",
+                            color: "#f87171",
+                            background: "rgba(239, 68, 68, 0.12)",
+                            border: "1px solid rgba(239, 68, 68, 0.3)",
+                            padding: "2px 8px",
+                            borderRadius: "8px",
+                            fontWeight: "bold",
+                            whiteSpace: "nowrap"
+                          }}>
+                            🔒 Privado en YouTube
+                          </span>
                           <button
                             type="button"
                             onClick={() => handleSelectLocalVideo(video)}
@@ -3614,7 +3648,16 @@ export default function Dashboard() {
 
                         <div className={styles.inputGroup} style={{ margin: 0 }}>
                           <label style={{ fontSize: "0.75rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                            <span>Texto SEO Gallego (4 palabras)</span>
+                            <span>
+                              Texto SEO Gallego (
+                              <span style={{
+                                fontWeight: "bold",
+                                color: getWordCount(thumbnailText) === 4 ? "#22c55e" : "#f59e0b"
+                              }}>
+                                {getWordCount(thumbnailText)}/4 palabras
+                              </span>
+                              )
+                            </span>
                             <button
                               type="button"
                               disabled={isGeneratingSeoPhrase}
@@ -3666,6 +3709,11 @@ export default function Dashboard() {
                             onChange={(e) => setThumbnailText(e.target.value)}
                             placeholder="Ej: GRAN CONCURSO HORA GALEGA"
                           />
+                          {thumbnailText && getWordCount(thumbnailText) !== 4 && (
+                            <span style={{ fontSize: "0.7rem", color: "#f59e0b", marginTop: "0.25rem", display: "block", fontWeight: "500" }}>
+                              ⚠️ La frase debe tener exactamente 4 palabras para encajar bien en el diseño.
+                            </span>
+                          )}
                           {isGeneratingSeoPhrase && (
                             <div style={{
                               marginTop: "0.4rem",
@@ -4165,7 +4213,7 @@ export default function Dashboard() {
                             e.currentTarget.style.boxShadow = "0 4px 15px rgba(16, 185, 129, 0.25)";
                           }}
                         >
-                          {updatingYoutubeVideo ? "Publicando..." : "📤 Público"}
+                          {updatingYoutubeVideo ? "Publicando..." : "📤 Publicar Público"}
                         </button>
                         <button
                           type="button"
@@ -4197,7 +4245,7 @@ export default function Dashboard() {
                             e.currentTarget.style.boxShadow = "0 4px 15px rgba(59, 130, 246, 0.25)";
                           }}
                         >
-                          {updatingYoutubeVideo ? "Publicando..." : "🔒 Privado"}
+                          {updatingYoutubeVideo ? "Publicando..." : "🔒 Publicar Privado"}
                         </button>
                       </>
                     )}
@@ -4599,4 +4647,164 @@ export default function Dashboard() {
 
                 {logoUploadProgress !== null && (
                   <div style={{ flex: 1, minWidth: "150px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-betw
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>
+                      <span>Subiendo archivo...</span>
+                      <span>{logoUploadProgress}%</span>
+                    </div>
+                    <div className={styles.batchSyncProgressOuter} style={{ height: "6px", marginTop: 0 }}>
+                      <div
+                        className={styles.batchSyncProgressInner}
+                        style={{
+                          width: `${logoUploadProgress}%`,
+                          background: "linear-gradient(90deg, #a855f7 0%, #ec4899 100%)",
+                          boxShadow: "0 0 8px rgba(168, 85, 247, 0.4)"
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Listado de logotipos existentes */}
+            <h3 style={{ fontSize: "0.9rem", fontWeight: "600", marginBottom: "0.5rem" }}>Logotipos Registrados ({programLogosCatalog.length})</h3>
+            <div style={{ maxHeight: "250px", overflowY: "auto", display: "grid", gridTemplateColumns: "1fr", gap: "0.5rem", padding: "0.25rem" }}>
+              {programLogosCatalog.length === 0 ? (
+                <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", textAlign: "center", padding: "1rem" }}>
+                  No hay logotipos registrados en el catálogo.
+                </div>
+              ) : (
+                programLogosCatalog.map(logo => {
+                  const logoName = typeof logo === "string" ? logo : logo.name;
+                  const logoPlaylistId = typeof logo === "string" ? null : logo.playlistId;
+                  return (
+                    <div key={logoName} style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "0.5rem",
+                      background: "var(--bg-card, #0f172a)",
+                      border: "1px solid var(--border-color, #334155)",
+                      borderRadius: "8px",
+                      gap: "0.5rem"
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", minWidth: 0, flex: 1 }}>
+                        <img src={`/program_logos/${logoName}`} alt="" style={{ width: "32px", height: "32px", objectFit: "contain", borderRadius: "4px", background: "rgba(255,255,255,0.05)" }} />
+                        <span style={{ fontSize: "0.75rem", fontWeight: "600", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+                          {logoName.replace(/\.[^/.]+$/, "").replace(/_/g, " ")}
+                        </span>
+                      </div>
+                      
+                      {/* Vinculación de Playlist */}
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                        <select
+                          value={logoPlaylistId || ""}
+                          onChange={async (e) => {
+                            const val = e.target.value;
+                            try {
+                              const res = await fetch("/api/program-logos", {
+                                method: "PATCH",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ filename: logoName, playlistId: val || null }),
+                              });
+                              if (res.ok) {
+                                await fetchProgramLogosCatalog();
+                              } else {
+                                const data = await res.json();
+                                alert("Error al vincular playlist: " + (data.error || "error desconocido"));
+                              }
+                            } catch (err) {
+                              console.error(logoName, err);
+                              alert("Error de red al vincular playlist");
+                            }
+                          }}
+                          style={{
+                            padding: "0.25rem 0.5rem",
+                            background: "var(--bg-surface-secondary, #1e293b)",
+                            border: "1px solid var(--border-color, #334155)",
+                            borderRadius: "6px",
+                            color: "#fff",
+                            fontSize: "0.7rem",
+                            maxWidth: "180px"
+                          }}
+                        >
+                          <option value="">-- Sin Playlist --</option>
+                          {playlists.map(pl => (
+                            <option key={pl.id} value={pl.id}>
+                              {pl.title}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <button
+                        type="button"
+                        aria-label={`Eliminar ${logoName}`}
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          color: "#ef4444",
+                          cursor: "pointer",
+                          fontSize: "0.85rem",
+                          padding: "0.25rem"
+                        }}
+                        onClick={async () => {
+                          if (!confirm(`¿Eliminar el logotipo "${logoName}"?`)) return;
+                          try {
+                            const res = await fetch("/api/program-logos", {
+                              method: "DELETE",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ filename: logoName }),
+                            });
+                            if (res.ok) {
+                              await fetchProgramLogosCatalog();
+                            } else {
+                              const data = await res.json();
+                              alert("Error al eliminar logotipo: " + (data.error || "error desconocido"));
+                            }
+                          } catch (err) {
+                            console.error("Error al eliminar logotipo:", err);
+                            alert("Error de red o de cliente: " + err.message);
+                          }
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Overlay de Sincronización en Lote */}
+      {isSyncingBatch && (
+        <div className={styles.batchSyncOverlay}>
+          <div className={styles.batchSyncModal}>
+            <div className={styles.batchSyncSpinner} />
+            <h3 style={{ fontSize: "1.25rem", fontWeight: "800", color: "#f8fafc", margin: 0 }}>
+              Sincronizando Videos en Lote
+            </h3>
+            <p style={{ fontSize: "0.9rem", color: "#94a3b8", margin: 0 }}>
+              {syncProgress.status}
+            </p>
+            <div style={{ width: "100%" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "#64748b", marginBottom: "0.25rem" }}>
+                <span>Progreso</span>
+                <span>{syncProgress.current} de {syncProgress.total}</span>
+              </div>
+              <div className={styles.batchSyncProgressOuter}>
+                <div
+                  className={styles.batchSyncProgressInner}
+                  style={{ width: `${syncProgress.total > 0 ? (syncProgress.current / syncProgress.total) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
