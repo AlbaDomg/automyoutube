@@ -309,11 +309,6 @@ export default function SubidorPage() {
     setSimpleVideoFile(file);
     if (!file) return;
 
-    if (!simpleTitle) {
-      const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
-      setSimpleTitle(baseName);
-    }
-
     setSimpleUploadStatus("Extrayendo portada del vídeo local...");
     try {
       const frameBase64 = await extractFrameFromLocalFile(file);
