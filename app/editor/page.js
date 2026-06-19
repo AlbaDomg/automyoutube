@@ -1613,7 +1613,7 @@ export default function Dashboard() {
     try {
       const file = simpleVideoFile;
       const uploadId = generateUUID();
-      const chunkSize = 5 * 1024 * 1024; // 5MB chunks
+      const chunkSize = 3.5 * 1024 * 1024; // 3.5MB chunks (Vercel has 4.5MB request limit)
       const totalChunks = Math.ceil(file.size / chunkSize);
 
       for (let i = 0; i < totalChunks; i++) {
