@@ -994,7 +994,19 @@ export default function Dashboard() {
       let bgImg = null;
       try {
         if (customBgVal) {
-          bgImg = await loadImage(customBgVal);
+          try {
+            bgImg = await loadImage(customBgVal);
+          } catch (err) {
+            console.warn("[Thumbnail Generator] Fallo al cargar customBgVal, intentando fallback:", err.message);
+            if (customBgVal.includes("maxresdefault.jpg")) {
+              const fallbackUrl = customBgVal.replace("maxresdefault.jpg", "hqdefault.jpg");
+              try {
+                bgImg = await loadImage(fallbackUrl);
+              } catch (fallbackErr) {
+                console.error("[Thumbnail Generator] Fallo también el fallback hqdefault:", fallbackErr.message);
+              }
+            }
+          }
         } else {
           const cleanUrl = getCleanVideoFrameUrl(videoVal?.thumbnail, videoVal?.id);
           if (cleanUrl) {
@@ -1527,8 +1539,10 @@ export default function Dashboard() {
           setIsExtractingFrame(false);
         });
     } else if (video.youtubeId) {
-      // Fallback: usar la miniatura por defecto que genera YouTube para este vídeo
-      setCustomBgBase64(`https://img.youtube.com/vi/${video.youtubeId}/maxresdefault.jpg`);
+      // Fallback: usar la miniatura por defecto que genera YouTube para este vídeo a través del proxy de CORS
+      const directUrl = `https://img.youtube.com/vi/${video.youtubeId}/maxresdefault.jpg`;
+      const proxiedUrl = `/api/youtube/thumbnail-proxy?url=${encodeURIComponent(directUrl)}`;
+      setCustomBgBase64(proxiedUrl);
     }
     
     if (detectedLogo !== "none") {
@@ -4213,7 +4227,7 @@ export default function Dashboard() {
                             e.currentTarget.style.boxShadow = "0 4px 15px rgba(16, 185, 129, 0.25)";
                           }}
                         >
-                          {updatingYoutubeVideo ? "Publicando..." : "📤 Publicar Público"}
+                          {updatingYoutubeVideo ? "Publicando..." : "📤 Público"}
                         </button>
                         <button
                           type="button"
@@ -4245,7 +4259,7 @@ export default function Dashboard() {
                             e.currentTarget.style.boxShadow = "0 4px 15px rgba(59, 130, 246, 0.25)";
                           }}
                         >
-                          {updatingYoutubeVideo ? "Publicando..." : "🔒 Publicar Privado"}
+                          {updatingYoutubeVideo ? "Publicando..." : "🔒 Privado"}
                         </button>
                       </>
                     )}
