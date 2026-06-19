@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, Fragment, useMemo } from "react";
 import styles from "../page.module.css";
 import DateTimePicker from "@/components/DateTimePicker";
+import Navbar from "../components/Navbar";
 
 // Helper para generar UUIDs en contextos de red no seguros
 function generateUUID() {
@@ -216,6 +217,7 @@ export default function Dashboard() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAuthRequired, setIsAuthRequired] = useState(false);
   const [currentUserEmail, setCurrentUserEmail] = useState("");
+  const [currentUserRole, setCurrentUserRole] = useState("SEO_MANAGER");
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [authError, setAuthError] = useState("");
   
@@ -625,9 +627,17 @@ export default function Dashboard() {
             setIsAuthenticated(data.authenticated);
             if (data.authenticated && data.user) {
               setCurrentUserEmail(data.user.email);
+              const userRole = data.user.role || "SEO_MANAGER";
+              setCurrentUserRole(userRole);
+
+              // Restringir el acceso si no es ADMIN o SEO_MANAGER
+              if (userRole !== "ADMIN" && userRole !== "SEO_MANAGER") {
+                setAuthError("No tienes permiso para acceder al flujo de Editor.");
+              }
             }
           } else {
             setIsAuthenticated(true);
+            setCurrentUserRole("ADMIN");
           }
         }
       } catch (err) {
@@ -2031,7 +2041,7 @@ export default function Dashboard() {
         const item = {
           index: v.index,
           title: v.title || "",
-          description: v.description || "",
+          description: updateDescriptionUrl(v.description || "", detected.logoName),
           thumbnailText: v.thumbnailText || "",
           isAutoThumbnailEnabled: true,
           selectedProgramLogo: detected.logoName,
@@ -2849,8 +2859,48 @@ export default function Dashboard() {
     );
   }
 
+  if (authError && isAuthenticated) {
+    return (
+      <div style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: "100vh",
+        background: "radial-gradient(circle at 50% 50%, #0c0f24 0%, #040612 100%)",
+        color: "#f8fafc",
+        fontFamily: "system-ui, -apple-system, sans-serif",
+        padding: "2rem",
+        textAlign: "center"
+      }}>
+        <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>🚫</div>
+        <h2 style={{ fontSize: "1.5rem", fontWeight: "800", color: "#f87171" }}>Acceso Denegado</h2>
+        <p style={{ color: "#94a3b8", marginTop: "0.5rem", maxWidth: "400px" }}>
+          {authError}
+        </p>
+        <button
+          onClick={() => window.location.href = "/"}
+          style={{
+            marginTop: "1.5rem",
+            padding: "0.6rem 1.5rem",
+            background: "rgba(255, 255, 255, 0.05)",
+            border: "1px solid rgba(255, 255, 255, 0.1)",
+            borderRadius: "10px",
+            color: "#f8fafc",
+            cursor: "pointer",
+            fontWeight: "600"
+          }}
+        >
+          Volver al Portal
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className={styles.container}>
+    <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+      {isAuthenticated && <Navbar userEmail={currentUserEmail} userRole={currentUserRole} />}
+      <div className={styles.container}>
       {/* Header */}
       <header className={styles.header}>
         <div className={styles.titleSection}>
@@ -4819,6 +4869,7 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 }

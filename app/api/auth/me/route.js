@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
-import { verifySession, isEmailAllowed } from '@/lib/auth';
+import { verifySession, isEmailAllowed, getUserRole } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
 
 export async function GET(request) {
@@ -31,10 +31,12 @@ export async function GET(request) {
       return NextResponse.json({ required: true, authenticated: false, error: 'Unauthorized email' });
     }
 
+    const role = await getUserRole(email);
+
     return NextResponse.json({
       required: true,
       authenticated: true,
-      user: { email }
+      user: { email, role }
     });
   } catch (error) {
     console.error('[API Auth Me] Error checking session:', error);

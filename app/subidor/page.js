@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import styles from "../page.module.css";
+import Navbar from "../components/Navbar";
 
 // Helper para generar UUIDs en contextos de red no seguros
 function generateUUID() {
@@ -49,6 +50,7 @@ export default function SubidorPage() {
   const [isAuthRequired, setIsAuthRequired] = useState(false);
   const [authError, setAuthError] = useState("");
   const [currentUserEmail, setCurrentUserEmail] = useState("");
+  const [currentUserRole, setCurrentUserRole] = useState("PRODUCTORA");
   const [channel, setChannel] = useState({ connected: false, channel: null });
 
   // Estados del uploader
@@ -59,6 +61,13 @@ export default function SubidorPage() {
   const [isSimpleUploading, setIsSimpleUploading] = useState(false);
   const [simpleUploadProgress, setSimpleUploadProgress] = useState(0);
   const [simpleUploadStatus, setSimpleUploadStatus] = useState("");
+
+  // Estados del parser de documentos (PDF/Word)
+  const [documentFile, setDocumentFile] = useState(null);
+  const [parsedVideos, setParsedVideos] = useState([]);
+  const [analyzeProgress, setAnalyzeProgress] = useState("IDLE"); // IDLE, ANALYZING, COMPLETED, FAILED
+  const [analyzeError, setAnalyzeError] = useState("");
+  const documentInputRef = useRef(null);
 
   // Estados de optimización IA
   const [isOptimizingSimpleTitle, setIsOptimizingSimpleTitle] = useState(false);
@@ -102,9 +111,17 @@ export default function SubidorPage() {
             setIsAuthenticated(data.authenticated);
             if (data.authenticated && data.user) {
               setCurrentUserEmail(data.user.email);
+              const userRole = data.user.role || "PRODUCTORA";
+              setCurrentUserRole(userRole);
+
+              // Restringir el acceso si no es ADMIN o PRODUCTORA
+              if (userRole !== "ADMIN" && userRole !== "PRODUCTORA") {
+                setAuthError("No tienes permiso para acceder al flujo de Subidor.");
+              }
             }
           } else {
             setIsAuthenticated(true);
+            setCurrentUserRole("ADMIN");
           }
         }
       } catch (err) {
@@ -452,7 +469,45 @@ export default function SubidorPage() {
     }
   };
 
+  const handleAnalyzeFile = async (e) => {
+    e.preventDefault();
+    if (!documentFile) {
+      alert("Por favor, selecciona un documento PDF o Word primero.");
+      return;
+    }
 
+    setAnalyzeProgress("ANALYZING");
+    setAnalyzeError("");
+    setParsedVideos([]);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", documentFile);
+      formData.append("youtubeVideos", JSON.stringify([]));
+
+      const res = await fetch("/api/youtube/analyze-pdf", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Fallo al procesar el documento.");
+      }
+
+      setParsedVideos(data.videos || []);
+      setAnalyzeProgress("COMPLETED");
+    } catch (err) {
+      console.error(err);
+      setAnalyzeError(err.message);
+      setAnalyzeProgress("FAILED");
+    }
+  };
+
+  const handleRellenarFormulario = (title, description) => {
+    setSimpleTitle(title);
+    setSimpleDescription(description);
+  };
 
   const handleExecuteScheduler = async () => {
     setExecutingScheduler(true);
@@ -546,6 +601,44 @@ export default function SubidorPage() {
           }
         `}} />
         <p style={{ marginTop: "1rem", color: "#94a3b8", fontSize: "0.9rem" }}>Cargando portal...</p>
+      </div>
+    );
+  }
+
+  if (authError && isAuthenticated) {
+    return (
+      <div style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: "100vh",
+        background: "radial-gradient(circle at 50% 50%, #0c0f24 0%, #040612 100%)",
+        color: "#f8fafc",
+        fontFamily: "system-ui, -apple-system, sans-serif",
+        padding: "2rem",
+        textAlign: "center"
+      }}>
+        <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>🚫</div>
+        <h2 style={{ fontSize: "1.5rem", fontWeight: "800", color: "#f87171" }}>Acceso Denegado</h2>
+        <p style={{ color: "#94a3b8", marginTop: "0.5rem", maxWidth: "400px" }}>
+          {authError}
+        </p>
+        <button
+          onClick={() => window.location.href = "/"}
+          style={{
+            marginTop: "1.5rem",
+            padding: "0.6rem 1.5rem",
+            background: "rgba(255, 255, 255, 0.05)",
+            border: "1px solid rgba(255, 255, 255, 0.1)",
+            borderRadius: "10px",
+            color: "#f8fafc",
+            cursor: "pointer",
+            fontWeight: "600"
+          }}
+        >
+          Volver al Portal
+        </button>
       </div>
     );
   }
@@ -646,6 +739,7 @@ export default function SubidorPage() {
 
   return (
     <main className={styles.main}>
+      {isAuthenticated && <Navbar userEmail={currentUserEmail} userRole={currentUserRole} />}
       <div className={styles.container}>
         {/* Encabezado */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
@@ -684,174 +778,331 @@ export default function SubidorPage() {
           </a>
         </div>
 
-        {/* Formulario de Subida */}
-        <div className={styles.card}>
-          <h3 style={{ fontSize: "1.25rem", fontWeight: "800", marginBottom: "1.25rem", background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-            📤 Subida de Vídeo
-          </h3>
-          <form onSubmit={handleSimpleVideoUpload} style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
-            
-            <div className={styles.inputGroup}>
-              <label>Archivo de vídeo (.mp4, .mov, etc.)</label>
-              <input
-                type="file"
-                ref={simpleVideoInputRef}
-                accept="video/*"
-                onChange={handleFileChange}
-                required
-              />
-            </div>
+        {/* Layout en Dos Columnas */}
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))",
+          gap: "2rem",
+          marginBottom: "2rem",
+          alignItems: "stretch"
+        }}>
+          {/* Columna Izquierda: Importar Escaleta (PDF/Word) */}
+          <div className={styles.card} style={{ display: "flex", flexDirection: "column", height: "100%", justifyContent: "flex-start" }}>
+            <h3 style={{ fontSize: "1.25rem", fontWeight: "800", marginBottom: "1.25rem", background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+              📄 Procesar Escaleta (PDF o Word)
+            </h3>
+            <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginBottom: "1.5rem", lineHeight: "1.5" }}>
+              Sube la escaleta del programa en formato PDF o Word para detectar automáticamente los títulos y descripciones. Podrás rellenar el formulario de subida con un solo clic.
+            </p>
 
-            <div className={styles.inputGroup}>
-              <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span>Título en YouTube</span>
-                <button
-                  type="button"
-                  disabled={isOptimizingSimpleTitle}
-                  onClick={() => handleOptimizeFieldWithAI(simpleTitle, 'title', setSimpleTitle, setIsOptimizingSimpleTitle)}
-                  className={styles.btnSubmit}
-                  style={{
-                    width: "auto",
-                    fontSize: "0.7rem",
-                    padding: "2px 8px",
-                    margin: 0,
-                    background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
-                    border: "none",
-                    borderRadius: "4px",
-                    cursor: "pointer",
-                    color: "#fff"
-                  }}
-                >
-                  {isOptimizingSimpleTitle ? "Optimizando..." : "🪄 Optimizar con IA"}
-                </button>
-              </label>
-              <input
-                type="text"
-                placeholder="Escribe un título descriptivo..."
-                value={simpleTitle}
-                onChange={(e) => setSimpleTitle(e.target.value)}
-                onPaste={(e) => handleCleanPaste(e, setSimpleTitle)}
-                required
-              />
-              {isOptimizingSimpleTitle && (
+            <form onSubmit={handleAnalyzeFile} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div className={styles.inputGroup} style={{ marginBottom: 0 }}>
+                <label>Documento de Referencia (.pdf, .docx)</label>
+                <input
+                  type="file"
+                  ref={documentInputRef}
+                  accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  onChange={(e) => setDocumentFile(e.target.files[0])}
+                  required
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={analyzeProgress === "ANALYZING"}
+                className={styles.btnSubmit}
+                style={{
+                  background: analyzeProgress === "ANALYZING" ? "#4b5563" : "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
+                  cursor: analyzeProgress === "ANALYZING" ? "not-allowed" : "pointer"
+                }}
+              >
+                {analyzeProgress === "ANALYZING" ? "Procesando Escaleta..." : "Analizar Documento"}
+              </button>
+            </form>
+
+            {/* Resultados del análisis */}
+            {analyzeProgress === "ANALYZING" && (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "2rem", gap: "1rem" }}>
                 <div style={{
-                  marginTop: "0.4rem",
-                  height: "3px",
-                  width: "100%",
-                  backgroundColor: "rgba(255,255,255,0.05)",
-                  borderRadius: "1.5px",
-                  overflow: "hidden",
-                  position: "relative"
-                }}>
-                  <div className={styles.pulseProgressBar} />
-                </div>
-              )}
-            </div>
-
-            <div className={styles.inputGroup}>
-              <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span>Descripción del vídeo</span>
-                <button
-                  type="button"
-                  disabled={isOptimizingSimpleDesc}
-                  onClick={() => handleOptimizeFieldWithAI(simpleDescription, 'description', setSimpleDescription, setIsOptimizingSimpleDesc)}
-                  className={styles.btnSubmit}
-                  style={{
-                    width: "auto",
-                    fontSize: "0.7rem",
-                    padding: "2px 8px",
-                    margin: 0,
-                    background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
-                    border: "none",
-                    borderRadius: "4px",
-                    cursor: "pointer",
-                    color: "#fff"
-                  }}
-                >
-                  {isOptimizingSimpleDesc ? "Optimizando..." : "🪄 Optimizar con IA"}
-                </button>
-              </label>
-              <textarea
-                rows="6"
-                placeholder="Escribe la descripción del vídeo..."
-                value={simpleDescription}
-                onChange={(e) => setSimpleDescription(e.target.value)}
-                onPaste={(e) => handleCleanPaste(e, setSimpleDescription)}
-                style={{ fontSize: "0.85rem", lineHeight: "1.4" }}
-              />
-              {isOptimizingSimpleDesc && (
-                <div style={{
-                  marginTop: "0.4rem",
-                  height: "3px",
-                  width: "100%",
-                  backgroundColor: "rgba(255,255,255,0.05)",
-                  borderRadius: "1.5px",
-                  overflow: "hidden",
-                  position: "relative"
-                }}>
-                  <div className={styles.pulseProgressBar} />
-                </div>
-              )}
-            </div>
-
-            {isSimpleUploading && (
-              <div style={{ marginTop: "0.5rem" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.80rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>
-                  <span>{simpleUploadStatus}</span>
-                  <span>{simpleUploadProgress}%</span>
-                </div>
-                <div className={styles.batchSyncProgressOuter} style={{ marginTop: 0 }}>
-                  <div
-                    className={styles.batchSyncProgressInner}
-                    style={{
-                      width: `${simpleUploadProgress}%`,
-                      background: "linear-gradient(90deg, #a855f7 0%, #ec4899 100%)",
-                      boxShadow: "0 0 8px rgba(168, 85, 247, 0.4)"
-                    }}
-                  />
-                </div>
-
-                {/* ⚠️ Aviso: no cerrar la página durante la subida */}
-                <style>{`
-                  @keyframes warningPulse {
-                    0%, 100% { border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.08); }
-                    50% { border-color: rgba(239, 68, 68, 0.8); background: rgba(239, 68, 68, 0.18); }
-                  }
-                `}</style>
-                <div style={{
-                  marginTop: "0.75rem",
-                  padding: "0.75rem 1rem",
-                  background: "rgba(239, 68, 68, 0.12)",
-                  border: "1px solid rgba(239, 68, 68, 0.4)",
-                  borderRadius: "10px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.6rem",
-                  animation: "warningPulse 2s ease-in-out infinite"
-                }}>
-                  <span style={{ fontSize: "1.2rem", flexShrink: 0 }}>⚠️</span>
-                  <span style={{ fontSize: "0.82rem", color: "#fca5a5", fontWeight: "600", lineHeight: "1.4" }}>
-                    <strong style={{ color: "#f87171" }}>¡No cierres esta pestaña!</strong><br />
-                    La subida se cancelará si sales o cambias de página. Espera a que llegue al 100%.
-                  </span>
-                </div>
+                  width: "30px",
+                  height: "30px",
+                  border: "3px solid rgba(168, 85, 247, 0.1)",
+                  borderTop: "3px solid #a855f7",
+                  borderRadius: "50%",
+                  animation: "spin 1s linear infinite"
+                }} />
+                <span style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>Extrayendo contenido con IA de Gemini...</span>
               </div>
             )}
 
+            {analyzeProgress === "FAILED" && (
+              <div style={{
+                marginTop: "1.5rem",
+                padding: "1rem",
+                background: "rgba(239, 68, 68, 0.1)",
+                border: "1px solid rgba(239, 68, 68, 0.3)",
+                color: "#f87171",
+                borderRadius: "12px",
+                fontSize: "0.85rem"
+              }}>
+                ❌ Error al analizar el documento: {analyzeError}
+              </div>
+            )}
 
-            <button
-              type="submit"
-              disabled={isSimpleUploading}
-              className={styles.btnSubmit}
-              style={{
-                marginTop: "0.5rem",
-                background: isSimpleUploading ? "#4b5563" : "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
-                cursor: isSimpleUploading ? "not-allowed" : "pointer"
-              }}
-            >
-              {isSimpleUploading ? "Subiendo vídeo..." : "Subir vídeo a la cola"}
-            </button>
-          </form>
+            {analyzeProgress === "COMPLETED" && parsedVideos.length === 0 && (
+              <div style={{ textAlign: "center", padding: "2rem", color: "var(--text-muted)", fontSize: "0.85rem" }}>
+                No se detectaron vídeos válidos en el documento. Asegúrate de que contiene textos legibles.
+              </div>
+            )}
+
+            {analyzeProgress === "COMPLETED" && parsedVideos.length > 0 && (
+              <div style={{
+                marginTop: "1.5rem",
+                display: "flex",
+                flexDirection: "column",
+                gap: "1rem",
+                maxHeight: "350px",
+                overflowY: "auto",
+                paddingRight: "0.25rem"
+              }}>
+                <div style={{ fontSize: "0.8rem", color: "var(--text-secondary)", fontWeight: "600" }}>
+                  Se detectaron {parsedVideos.length} vídeos:
+                </div>
+                {parsedVideos.map((video, idx) => (
+                  <div key={idx} style={{
+                    padding: "0.85rem",
+                    background: "rgba(255, 255, 255, 0.02)",
+                    border: "1px solid var(--border-color)",
+                    borderRadius: "12px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "0.5rem"
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
+                      <span style={{ fontSize: "0.85rem", fontWeight: "600", color: "#f8fafc", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {video.title}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleRellenarFormulario(video.title, video.description)}
+                        style={{
+                          background: "rgba(168, 85, 247, 0.15)",
+                          border: "1px solid rgba(168, 85, 247, 0.3)",
+                          color: "#c084fc",
+                          padding: "2px 8px",
+                          borderRadius: "6px",
+                          fontSize: "0.75rem",
+                          fontWeight: "600",
+                          cursor: "pointer",
+                          transition: "0.2s",
+                          flexShrink: 0
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = "rgba(168, 85, 247, 0.25)"}
+                        onMouseLeave={(e) => e.currentTarget.style.background = "rgba(168, 85, 247, 0.15)"}
+                      >
+                        📋 Rellenar
+                      </button>
+                    </div>
+                    {video.programName && (
+                      <span style={{
+                        fontSize: "0.68rem",
+                        color: "#0ea5e9",
+                        background: "rgba(14, 165, 233, 0.1)",
+                        padding: "1px 6px",
+                        borderRadius: "6px",
+                        fontWeight: "600",
+                        width: "fit-content"
+                      }}>
+                        Programa: {video.programName}
+                      </span>
+                    )}
+                    <p style={{
+                      fontSize: "0.75rem",
+                      color: "var(--text-muted)",
+                      lineHeight: "1.4",
+                      margin: 0,
+                      maxHeight: "60px",
+                      overflowY: "auto",
+                      background: "rgba(0,0,0,0.15)",
+                      padding: "4px 8px",
+                      borderRadius: "6px"
+                    }}>
+                      {video.description}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Columna Derecha: Formulario de Subida */}
+          <div className={styles.card} style={{ display: "flex", flexDirection: "column", height: "100%", justifyContent: "flex-start" }}>
+            <h3 style={{ fontSize: "1.25rem", fontWeight: "800", marginBottom: "1.25rem", background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+              📤 Subida de Vídeo
+            </h3>
+            <form onSubmit={handleSimpleVideoUpload} style={{ display: "flex", flexDirection: "column", gap: "1.25rem", flex: 1 }}>
+              
+              <div className={styles.inputGroup}>
+                <label>Archivo de vídeo (.mp4, .mov, etc.)</label>
+                <input
+                  type="file"
+                  ref={simpleVideoInputRef}
+                  accept="video/*"
+                  onChange={handleFileChange}
+                  required
+                />
+              </div>
+
+              <div className={styles.inputGroup}>
+                <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span>Título en YouTube</span>
+                  <button
+                    type="button"
+                    disabled={isOptimizingSimpleTitle}
+                    onClick={() => handleOptimizeFieldWithAI(simpleTitle, 'title', setSimpleTitle, setIsOptimizingSimpleTitle)}
+                    className={styles.btnSubmit}
+                    style={{
+                      width: "auto",
+                      fontSize: "0.7rem",
+                      padding: "2px 8px",
+                      margin: 0,
+                      background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
+                      border: "none",
+                      borderRadius: "4px",
+                      cursor: "pointer",
+                      color: "#fff"
+                    }}
+                  >
+                    {isOptimizingSimpleTitle ? "Optimizando..." : "🪄 Optimizar con IA"}
+                  </button>
+                </label>
+                <input
+                  type="text"
+                  placeholder="Escribe un título descriptivo..."
+                  value={simpleTitle}
+                  onChange={(e) => setSimpleTitle(e.target.value)}
+                  onPaste={(e) => handleCleanPaste(e, setSimpleTitle)}
+                  required
+                />
+                {isOptimizingSimpleTitle && (
+                  <div style={{
+                    marginTop: "0.4rem",
+                    height: "3px",
+                    width: "100%",
+                    backgroundColor: "rgba(255,255,255,0.05)",
+                    borderRadius: "1.5px",
+                    overflow: "hidden",
+                    position: "relative"
+                  }}>
+                    <div className={styles.pulseProgressBar} />
+                  </div>
+                )}
+              </div>
+
+              <div className={styles.inputGroup}>
+                <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span>Descripción del vídeo</span>
+                  <button
+                    type="button"
+                    disabled={isOptimizingSimpleDesc}
+                    onClick={() => handleOptimizeFieldWithAI(simpleDescription, 'description', setSimpleDescription, setIsOptimizingSimpleDesc)}
+                    className={styles.btnSubmit}
+                    style={{
+                      width: "auto",
+                      fontSize: "0.7rem",
+                      padding: "2px 8px",
+                      margin: 0,
+                      background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
+                      border: "none",
+                      borderRadius: "4px",
+                      cursor: "pointer",
+                      color: "#fff"
+                    }}
+                  >
+                    {isOptimizingSimpleDesc ? "Optimizando..." : "🪄 Optimizar con IA"}
+                  </button>
+                </label>
+                <textarea
+                  rows="6"
+                  placeholder="Escribe la descripción del vídeo..."
+                  value={simpleDescription}
+                  onChange={(e) => setSimpleDescription(e.target.value)}
+                  onPaste={(e) => handleCleanPaste(e, setSimpleDescription)}
+                  style={{ fontSize: "0.85rem", lineHeight: "1.4" }}
+                />
+                {isOptimizingSimpleDesc && (
+                  <div style={{
+                    marginTop: "0.4rem",
+                    height: "3px",
+                    width: "100%",
+                    backgroundColor: "rgba(255,255,255,0.05)",
+                    borderRadius: "1.5px",
+                    overflow: "hidden",
+                    position: "relative"
+                  }}>
+                    <div className={styles.pulseProgressBar} />
+                  </div>
+                )}
+              </div>
+
+              {isSimpleUploading && (
+                <div style={{ marginTop: "0.5rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.80rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>
+                    <span>{simpleUploadStatus}</span>
+                    <span>{simpleUploadProgress}%</span>
+                  </div>
+                  <div className={styles.batchSyncProgressOuter} style={{ marginTop: 0 }}>
+                    <div
+                      className={styles.batchSyncProgressInner}
+                      style={{
+                        width: `${simpleUploadProgress}%`,
+                        background: "linear-gradient(90deg, #a855f7 0%, #ec4899 100%)",
+                        boxShadow: "0 0 8px rgba(168, 85, 247, 0.4)"
+                      }}
+                    />
+                  </div>
+
+                  {/* ⚠️ Aviso: no cerrar la página durante la subida */}
+                  <style>{`
+                    @keyframes warningPulse {
+                      0%, 100% { border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.08); }
+                      50% { border-color: rgba(239, 68, 68, 0.8); background: rgba(239, 68, 68, 0.18); }
+                    }
+                  `}</style>
+                  <div style={{
+                    marginTop: "0.75rem",
+                    padding: "0.75rem 1rem",
+                    background: "rgba(239, 68, 68, 0.12)",
+                    border: "1px solid rgba(239, 68, 68, 0.4)",
+                    borderRadius: "10px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.6rem",
+                    animation: "warningPulse 2s ease-in-out infinite"
+                  }}>
+                    <span style={{ fontSize: "1.2rem", flexShrink: 0 }}>⚠️</span>
+                    <span style={{ fontSize: "0.82rem", color: "#fca5a5", fontWeight: "600", lineHeight: "1.4" }}>
+                      <strong style={{ color: "#f87171" }}>¡No cierres esta pestaña!</strong><br />
+                      La subida se cancelará si sales o cambias de página. Espera a que llegue al 100%.
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={isSimpleUploading}
+                className={styles.btnSubmit}
+                style={{
+                  marginTop: "0.5rem",
+                  background: isSimpleUploading ? "#4b5563" : "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
+                  cursor: isSimpleUploading ? "not-allowed" : "pointer"
+                }}
+              >
+                {isSimpleUploading ? "Subiendo vídeo..." : "Subir vídeo a la cola"}
+              </button>
+            </form>
+          </div>
         </div>
 
         {/* 1. Cola de Vídeos Locales subidos pendientes de procesar */}

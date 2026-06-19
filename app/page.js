@@ -2,18 +2,29 @@
 
 import { useState, useEffect } from "react";
 import styles from "./page.module.css";
+import Navbar from "./components/Navbar";
 
 export default function LandingPortalPage() {
   // Estados de autenticación de la aplicación (Google Sign-In)
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAuthRequired, setIsAuthRequired] = useState(false);
   const [currentUserEmail, setCurrentUserEmail] = useState("");
+  const [currentUserRole, setCurrentUserRole] = useState("ADMIN");
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [authError, setAuthError] = useState("");
 
   // Estado del canal
   const [channel, setChannel] = useState({ connected: false, channel: null });
   const [loadingChannel, setLoadingChannel] = useState(true);
+
+  // Estados de gestión de usuarios (solo ADMIN)
+  const [users, setUsers] = useState([]);
+  const [loadingUsers, setLoadingUsers] = useState(true);
+  const [newEmail, setNewEmail] = useState("");
+  const [newRole, setNewRole] = useState("PRODUCTORA");
+  const [inviteError, setInviteError] = useState("");
+  const [inviteSuccess, setInviteSuccess] = useState("");
+  const [inviting, setInviting] = useState(false);
 
   // Estado de la configuración
   const [showSettings, setShowSettings] = useState(false);
@@ -57,9 +68,21 @@ export default function LandingPortalPage() {
             setIsAuthenticated(data.authenticated);
             if (data.authenticated && data.user) {
               setCurrentUserEmail(data.user.email);
+              const userRole = data.user.role || "ADMIN";
+              setCurrentUserRole(userRole);
+
+              // Redirigir según el rol del usuario si es necesario
+              if (userRole === "PRODUCTORA") {
+                window.location.href = "/subidor";
+                return;
+              } else if (userRole === "SEO_MANAGER") {
+                window.location.href = "/editor";
+                return;
+              }
             }
           } else {
             setIsAuthenticated(true);
+            setCurrentUserRole("ADMIN");
           }
         }
       } catch (err) {
@@ -94,12 +117,82 @@ export default function LandingPortalPage() {
     }
   };
 
+  const fetchUsers = async () => {
+    if (currentUserRole !== "ADMIN") return;
+    setLoadingUsers(true);
+    try {
+      const res = await fetch("/api/users", { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        setUsers(data);
+      }
+    } catch (err) {
+      console.error("Error fetching users:", err);
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  const handleInviteUser = async (e) => {
+    e.preventDefault();
+    setInviteError("");
+    setInviteSuccess("");
+    if (!newEmail.trim()) {
+      setInviteError("El correo electrónico es requerido.");
+      return;
+    }
+    setInviting(true);
+    try {
+      const res = await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: newEmail.trim(), role: newRole }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Error al invitar al usuario.");
+      }
+      setInviteSuccess(`Usuario ${newEmail} invitado con éxito.`);
+      setNewEmail("");
+      fetchUsers();
+    } catch (err) {
+      setInviteError(err.message);
+    } finally {
+      setInviting(false);
+    }
+  };
+
+  const handleRevokeUser = async (email) => {
+    if (!window.confirm(`¿Estás seguro de que deseas revocar el acceso a ${email}?`)) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/users?email=${encodeURIComponent(email)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Error al revocar el acceso.");
+      }
+      alert("Acceso revocado correctamente.");
+      fetchUsers();
+    } catch (err) {
+      alert("Error: " + err.message);
+    }
+  };
+
   useEffect(() => {
     if (isAuthenticated) {
       fetchConfig();
       fetchChannelStatus();
     }
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (isAuthenticated && currentUserRole === "ADMIN") {
+      fetchUsers();
+    }
+  }, [isAuthenticated, currentUserRole]);
 
   const handleGoogleLogin = () => {
     window.location.href = "/api/auth/app-login";
@@ -269,6 +362,7 @@ export default function LandingPortalPage() {
 
   return (
     <main className={styles.main}>
+      {isAuthenticated && <Navbar userEmail={currentUserEmail} userRole={currentUserRole} />}
       <div className={styles.container} style={{ maxWidth: "900px", padding: "2rem 1rem" }}>
         
         {/* Encabezado */}
@@ -484,6 +578,209 @@ export default function LandingPortalPage() {
           </div>
         </div>
 
+        {/* Panel de Gestión de Usuarios (Sólo Administradores) */}
+        {currentUserRole === "ADMIN" && (
+          <div style={{
+            background: "rgba(30, 41, 59, 0.25)",
+            border: "1px solid var(--border-color)",
+            borderRadius: "24px",
+            padding: "2.5rem 2rem",
+            marginTop: "3rem",
+            marginBottom: "3rem",
+            backdropFilter: "blur(12px)",
+            boxShadow: "0 8px 32px 0 rgba(0, 0, 0, 0.2)"
+          }}>
+            <h2 style={{
+              fontSize: "1.5rem",
+              fontWeight: "800",
+              color: "#f8fafc",
+              marginBottom: "1.5rem",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem"
+            }}>
+              👥 Gestión de Acceso y Roles
+            </h2>
+            <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginBottom: "2rem" }}>
+              Como administrador, puedes dar permiso a otros correos de Google para acceder a la aplicación y asignarles un rol específico (Productora o Gestor SEO).
+            </p>
+
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+              gap: "2rem"
+            }}>
+              {/* Formulario de Invitación */}
+              <div style={{
+                background: "rgba(255, 255, 255, 0.02)",
+                border: "1px solid rgba(255, 255, 255, 0.05)",
+                borderRadius: "16px",
+                padding: "1.5rem"
+              }}>
+                <h3 style={{ fontSize: "1.1rem", fontWeight: "700", marginBottom: "1.25rem", color: "#f8fafc" }}>
+                  Invitar Colaborador
+                </h3>
+                <form onSubmit={handleInviteUser} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                  <div className={styles.inputGroup} style={{ marginBottom: 0 }}>
+                    <label>Correo Electrónico</label>
+                    <input
+                      type="email"
+                      placeholder="ejemplo@gmail.com"
+                      value={newEmail}
+                      onChange={(e) => setNewEmail(e.target.value)}
+                      required
+                      style={{ background: "rgba(0, 0, 0, 0.3)" }}
+                    />
+                  </div>
+                  <div className={styles.inputGroup} style={{ marginBottom: 0 }}>
+                    <label>Rol Asignado</label>
+                    <select
+                      value={newRole}
+                      onChange={(e) => setNewRole(e.target.value)}
+                      style={{ background: "rgba(0, 0, 0, 0.3)", color: "#fff" }}
+                    >
+                      <option value="PRODUCTORA">Productora 📤 (Solo Subir)</option>
+                      <option value="SEO_MANAGER">Gestor SEO 🔍 (Solo Editar/SEO)</option>
+                      <option value="ADMIN">Administrador 👑 (Acceso Total)</option>
+                    </select>
+                  </div>
+                  {inviteError && (
+                    <div style={{ color: "#ef4444", fontSize: "0.85rem", marginTop: "0.25rem" }}>
+                      ⚠️ {inviteError}
+                    </div>
+                  )}
+                  {inviteSuccess && (
+                    <div style={{ color: "#10b981", fontSize: "0.85rem", marginTop: "0.25rem" }}>
+                      ✅ {inviteSuccess}
+                    </div>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={inviting}
+                    className={styles.btnSubmit}
+                    style={{
+                      background: inviting ? "#4b5563" : "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
+                      cursor: inviting ? "not-allowed" : "pointer",
+                      padding: "0.7rem 1.2rem",
+                      fontSize: "0.9rem",
+                      marginTop: "0.5rem"
+                    }}
+                  >
+                    {inviting ? "Invitando..." : "Otorgar Permiso"}
+                  </button>
+                </form>
+              </div>
+
+              {/* Lista de Usuarios */}
+              <div style={{
+                background: "rgba(255, 255, 255, 0.02)",
+                border: "1px solid rgba(255, 255, 255, 0.05)",
+                borderRadius: "16px",
+                padding: "1.5rem",
+                display: "flex",
+                flexDirection: "column"
+              }}>
+                <h3 style={{ fontSize: "1.1rem", fontWeight: "700", marginBottom: "1.25rem", color: "#f8fafc" }}>
+                  Colaboradores Registrados
+                </h3>
+                {loadingUsers ? (
+                  <div style={{ color: "var(--text-muted)", fontSize: "0.85rem", textAlign: "center", padding: "2rem" }}>
+                    Cargando usuarios...
+                  </div>
+                ) : users.length === 0 ? (
+                  <div style={{ color: "var(--text-muted)", fontSize: "0.85rem", textAlign: "center", padding: "2rem" }}>
+                    No hay colaboradores registrados todavía.
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", maxHeight: "300px", overflowY: "auto", paddingRight: "0.25rem" }}>
+                    {users.map((u) => {
+                      let roleLabel = u.role;
+                      let roleColor = "#94a3b8";
+                      let roleBg = "rgba(148, 163, 184, 0.1)";
+                      if (u.role === "ADMIN") {
+                        roleLabel = "ADMIN";
+                        roleColor = "#f97316";
+                        roleBg = "rgba(249, 115, 22, 0.12)";
+                      } else if (u.role === "PRODUCTORA") {
+                        roleLabel = "PRODUCTORA";
+                        roleColor = "#a855f7";
+                        roleBg = "rgba(168, 85, 247, 0.12)";
+                      } else if (u.role === "SEO_MANAGER") {
+                        roleLabel = "SEO";
+                        roleColor = "#0ea5e9";
+                        roleBg = "rgba(14, 165, 233, 0.12)";
+                      }
+                      const isSelf = u.email.toLowerCase() === currentUserEmail.toLowerCase();
+
+                      return (
+                        <div
+                          key={u.id || u.email}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            padding: "0.75rem",
+                            background: "rgba(255, 255, 255, 0.01)",
+                            border: "1px solid rgba(255, 255, 255, 0.05)",
+                            borderRadius: "10px",
+                            gap: "0.5rem"
+                          }}
+                        >
+                          <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                            <span style={{ fontSize: "0.85rem", fontWeight: "600", color: "#f1f5f9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {u.email}
+                            </span>
+                            {u.invitedBy && (
+                              <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>
+                                Inv: {u.invitedBy}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                            <span style={{
+                              fontSize: "0.7rem",
+                              fontWeight: "700",
+                              color: roleColor,
+                              backgroundColor: roleBg,
+                              padding: "2px 6px",
+                              borderRadius: "8px"
+                            }}>
+                              {roleLabel}
+                            </span>
+                            {!isSelf && (
+                              <button
+                                onClick={() => handleRevokeUser(u.email)}
+                                style={{
+                                  background: "transparent",
+                                  border: "none",
+                                  cursor: "pointer",
+                                  fontSize: "0.95rem",
+                                  color: "#ef4444",
+                                  padding: "0.2rem",
+                                  borderRadius: "6px",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  transition: "0.2s"
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.background = "rgba(239, 68, 68, 0.1)"}
+                                onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                                title="Revocar Acceso"
+                              >
+                                🗑️
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Footer/Info del Trabajador */}
         {currentUserEmail && (
           <div style={{ display: "flex", justifyContent: "center", marginTop: "1rem", fontSize: "0.75rem", color: "var(--text-muted)", gap: "0.5rem" }}>
@@ -500,8 +797,8 @@ export default function LandingPortalPage() {
 
         {/* Panel Ajustes (Drawer lateral/Modal) */}
         {showSettings && (
-          <div className={styles.modalOverlay} onClick={() => setShowSettings(false)}>
-            <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+          <div className={styles.settingsOverlay} onClick={() => setShowSettings(false)}>
+            <div className={styles.settingsModal} onClick={(e) => e.stopPropagation()}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
                 <h3 style={{ fontSize: "1.2rem", fontWeight: "850" }}>⚙️ Ajustes del Sistema</h3>
                 <button className={styles.closeBtn} onClick={() => setShowSettings(false)}>✕</button>
@@ -555,7 +852,7 @@ export default function LandingPortalPage() {
                       Para que el publicador pueda editar y subir videos directamente, debes autorizar el canal de YouTube.
                     </p>
                     <a
-                      href="/api/auth/youtube-login"
+                      href="/api/auth"
                       style={{
                         display: "inline-block",
                         padding: "0.5rem 1rem",

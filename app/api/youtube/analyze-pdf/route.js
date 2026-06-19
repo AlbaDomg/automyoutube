@@ -400,35 +400,7 @@ Responde obligatoriamente en formato JSON con la siguiente estructura exacta:
 
     const processedVideos = parsedResult.videos.map(v => {
       const baseDesc = v.description || '';
-      
-      // Personalizar el enlace del programa en el bloque social (solo si se detectó un programa)
-      let programUrlSlug = '';
-      if (v.programName && v.programName.trim()) {
-        const cleanedSlug = v.programName.toLowerCase()
-          .normalize("NFD")
-          .replace(/[\u0300-\u036f]/g, "")
-          .replace(/[^a-z0-9]/g, "");
-        if (cleanedSlug) {
-          programUrlSlug = cleanedSlug;
-        }
-      }
-      
       let finalDesc = baseDesc.trim();
-      if (programUrlSlug) {
-        const customSocialBlock = `\n\nPodes ver o programa completo en tvg.gal/${programUrlSlug}\n\n🔔 Subscríbete á canle oficial da Televisión de Galicia en YouTube: https://www.youtube.com/tvg\n\n🌐 Visita a nosa páxina web: https://agalega.gal/\n\n📲 E tamén podes seguirnos en todas as nosas redes sociais:\nFacebook: https://www.facebook.com/televisiondegalicia\nTwitter: https://x.com/tvgalicia\nInstagram: https://www.instagram.com/tvgalicia\nTikTok: https://www.tiktok.com/@tvgalicia`;
-        if (finalDesc) {
-          if (finalDesc.includes("seguirnos en todas as nosas redes sociais") || finalDesc.includes("tvg.gal/")) {
-            const urlRegex = /tvg\.gal\/[a-z0-9]+/gi;
-            if (urlRegex.test(finalDesc)) {
-              finalDesc = finalDesc.replace(urlRegex, `tvg.gal/${programUrlSlug}`);
-            }
-          } else {
-            finalDesc = finalDesc + customSocialBlock;
-          }
-        } else {
-          finalDesc = customSocialBlock.trim();
-        }
-      }
       
       // Asegurarse de que el título tenga el formato "Título | NOMBRE_DEL_PROGRAMA"
       let finalTitle = (v.title || '').trim();
