@@ -53,6 +53,7 @@ export default function SubidorPage() {
 
   // Estados del uploader
   const [simpleVideoFile, setSimpleVideoFile] = useState(null);
+  const [localExtractedFrame, setLocalExtractedFrame] = useState(null);
   const [simpleTitle, setSimpleTitle] = useState("");
   const [simpleDescription, setSimpleDescription] = useState("");
   const [isSimpleUploading, setIsSimpleUploading] = useState(false);
@@ -248,7 +249,83 @@ export default function SubidorPage() {
     }
   };
 
-  // Subida de vídeo simple por fragmentos
+  // Extrae un fotograma del vídeo local de forma asíncrona mediante un canvas
+  const extractFrameFromLocalFile = (file) => {
+    return new Promise((resolve, reject) => {
+      const video = document.createElement("video");
+      video.preload = "auto";
+      video.muted = true;
+      video.playsInline = true;
+      
+      const fileUrl = URL.createObjectURL(file);
+      video.src = fileUrl;
+
+      let timeoutId = setTimeout(() => {
+        cleanup();
+        reject(new Error("Timeout al extraer fotograma del vídeo"));
+      }, 15000);
+
+      const cleanup = () => {
+        clearTimeout(timeoutId);
+        URL.revokeObjectURL(fileUrl);
+      };
+
+      video.addEventListener("loadedmetadata", () => {
+        const seekTime = Math.min(5, video.duration > 2 ? 5 : video.duration / 2);
+        video.currentTime = seekTime;
+      });
+
+      video.addEventListener("seeked", () => {
+        try {
+          const canvas = document.createElement("canvas");
+          canvas.width = 1280;
+          canvas.height = 720;
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const base64 = canvas.toDataURL("image/jpeg", 0.85);
+            cleanup();
+            resolve(base64);
+          } else {
+            cleanup();
+            reject(new Error("No se pudo obtener el contexto 2D del canvas"));
+          }
+        } catch (err) {
+          cleanup();
+          reject(err);
+        }
+      });
+
+      video.addEventListener("error", (err) => {
+        cleanup();
+        reject(err);
+      });
+    });
+  };
+
+  // Manejar cambio del input del archivo de vídeo
+  const handleFileChange = async (e) => {
+    const file = e.target.files[0];
+    setSimpleVideoFile(file);
+    if (!file) return;
+
+    if (!simpleTitle) {
+      const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+      setSimpleTitle(baseName);
+    }
+
+    setSimpleUploadStatus("Extrayendo portada del vídeo local...");
+    try {
+      const frameBase64 = await extractFrameFromLocalFile(file);
+      setLocalExtractedFrame(frameBase64);
+      setSimpleUploadStatus("Fotograma extraído correctamente como portada.");
+    } catch (err) {
+      console.error("Error al extraer fotograma local:", err);
+      setSimpleUploadStatus("No se pudo extraer el fotograma (se usará captura por defecto en YouTube).");
+    }
+  };
+
+  // Subida de vídeo directa a YouTube (Resumible)
   const handleSimpleVideoUpload = async (e) => {
     e.preventDefault();
     if (!simpleVideoFile) {
@@ -262,63 +339,94 @@ export default function SubidorPage() {
 
     setIsSimpleUploading(true);
     setSimpleUploadProgress(0);
-    setSimpleUploadStatus("Iniciando subida de fragmentos...");
+    setSimpleUploadStatus("Iniciando sesión de subida en YouTube...");
 
     try {
       const file = simpleVideoFile;
-      const uploadId = generateUUID();
-      const chunkSize = 3.5 * 1024 * 1024; // 3.5MB chunks (Vercel has 4.5MB request limit)
-      const totalChunks = Math.ceil(file.size / chunkSize);
 
-      for (let i = 0; i < totalChunks; i++) {
-        const start = i * chunkSize;
-        const end = Math.min(file.size, start + chunkSize);
-        const chunk = file.slice(start, end);
-
-        const formData = new FormData();
-        formData.append("chunk", chunk);
-        formData.append("fileName", file.name);
-        formData.append("uploadId", uploadId);
-        formData.append("chunkIndex", i);
-        formData.append("totalChunks", totalChunks);
-
-        setSimpleUploadStatus(`Subiendo fragmento ${i + 1}/${totalChunks}...`);
-        const response = await fetch("/api/upload/chunk", {
-          method: "POST",
-          body: formData
-        });
-
-        if (!response.ok) {
-          const errData = await response.json();
-          throw new Error(errData.error || `Fallo al subir fragmento ${i + 1}/${totalChunks}`);
-        }
-
-        const percent = Math.round(((i + 1) / totalChunks) * 100);
-        setSimpleUploadProgress(percent);
-      }
-
-      setSimpleUploadStatus("Guardando metadatos del vídeo...");
-
-      const patchRes = await fetch(`/api/videos?id=${uploadId}`, {
-        method: "PATCH",
+      // 1. Iniciar sesión de subida en el servidor
+      const initiateRes = await fetch("/api/upload", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: simpleTitle,
           description: simpleDescription,
-          status: 'READY'
+          fileName: file.name,
+          fileSize: file.size,
+          fileType: file.type || "video/mp4",
+          rawFrameBase64: localExtractedFrame,
+          playlistId: ""
         })
       });
 
-      if (!patchRes.ok) {
-        const errData = await patchRes.json();
-        throw new Error(errData.error || "Fallo al guardar metadatos del vídeo");
+      if (!initiateRes.ok) {
+        const errData = await initiateRes.json();
+        throw new Error(errData.error || "Fallo al iniciar sesión de subida");
+      }
+
+      const { uploadUrl, videoId } = await initiateRes.json();
+      setSimpleUploadStatus("Subiendo archivo directamente a YouTube...");
+
+      // 2. Subida directa del archivo (PUT) a YouTube con seguimiento del progreso
+      const youtubeId = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", uploadUrl, true);
+        xhr.setRequestHeader("Content-Type", file.type || "video/mp4");
+
+        xhr.upload.onprogress = (evt) => {
+          if (evt.lengthComputable) {
+            const percent = Math.round((evt.loaded / evt.total) * 100);
+            setSimpleUploadProgress(percent);
+            setSimpleUploadStatus(`Subiendo archivo a YouTube: ${percent}%...`);
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status === 200 || xhr.status === 201) {
+            try {
+              const responseJson = JSON.parse(xhr.responseText);
+              if (responseJson && responseJson.id) {
+                resolve(responseJson.id);
+              } else {
+                reject(new Error("No se recibió el ID del vídeo de la respuesta de YouTube"));
+              }
+            } catch (err) {
+              reject(new Error("Error al analizar respuesta de YouTube: " + err.message));
+            }
+          } else {
+            reject(new Error(`YouTube rechazó la subida: ${xhr.status} ${xhr.statusText}`));
+          }
+        };
+
+        xhr.onerror = () => {
+          reject(new Error("Error de conexión al subir directamente a YouTube."));
+        };
+
+        xhr.send(file);
+      });
+
+      // 3. Completar registro en base de datos
+      setSimpleUploadStatus("Finalizando registro en base de datos...");
+      const completeRes = await fetch("/api/upload?action=complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          videoId,
+          youtubeId
+        })
+      });
+
+      if (!completeRes.ok) {
+        const errData = await completeRes.json();
+        throw new Error(errData.error || "Fallo al completar subida en base de datos");
       }
 
       setSimpleUploadStatus("¡Subida completada con éxito!");
-      alert("¡Vídeo subido localmente con éxito y puesto en cola para los editores!");
+      alert("¡Vídeo subido directamente a YouTube con éxito y puesto en cola para los editores!");
       
       // Limpiar formulario y refrescar lista
       setSimpleVideoFile(null);
+      setLocalExtractedFrame(null);
       setSimpleTitle("");
       setSimpleDescription("");
       if (simpleVideoInputRef.current) {
@@ -576,7 +684,7 @@ export default function SubidorPage() {
                 type="file"
                 ref={simpleVideoInputRef}
                 accept="video/*"
-                onChange={(e) => setSimpleVideoFile(e.target.files[0])}
+                onChange={handleFileChange}
                 required
               />
             </div>

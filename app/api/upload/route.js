@@ -1,10 +1,9 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { getOAuth2Client } from '@/lib/youtube';
-import { google } from 'googleapis';
-import fs from 'fs';
-import path from 'path';
-import { verifyAppAuth, getCurrentUserEmail } from '@/lib/auth';
+import crypto from 'crypto';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(request) {
   try {
@@ -12,83 +11,50 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { videoId, title, description, tags, scheduledAt, privacyStatus } = await request.json();
+    const { searchParams } = new URL(request.url);
+    const action = searchParams.get('action');
 
-    if (!videoId) {
-      return NextResponse.json({ error: 'Missing videoId' }, { status: 400 });
+    if (action === 'complete') {
+      return await handleCompleteUpload(request);
+    } else {
+      return await handleInitiateUpload(request);
     }
-
-    // Obtener detalles del video
-    const video = await prisma.video.findUnique({
-      where: { id: videoId }
-    });
-
-    if (!video) {
-      return NextResponse.json({ error: 'Video not found' }, { status: 404 });
-    }
-
-    // Obtener el canal de YouTube conectado
-    const email = await getCurrentUserEmail(request);
-    const channel = await prisma.channel.findUnique({
-      where: { userEmail: email }
-    });
-
-    if (!channel) {
-      return NextResponse.json({ error: 'No YouTube channel connected. Please authenticate first.' }, { status: 400 });
-    }
-
-    // Guardar las actualizaciones finales de metadatos y cambiar el estado a UPLOADING
-    const parsedScheduledAt = scheduledAt ? new Date(scheduledAt) : null;
-    const formattedTags = Array.isArray(tags) ? tags.join(', ') : (tags || video.tags);
-    
-    const updatedVideo = await prisma.video.update({
-      where: { id: videoId },
-      data: {
-        title: title || video.title,
-        description: description || video.description,
-        tags: formattedTags,
-        scheduledAt: parsedScheduledAt,
-        status: 'UPLOADING',
-        privacyStatus: privacyStatus || (parsedScheduledAt ? 'private' : 'public'),
-        errorMessage: null
-      }
-    });
-
-    // Ejecutar el proceso de subida de forma asíncrona en segundo plano para que no bloquee la petición (lo cual causaría un tiempo de espera agotado)
-    uploadToYouTubeBackground(updatedVideo.id, channel.dbId, privacyStatus);
-
-    return NextResponse.json({
-      success: true,
-      message: 'Upload started in background',
-      status: 'UPLOADING'
-    });
   } catch (error) {
-    console.error('Error initiating upload:', error);
-    return NextResponse.json({ error: error.message || 'Failed to start upload' }, { status: 500 });
+    console.error('Error in upload route:', error);
+    return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });
   }
 }
 
-async function uploadToYouTubeBackground(videoId, channelDbId, privacyStatus) {
-  try {
-    const video = await prisma.video.findUnique({ where: { id: videoId } });
-    const channel = await prisma.channel.findUnique({ where: { dbId: channelDbId } });
+// Fase 1: Iniciar sesión de subida resumible con la API de YouTube
+async function handleInitiateUpload(request) {
+  const body = await request.json();
+  const { title, description, fileName, fileSize, fileType, rawFrameBase64, playlistId } = body;
 
-    if (!video || !channel) return;
+  if (!fileName || !fileSize) {
+    return NextResponse.json({ error: 'Missing fileName or fileSize' }, { status: 400 });
+  }
 
-    if (!fs.existsSync(video.filePath)) {
-      throw new Error(`Video file does not exist at path: ${video.filePath}`);
-    }
+  const email = await getCurrentUserEmail(request);
+  const channel = await prisma.channel.findUnique({
+    where: { userEmail: email }
+  });
 
-    const oauth2Client = await getOAuth2Client();
-    oauth2Client.setCredentials({
-      access_token: channel.accessToken,
-      refresh_token: channel.refreshToken,
-      expiry_date: channel.tokenExpiry.getTime()
-    });
+  if (!channel) {
+    return NextResponse.json({ error: 'No YouTube channel connected. Please authenticate first.' }, { status: 400 });
+  }
 
-    // Actualizar las credenciales si han caducado o están cerca de caducar (dentro de 5 minutos)
-    if (channel.tokenExpiry.getTime() - Date.now() < 300 * 1000) {
-      console.log('[YouTube Upload] Access token is expiring. Refreshing...');
+  const oauth2Client = await getOAuth2Client();
+  oauth2Client.setCredentials({
+    access_token: channel.accessToken,
+    refresh_token: channel.refreshToken,
+    expiry_date: channel.tokenExpiry.getTime()
+  });
+
+  // Refrescar el token de acceso si va a expirar en los próximos 5 minutos
+  let accessToken = channel.accessToken;
+  if (channel.tokenExpiry.getTime() - Date.now() < 300 * 1000) {
+    console.log('[YouTube Resumable API] Access token is expiring. Refreshing...');
+    try {
       const { credentials } = await oauth2Client.refreshAccessToken();
       await prisma.channel.update({
         where: { dbId: channel.dbId },
@@ -97,124 +63,169 @@ async function uploadToYouTubeBackground(videoId, channelDbId, privacyStatus) {
           tokenExpiry: new Date(credentials.expiry_date)
         }
       });
-      console.log('[YouTube Upload] Refreshed access token.');
+      accessToken = credentials.access_token;
+      console.log('[YouTube Resumable API] Access token refreshed.');
+    } catch (refreshErr) {
+      console.error('[YouTube Resumable API] Error refreshing access token:', refreshErr);
+      return NextResponse.json({ error: 'Failed to refresh YouTube access token' }, { status: 500 });
     }
+  }
 
-    const youtube = google.youtube({
-      version: 'v3',
-      auth: oauth2Client
-    });
-
-    // Asegurar que el título no exceda los 100 caracteres
-    let finalTitle = video.title || 'Uploaded Video';
-    if (finalTitle.length > 100) {
-      console.warn(`[YouTube Upload] Title "${finalTitle}" exceeds 100 characters. Truncating to 100 characters.`);
-      finalTitle = finalTitle.substring(0, 100);
+  // Estructurar metadatos del vídeo para la API de YouTube
+  const videoMetadata = {
+    snippet: {
+      title: (title || fileName || 'Video sin título').substring(0, 100),
+      description: description || '',
+      tags: []
+    },
+    status: {
+      privacyStatus: 'private' // Inicialmente siempre privado
     }
+  };
 
-    const isScheduled = !!video.scheduledAt;
-    const isTargetPublic = video.privacyStatus === 'public';
+  console.log(`[YouTube Resumable API] Initiating session for ${fileName} (${fileSize} bytes)`);
 
-    const requestBody = {
-      snippet: {
-        title: finalTitle,
-        description: video.description || '',
-        tags: video.tags ? video.tags.split(',').map(t => t.trim().replace(/^#/, '')).filter(Boolean) : [],
-      },
-      status: {
-        privacyStatus: isScheduled ? 'private' : (isTargetPublic ? 'public' : 'private')
-      }
-    };
+  // Solicitar URL de sesión resumible a la API de YouTube
+  const youtubeUrl = 'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status';
+  const response = await fetch(youtubeUrl, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json; charset=UTF-8',
+      'X-Upload-Content-Length': String(fileSize),
+      'X-Upload-Content-Type': fileType || 'video/mp4'
+    },
+    body: JSON.stringify(videoMetadata)
+  });
 
-    if (isScheduled && isTargetPublic) {
-      requestBody.status.publishAt = video.scheduledAt.toISOString();
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[YouTube Resumable API] Failed to initiate session:', errorText);
+    return NextResponse.json({ error: `YouTube API Error: ${response.statusText} (${errorText})` }, { status: response.status });
+  }
+
+  const uploadUrl = response.headers.get('Location');
+  if (!uploadUrl) {
+    return NextResponse.json({ error: 'Missing Location header from YouTube API' }, { status: 502 });
+  }
+
+  const videoId = crypto.randomUUID();
+
+  // Guardar en base de datos local con estado UPLOADING
+  await prisma.video.create({
+    data: {
+      id: videoId,
+      filename: fileName,
+      filePath: 'YOUTUBE_UPLOAD',
+      title: title || '',
+      description: description || '',
+      status: 'UPLOADING',
+      uploadProgress: 0,
+      rawFrameBase64: rawFrameBase64 || null,
+      playlistId: playlistId || null,
+      userEmail: email,
+      channelId: channel.id
     }
+  });
 
-    console.log(`[YouTube Upload] Uploading file: ${video.filePath} to channel: ${channel.title}...`);
+  return NextResponse.json({
+    success: true,
+    uploadUrl,
+    videoId
+  });
+}
 
-    const fileSize = fs.statSync(video.filePath).size;
-    let lastProgressUpdate = 0;
-    let currentProgress = 0;
+// Fase 2: Finalizar la subida en la base de datos tras subida directa del cliente
+async function handleCompleteUpload(request) {
+  const { videoId, youtubeId } = await request.json();
 
-    const res = await youtube.videos.insert({
-      part: 'snippet,status',
-      requestBody,
-      media: {
-        body: fs.createReadStream(video.filePath)
-      }
-    }, {
-      onUploadProgress: async (evt) => {
-        const progress = Math.min(Math.round((evt.bytesRead / fileSize) * 100), 99);
-        const now = Date.now();
-        // Actualiza la base de datos si el progreso ha aumentado y ha transcurrido al menos 1 segundo desde la última escritura
-        if (progress > currentProgress && (now - lastProgressUpdate > 1000)) {
-          currentProgress = progress;
-          lastProgressUpdate = now;
-          console.log(`[YouTube Upload] Video ${videoId} upload progress: ${progress}%`);
-          try {
-            await prisma.video.update({
-              where: { id: videoId },
-              data: { uploadProgress: progress }
-            });
-          } catch (dbErr) {
-            console.error('[YouTube Upload] Failed to update progress in DB:', dbErr);
-          }
-        }
-      }
-    });
+  if (!videoId || !youtubeId) {
+    return NextResponse.json({ error: 'Missing videoId or youtubeId' }, { status: 400 });
+  }
 
-    const youtubeVideoId = res.data.id;
-    console.log(`[YouTube Upload] Successfully uploaded to YouTube. ID: ${youtubeVideoId}`);
+  const video = await prisma.video.findUnique({
+    where: { id: videoId }
+  });
 
-    // Subir miniatura personalizada si existe
-    const uploadsDir = path.join(process.cwd(), 'uploads');
-    const thumbnailPath = path.join(uploadsDir, `${videoId}-thumbnail.jpg`);
-    if (fs.existsSync(thumbnailPath)) {
-      try {
-        console.log(`[YouTube Upload] Uploading custom thumbnail for video ${youtubeVideoId}...`);
-        await youtube.thumbnails.set({
-          videoId: youtubeVideoId,
-          media: {
-            mimeType: 'image/jpeg',
-            body: fs.createReadStream(thumbnailPath)
+  if (!video) {
+    return NextResponse.json({ error: 'Video record not found' }, { status: 404 });
+  }
+
+  const email = await getCurrentUserEmail(request);
+  const channel = await prisma.channel.findUnique({
+    where: { userEmail: email }
+  });
+
+  // Si hay playlist seleccionada, añadir a la playlist en YouTube
+  if (video.playlistId && channel) {
+    try {
+      const oauth2Client = await getOAuth2Client();
+      oauth2Client.setCredentials({
+        access_token: channel.accessToken,
+        refresh_token: channel.refreshToken,
+        expiry_date: channel.tokenExpiry.getTime()
+      });
+
+      // Refrescar token si es necesario
+      if (channel.tokenExpiry.getTime() - Date.now() < 300 * 1000) {
+        const { credentials } = await oauth2Client.refreshAccessToken();
+        await prisma.channel.update({
+          where: { dbId: channel.dbId },
+          data: {
+            accessToken: credentials.access_token,
+            tokenExpiry: new Date(credentials.expiry_date)
           }
         });
-        console.log('[YouTube Upload] Custom thumbnail uploaded successfully!');
-        fs.unlinkSync(thumbnailPath);
-      } catch (thumbError) {
-        console.warn('[YouTube Upload] Failed to upload custom thumbnail (your channel might need phone verification to enable custom thumbnails):', thumbError.message);
+        oauth2Client.setCredentials({
+          access_token: credentials.access_token,
+          tokenExpiry: new Date(credentials.expiry_date)
+        });
       }
-    }
 
-    // Actualizar la entrada del video en la base de datos
-    await prisma.video.update({
-      where: { id: videoId },
-      data: {
-        status: video.scheduledAt ? 'SCHEDULED' : 'COMPLETED',
-        youtubeId: youtubeVideoId,
-        uploadProgress: 100
-      }
-    });
+      const google = require('googleapis').google;
+      const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
 
-    // Limpiar el archivo de video local para ahorrar espacio en el servidor
-    try {
-      fs.unlinkSync(video.filePath);
-      console.log(`[YouTube Upload] Deleted temporary video file: ${video.filePath}`);
-    } catch (unlinkError) {
-      console.warn(`[YouTube Upload] Failed to delete temporary file: ${video.filePath}`, unlinkError);
-    }
-  } catch (error) {
-    console.error(`[YouTube Upload] Error in background upload for video ${videoId}:`, error);
-    try {
-      await prisma.video.update({
-        where: { id: videoId },
-        data: {
-          status: 'FAILED',
-          errorMessage: error.message || 'Upload failed'
+      console.log(`[YouTube Resumable API] Adding video ${youtubeId} to playlist ${video.playlistId}...`);
+      await youtube.playlistItems.insert({
+        part: 'snippet',
+        requestBody: {
+          snippet: {
+            playlistId: video.playlistId,
+            resourceId: {
+              kind: 'youtube#video',
+              videoId: youtubeId
+            }
+          }
         }
       });
-    } catch (dbErr) {
-      console.error('[YouTube Upload] Failed to write failure state in DB:', dbErr);
+      console.log('[YouTube Resumable API] Playlist insertion succeeded!');
+    } catch (playlistErr) {
+      console.warn('[YouTube Resumable API] Failed to add video to playlist:', playlistErr.message);
     }
+  }
+
+  // Actualizar base de datos
+  const updatedVideo = await prisma.video.update({
+    where: { id: videoId },
+    data: {
+      youtubeId: youtubeId,
+      status: 'READY',
+      uploadProgress: 100
+    }
+  });
+
+  return NextResponse.json({
+    success: true,
+    video: updatedVideo
+  });
+}
+
+// Helper para verificar autenticación de la app
+async function verifyAppAuth(request) {
+  try {
+    const { verifyAppAuth: verify } = require('@/lib/auth');
+    return await verify(request);
+  } catch (e) {
+    return false;
   }
 }

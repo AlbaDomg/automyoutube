@@ -38,6 +38,7 @@ model Video {
   errorMessage    String?
   uploadProgress  Int       @default(0)
   thumbnailBase64 String?
+  rawFrameBase64  String?   // Frame extraído localmente por el navegador al subir
   playlistId      String?   // ID de la playlist a la que se añadirá el video
   userEmail       String?   // El correo del trabajador
   channelId       String?   // El ID del canal de YouTube
