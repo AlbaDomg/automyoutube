@@ -4165,7 +4165,6 @@ export default function Dashboard() {
                             e.currentTarget.style.boxShadow = "0 4px 15px rgba(16, 185, 129, 0.25)";
                           }}
                         >
-                          {updatingYoutubeVideo ? "Publicando..." : "📤 Publicar Público"}
                           {updatingYoutubeVideo ? "Publicando..." : "📤 Público"}
                         </button>
                         <button
@@ -4198,7 +4197,6 @@ export default function Dashboard() {
                             e.currentTarget.style.boxShadow = "0 4px 15px rgba(59, 130, 246, 0.25)";
                           }}
                         >
-                          {updatingYoutubeVideo ? "Publicando..." : "🔒 Publicar Privado"}
                           {updatingYoutubeVideo ? "Publicando..." : "🔒 Privado"}
                         </button>
                       </>
