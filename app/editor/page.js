@@ -1672,6 +1672,7 @@ export default function Dashboard() {
   };
 
   // Subida de vídeo directa a YouTube (Resumible)
+  // Subida de vídeo a Supabase Storage (para dejarlo En Pendiente)
   const handleSimpleVideoUpload = async (e) => {
     e.preventDefault();
     if (!simpleVideoFile) {
@@ -1685,90 +1686,79 @@ export default function Dashboard() {
 
     setIsSimpleUploading(true);
     setSimpleUploadProgress(0);
-    setSimpleUploadStatus("Iniciando sesión de subida en YouTube...");
+    setSimpleUploadStatus("Iniciando subida de vídeo...");
 
     try {
       const file = simpleVideoFile;
 
-      // 1. Iniciar sesión de subida en el servidor
-      const initiateRes = await fetch("/api/upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: simpleTitle,
-          description: simpleDescription,
-          fileName: file.name,
-          fileSize: file.size,
-          fileType: file.type || "video/mp4",
-          rawFrameBase64: localExtractedFrame,
-          playlistId: ""
-        })
-      });
+      // 1. Subir archivo a Supabase Storage mediante XMLHttpRequest
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-      if (!initiateRes.ok) {
-        const errData = await initiateRes.json();
-        throw new Error(errData.error || "Fallo al iniciar sesión de subida");
+      if (!supabaseUrl || !supabaseAnonKey) {
+        throw new Error("Las credenciales de Supabase no están configuradas en el entorno (NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY).");
       }
 
-      const { uploadUrl, videoId } = await initiateRes.json();
-      setSimpleUploadStatus("Subiendo archivo directamente a YouTube...");
+      // Generar una carpeta única para evitar colisiones de archivos del mismo nombre
+      const fileId = generateUUID();
+      const storagePath = `${fileId}/${file.name}`;
+      const uploadUrl = `${supabaseUrl}/storage/v1/object/videos/${storagePath}`;
 
-      // 2. Subida directa del archivo (PUT) a YouTube con seguimiento del progreso
-      const youtubeId = await new Promise((resolve, reject) => {
+      console.log(`[Supabase Upload] Subiendo a: ${uploadUrl}`);
+
+      const publicVideoUrl = await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-        xhr.open("PUT", uploadUrl, true);
+        xhr.open("POST", uploadUrl, true);
+        xhr.setRequestHeader("Authorization", `Bearer ${supabaseAnonKey}`);
+        xhr.setRequestHeader("apikey", supabaseAnonKey);
         xhr.setRequestHeader("Content-Type", file.type || "video/mp4");
 
         xhr.upload.onprogress = (evt) => {
           if (evt.lengthComputable) {
             const percent = Math.round((evt.loaded / evt.total) * 100);
             setSimpleUploadProgress(percent);
-            setSimpleUploadStatus(`Subiendo archivo a YouTube: ${percent}%...`);
+            setSimpleUploadStatus(`Subiendo archivo a la nube: ${percent}%...`);
           }
         };
 
         xhr.onload = () => {
           if (xhr.status === 200 || xhr.status === 201) {
-            try {
-              const responseJson = JSON.parse(xhr.responseText);
-              if (responseJson && responseJson.id) {
-                resolve(responseJson.id);
-              } else {
-                reject(new Error("No se recibió el ID del vídeo de la respuesta de YouTube"));
-              }
-            } catch (err) {
-              reject(new Error("Error al analizar respuesta de YouTube: " + err.message));
-            }
+            const publicUrl = `${supabaseUrl}/storage/v1/object/public/videos/${storagePath}`;
+            resolve(publicUrl);
           } else {
-            reject(new Error(`YouTube rechazó la subida: ${xhr.status} ${xhr.statusText}`));
+            reject(new Error(`Supabase rechazó la subida: ${xhr.status} ${xhr.statusText} (${xhr.responseText})`));
           }
         };
 
         xhr.onerror = () => {
-          reject(new Error("Error de conexión al subir directamente a YouTube."));
+          reject(new Error("Error de conexión al subir el vídeo a la nube."));
         };
 
         xhr.send(file);
       });
 
-      // 3. Completar registro en base de datos
-      setSimpleUploadStatus("Finalizando registro en base de datos...");
-      const completeRes = await fetch("/api/upload?action=complete", {
+      // 2. Guardar registro del vídeo en la base de datos local como READY (Pendiente)
+      setSimpleUploadStatus("Guardando registro en la base de datos...");
+      const saveRes = await fetch("/api/videos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          videoId,
-          youtubeId
+          filename: file.name,
+          filePath: publicVideoUrl, // Se guarda la URL de Supabase
+          title: simpleTitle,
+          description: simpleDescription,
+          rawFrameBase64: localExtractedFrame,
+          playlistId: ""
         })
       });
 
-      if (!completeRes.ok) {
-        const errData = await completeRes.json();
-        throw new Error(errData.error || "Fallo al completar subida en base de datos");
+      if (!saveRes.ok) {
+        const errData = await saveRes.json();
+        throw new Error(errData.error || "Fallo al guardar el vídeo en la cola de pendientes");
       }
 
       setSimpleUploadStatus("¡Subida completada con éxito!");
-      alert("¡Vídeo subido directamente a YouTube con éxito y puesto en cola para los editores!");
+      alert("¡Vídeo subido con éxito y guardado en la cola de pendientes para los editores!");
       
       // Limpiar formulario y refrescar lista
       setSimpleVideoFile(null);
@@ -2288,6 +2278,9 @@ export default function Dashboard() {
       const isLocal = !!selectedYoutubeVideo.isLocal;
 
       if (isLocal) {
+        setSimpleUploadProgress(0);
+        setSimpleUploadStatus("Descargando vídeo de la nube...");
+
         // 1. Guardar primero los metadatos y la miniatura localmente en nuestra base de datos
         const patchRes = await fetch(`/api/videos?id=${selectedYoutubeVideo.id}`, {
           method: "PATCH",
@@ -2308,8 +2301,16 @@ export default function Dashboard() {
           throw new Error(errData.error || "Fallo al guardar metadatos locales");
         }
 
-        // 2. Iniciar la subida real a YouTube llamando a /api/upload con el privacyStatus seleccionado
-        const uploadRes = await fetch("/api/upload", {
+        // 2. Descargar el archivo temporal de Supabase
+        const blobRes = await fetch(selectedYoutubeVideo.filePath);
+        if (!blobRes.ok) {
+          throw new Error("No se pudo descargar el vídeo temporal de la nube. Es posible que el archivo haya sido eliminado.");
+        }
+        const videoBlob = await blobRes.blob();
+
+        // 3. Iniciar la sesión de subida en YouTube
+        setSimpleUploadStatus("Iniciando sesión de subida en YouTube...");
+        const initiateRes = await fetch("/api/upload", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -2317,18 +2318,99 @@ export default function Dashboard() {
             title: updateForm.title,
             description: updateForm.description,
             tags: updateForm.tags,
-            scheduledAt: updateForm.isScheduled ? toUTCISOString(updateForm.scheduledAt) : null,
-            privacyStatus: privacyStatus // 'public' o 'private'
+            fileName: selectedYoutubeVideo.fileName || selectedYoutubeVideo.filename || "video.mp4",
+            fileSize: videoBlob.size,
+            fileType: videoBlob.type || "video/mp4",
+            playlistId: updateForm.playlistId || null,
+            scheduledAt: updateForm.isScheduled ? toUTCISOString(updateForm.scheduledAt) : null
           })
         });
 
-        if (!uploadRes.ok) {
-          const errData = await uploadRes.json();
-          throw new Error(errData.error || "Fallo al iniciar la subida a YouTube");
+        if (!initiateRes.ok) {
+          const errData = await initiateRes.json();
+          throw new Error(errData.error || "Fallo al iniciar sesión de subida en YouTube");
         }
 
-        const resData = await uploadRes.json();
-        alert(resData.message || "Proceso de subida iniciado en segundo plano.");
+        const { uploadUrl } = await initiateRes.json();
+        setSimpleUploadStatus("Subiendo archivo a YouTube...");
+
+        // 4. Subir directamente el Blob a YouTube (PUT)
+        const youtubeId = await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("PUT", uploadUrl, true);
+          xhr.setRequestHeader("Content-Type", videoBlob.type || "video/mp4");
+
+          xhr.upload.onprogress = (evt) => {
+            if (evt.lengthComputable) {
+              const percent = Math.round((evt.loaded / evt.total) * 100);
+              setSimpleUploadProgress(percent);
+              setSimpleUploadStatus(`Enviando a YouTube: ${percent}%...`);
+            }
+          };
+
+          xhr.onload = () => {
+            if (xhr.status === 200 || xhr.status === 201) {
+              try {
+                const responseJson = JSON.parse(xhr.responseText);
+                if (responseJson && responseJson.id) {
+                  resolve(responseJson.id);
+                } else {
+                  reject(new Error("No se recibió el ID del vídeo de la respuesta de YouTube"));
+                }
+              } catch (err) {
+                reject(new Error("Error al analizar respuesta de YouTube: " + err.message));
+              }
+            } else {
+              reject(new Error(`YouTube rechazó la subida: ${xhr.status} ${xhr.statusText}`));
+            }
+          };
+
+          xhr.onerror = () => {
+            reject(new Error("Error de conexión al subir a YouTube."));
+          };
+
+          xhr.send(videoBlob);
+        });
+
+        // 5. Completar subida en la base de datos
+        setSimpleUploadStatus("Finalizando registro en YouTube...");
+        const completeRes = await fetch("/api/upload?action=complete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            videoId: selectedYoutubeVideo.id,
+            youtubeId
+          })
+        });
+
+        if (!completeRes.ok) {
+          const errData = await completeRes.json();
+          throw new Error(errData.error || "Fallo al completar subida en base de datos");
+        }
+
+        // 6. Eliminar el archivo temporal de Supabase Storage para liberar espacio
+        try {
+          setSimpleUploadStatus("Limpiando archivo temporal de la nube...");
+          const urlParts = selectedYoutubeVideo.filePath.split('/videos/');
+          if (urlParts.length > 1) {
+            const storagePath = urlParts[1];
+            const deleteRes = await fetch("/api/upload/supabase/delete", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ path: storagePath })
+            });
+            if (deleteRes.ok) {
+              console.log("[Editor Upload] Temporary video file deleted from Supabase.");
+            } else {
+              console.warn("[Editor Upload] Failed to delete temporary file from Supabase:", await deleteRes.text());
+            }
+          }
+        } catch (deleteErr) {
+          console.warn("[Editor Upload] Error calling Supabase deletion endpoint:", deleteErr);
+        }
+
+        setSimpleUploadStatus("¡Vídeo publicado con éxito!");
+        alert("¡El vídeo ha sido subido a YouTube y configurado correctamente!");
       } else {
         // Vídeo que ya está en YouTube: usar endpoint existente
         const res = await fetch("/api/youtube/update", {
@@ -3881,6 +3963,18 @@ export default function Dashboard() {
                         value={updateForm.scheduledAt}
                         onChange={(e) => setUpdateForm({ ...updateForm, scheduledAt: e.target.value })}
                       />
+                    </div>
+                  )}
+
+                  {updatingYoutubeVideo && (
+                    <div style={{ margin: "1rem 0", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", color: "rgba(255,255,255,0.7)" }}>
+                        <span>{simpleUploadStatus}</span>
+                        <span>{simpleUploadProgress}%</span>
+                      </div>
+                      <div style={{ width: "100%", height: "6px", backgroundColor: "rgba(255,255,255,0.1)", borderRadius: "3px", overflow: "hidden" }}>
+                        <div style={{ width: `${simpleUploadProgress}%`, height: "100%", background: "linear-gradient(90deg, #a855f7 0%, #ec4899 100%)", transition: "width 0.2s" }} />
+                      </div>
                     </div>
                   )}
 

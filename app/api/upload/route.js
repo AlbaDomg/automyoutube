@@ -110,29 +110,43 @@ async function handleInitiateUpload(request) {
     return NextResponse.json({ error: 'Missing Location header from YouTube API' }, { status: 502 });
   }
 
-  const videoId = crypto.randomUUID();
+  // Si se proporciona un videoId existente, actualizamos el registro en lugar de crear uno nuevo
+  let finalVideoId = body.videoId;
 
-  // Guardar en base de datos local con estado UPLOADING
-  await prisma.video.create({
-    data: {
-      id: videoId,
-      filename: fileName,
-      filePath: 'YOUTUBE_UPLOAD',
-      title: title || '',
-      description: description || '',
-      status: 'UPLOADING',
-      uploadProgress: 0,
-      rawFrameBase64: rawFrameBase64 || null,
-      playlistId: playlistId || null,
-      userEmail: email,
-      channelId: channel.id
-    }
-  });
+  if (finalVideoId) {
+    await prisma.video.update({
+      where: { id: finalVideoId },
+      data: {
+        status: 'UPLOADING',
+        title: title || undefined,
+        description: description || undefined,
+        playlistId: playlistId || undefined
+      }
+    });
+  } else {
+    finalVideoId = crypto.randomUUID();
+    // Guardar en base de datos local con estado UPLOADING
+    await prisma.video.create({
+      data: {
+        id: finalVideoId,
+        filename: fileName,
+        filePath: 'YOUTUBE_UPLOAD',
+        title: title || '',
+        description: description || '',
+        status: 'UPLOADING',
+        uploadProgress: 0,
+        rawFrameBase64: rawFrameBase64 || null,
+        playlistId: playlistId || null,
+        userEmail: email,
+        channelId: channel.id
+      }
+    });
+  }
 
   return NextResponse.json({
     success: true,
     uploadUrl,
-    videoId
+    videoId: finalVideoId
   });
 }
 
