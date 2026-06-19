@@ -3270,16 +3270,18 @@ export default function Dashboard() {
                           </div>
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
+                          {/* Badge: siempre privado en YouTube hasta que el editor lo publique */}
                           <span style={{
-                            fontSize: "0.75rem",
-                            color: "#f59e0b",
-                            background: "rgba(245, 158, 11, 0.15)",
-                            padding: "4px 10px",
-                            borderRadius: "10px",
+                            fontSize: "0.7rem",
+                            color: "#f87171",
+                            background: "rgba(239, 68, 68, 0.12)",
+                            border: "1px solid rgba(239, 68, 68, 0.3)",
+                            padding: "2px 8px",
+                            borderRadius: "8px",
                             fontWeight: "bold",
                             whiteSpace: "nowrap"
                           }}>
-                            En proceso...
+                            🔒 Privado en YouTube
                           </span>
                           <button
                             type="button"
@@ -3458,14 +3460,29 @@ export default function Dashboard() {
                             </div>
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleSelectLocalVideo(video)}
-                          className={styles.btnSubmit}
-                          style={{ width: "auto", fontSize: "0.75rem", padding: "0.4rem 0.8rem" }}
-                        >
-                          Editar
-                        </button>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
+                          {/* Badge: siempre privado hasta que el editor lo publique */}
+                          <span style={{
+                            fontSize: "0.7rem",
+                            color: "#f87171",
+                            background: "rgba(239, 68, 68, 0.12)",
+                            border: "1px solid rgba(239, 68, 68, 0.3)",
+                            padding: "2px 8px",
+                            borderRadius: "8px",
+                            fontWeight: "bold",
+                            whiteSpace: "nowrap"
+                          }}>
+                            🔒 Privado en YouTube
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleSelectLocalVideo(video)}
+                            className={styles.btnSubmit}
+                            style={{ width: "auto", fontSize: "0.75rem", padding: "0.4rem 0.8rem" }}
+                          >
+                            Editar
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>

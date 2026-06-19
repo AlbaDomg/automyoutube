@@ -906,6 +906,19 @@ export default function SubidorPage() {
                     </div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    {/* Badge: vídeo siempre privado en YouTube hasta que el editor lo publique */}
+                    <span style={{
+                      fontSize: "0.7rem",
+                      color: "#f87171",
+                      background: "rgba(239, 68, 68, 0.12)",
+                      border: "1px solid rgba(239, 68, 68, 0.3)",
+                      padding: "2px 8px",
+                      borderRadius: "8px",
+                      fontWeight: "bold",
+                      whiteSpace: "nowrap"
+                    }}>
+                      🔒 Privado en YouTube
+                    </span>
                     <button
                       type="button"
                       title="Eliminar vídeo de la cola"
