@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { getOAuth2Client } from '@/lib/youtube';
 import crypto from 'crypto';
+import { verifyAppAuth, getCurrentUserEmail } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -218,14 +219,4 @@ async function handleCompleteUpload(request) {
     success: true,
     video: updatedVideo
   });
-}
-
-// Helper para verificar autenticación de la app
-async function verifyAppAuth(request) {
-  try {
-    const { verifyAppAuth: verify } = require('@/lib/auth');
-    return await verify(request);
-  } catch (e) {
-    return false;
-  }
 }
