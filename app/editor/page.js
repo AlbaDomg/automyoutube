@@ -1502,6 +1502,10 @@ export default function Dashboard() {
 
     if (video.rawFrameBase64) {
       setCustomBgBase64(video.rawFrameBase64);
+    } else if (video.filePath && video.filePath.startsWith('https://')) {
+      // El video está en Supabase Storage: no podemos hacer streaming local.
+      // Si tiene un rawFrameBase64 guardado, ya se usó arriba. Si no, dejamos sin fondo.
+      // No intentamos stream local para evitar errores.
     } else if (video.filePath && !['PDF_PARSED', 'YOUTUBE_UPLOAD', 'YOUTUBE_UPDATE'].includes(video.filePath)) {
       setIsExtractingFrame(true);
       extractVideoFrame(`/api/videos/stream?id=${video.id}`)

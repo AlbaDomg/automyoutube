@@ -219,6 +219,22 @@ export default function SubidorPage() {
     return () => clearInterval(interval);
   }, [isAuthenticated]);
 
+  // ⚠️ Aviso si el usuario intenta cerrar o cambiar de página durante una subida activa
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (!isSimpleUploading) return;
+      e.preventDefault();
+      // Mensaje estándar (los navegadores modernos ignoran el texto personalizado por seguridad)
+      e.returnValue = "⚠️ Hay una subida en curso. Si sales ahora, el vídeo no se subirá. ¿Seguro que quieres salir?";
+      return e.returnValue;
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isSimpleUploading]);
+
+
+
   // Optimizar campos con IA
   const handleOptimizeFieldWithAI = async (text, field, setFieldFn, setLoaderFn) => {
     if (!text || !text.trim()) {
@@ -320,7 +336,7 @@ export default function SubidorPage() {
     }
   };
 
-  // Subida de vídeo a Supabase Storage (para dejarlo En Pendiente)
+  // Subida de vídeo directa a YouTube (sesión resumible de Google)
   const handleSimpleVideoUpload = async (e) => {
     e.preventDefault();
     if (!simpleVideoFile) {
@@ -334,12 +350,12 @@ export default function SubidorPage() {
 
     setIsSimpleUploading(true);
     setSimpleUploadProgress(0);
-    setSimpleUploadStatus("Iniciando subida de vídeo...");
+    setSimpleUploadStatus("Iniciando sesión de subida en YouTube...");
 
     try {
       const file = simpleVideoFile;
 
-      // 1. Iniciar sesión de subida en el servidor
+      // 1. Iniciar sesión de subida resumible en el servidor (obtiene la uploadUrl de YouTube)
       const initiateRes = await fetch("/api/upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -360,9 +376,9 @@ export default function SubidorPage() {
       }
 
       const { uploadUrl, videoId } = await initiateRes.json();
-      setSimpleUploadStatus("Subiendo archivo directamente a YouTube...");
+      setSimpleUploadStatus("Subiendo vídeo directamente a YouTube...");
 
-      // 2. Subida directa del archivo (PUT) a YouTube con seguimiento del progreso
+      // 2. Subida directa del archivo (PUT) a YouTube con barra de progreso real
       const youtubeId = await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("PUT", uploadUrl, true);
@@ -372,7 +388,7 @@ export default function SubidorPage() {
           if (evt.lengthComputable) {
             const percent = Math.round((evt.loaded / evt.total) * 100);
             setSimpleUploadProgress(percent);
-            setSimpleUploadStatus(`Subiendo archivo a YouTube: ${percent}%...`);
+            setSimpleUploadStatus(`Subiendo a YouTube: ${percent}%...`);
           }
         };
 
@@ -400,15 +416,12 @@ export default function SubidorPage() {
         xhr.send(file);
       });
 
-      // 3. Completar registro en base de datos
+      // 3. Marcar la subida como completada en la base de datos
       setSimpleUploadStatus("Finalizando registro en base de datos...");
       const completeRes = await fetch("/api/upload?action=complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          videoId,
-          youtubeId
-        })
+        body: JSON.stringify({ videoId, youtubeId })
       });
 
       if (!completeRes.ok) {
@@ -416,9 +429,10 @@ export default function SubidorPage() {
         throw new Error(errData.error || "Fallo al completar subida en base de datos");
       }
 
-      setSimpleUploadStatus("¡Subida completada con éxito!");
-      alert("¡Vídeo subido directamente a YouTube con éxito y guardado en la cola de pendientes para los editores!");
-      
+      setSimpleUploadProgress(100);
+      setSimpleUploadStatus("✅ ¡Vídeo subido a YouTube con éxito!");
+      alert("¡Vídeo subido directamente a YouTube con éxito!");
+
       // Limpiar formulario y refrescar lista
       setSimpleVideoFile(null);
       setLocalExtractedFrame(null);
@@ -430,13 +444,15 @@ export default function SubidorPage() {
       fetchScheduledUpdates();
     } catch (err) {
       console.error(err);
-      setSimpleUploadStatus(`Error: ${err.message}`);
+      setSimpleUploadStatus(`❌ Error: ${err.message}`);
       alert(`Error en la subida: ${err.message}`);
     } finally {
       setIsSimpleUploading(false);
       setSimpleUploadProgress(0);
     }
   };
+
+
 
   const handleExecuteScheduler = async () => {
     setExecutingScheduler(true);
@@ -792,8 +808,34 @@ export default function SubidorPage() {
                     }}
                   />
                 </div>
+
+                {/* ⚠️ Aviso: no cerrar la página durante la subida */}
+                <style>{`
+                  @keyframes warningPulse {
+                    0%, 100% { border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.08); }
+                    50% { border-color: rgba(239, 68, 68, 0.8); background: rgba(239, 68, 68, 0.18); }
+                  }
+                `}</style>
+                <div style={{
+                  marginTop: "0.75rem",
+                  padding: "0.75rem 1rem",
+                  background: "rgba(239, 68, 68, 0.12)",
+                  border: "1px solid rgba(239, 68, 68, 0.4)",
+                  borderRadius: "10px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.6rem",
+                  animation: "warningPulse 2s ease-in-out infinite"
+                }}>
+                  <span style={{ fontSize: "1.2rem", flexShrink: 0 }}>⚠️</span>
+                  <span style={{ fontSize: "0.82rem", color: "#fca5a5", fontWeight: "600", lineHeight: "1.4" }}>
+                    <strong style={{ color: "#f87171" }}>¡No cierres esta pestaña!</strong><br />
+                    La subida se cancelará si sales o cambias de página. Espera a que llegue al 100%.
+                  </span>
+                </div>
               </div>
             )}
+
 
             <button
               type="submit"
