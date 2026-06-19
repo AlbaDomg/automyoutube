@@ -84,18 +84,25 @@ async function handleInitiateUpload(request) {
     }
   };
 
-  console.log(`[YouTube Resumable API] Initiating session for ${fileName} (${fileSize} bytes)`);
+  const origin = request.headers.get('origin');
+  console.log(`[YouTube Resumable API] Initiating session for ${fileName} (${fileSize} bytes). Client Origin: ${origin}`);
 
   // Solicitar URL de sesión resumible a la API de YouTube
   const youtubeUrl = 'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status';
+  const headers = {
+    'Authorization': `Bearer ${accessToken}`,
+    'Content-Type': 'application/json; charset=UTF-8',
+    'X-Upload-Content-Length': String(fileSize),
+    'X-Upload-Content-Type': fileType || 'video/mp4'
+  };
+
+  if (origin) {
+    headers['Origin'] = origin;
+  }
+
   const response = await fetch(youtubeUrl, {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json; charset=UTF-8',
-      'X-Upload-Content-Length': String(fileSize),
-      'X-Upload-Content-Type': fileType || 'video/mp4'
-    },
+    headers: headers,
     body: JSON.stringify(videoMetadata)
   });
 
