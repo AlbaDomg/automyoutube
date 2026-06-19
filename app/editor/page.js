@@ -3458,22 +3458,35 @@ export default function Dashboard() {
                             <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.2rem" }}>
                               Archivo: <code>{video.filename}</code> | Creado: {formatDate(video.createdAt)}
                             </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginTop: "0.4rem", flexWrap: "wrap" }}>
+                              <span style={{
+                                fontSize: "0.68rem",
+                                color: "#f87171",
+                                background: "rgba(239, 68, 68, 0.12)",
+                                border: "1px solid rgba(239, 68, 68, 0.3)",
+                                padding: "2px 7px",
+                                borderRadius: "6px",
+                                fontWeight: "600",
+                                whiteSpace: "nowrap"
+                              }}>
+                                🔒 Subido en Privado
+                              </span>
+                              <span style={{
+                                fontSize: "0.68rem",
+                                color: "#fbbf24",
+                                background: "rgba(245, 158, 11, 0.1)",
+                                border: "1px solid rgba(245, 158, 11, 0.3)",
+                                padding: "2px 7px",
+                                borderRadius: "6px",
+                                fontWeight: "600",
+                                whiteSpace: "nowrap"
+                              }}>
+                                ⏳ En proceso de edición...
+                              </span>
+                            </div>
                           </div>
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
-                          {/* Badge: siempre privado hasta que el editor lo publique */}
-                          <span style={{
-                            fontSize: "0.7rem",
-                            color: "#f87171",
-                            background: "rgba(239, 68, 68, 0.12)",
-                            border: "1px solid rgba(239, 68, 68, 0.3)",
-                            padding: "2px 8px",
-                            borderRadius: "8px",
-                            fontWeight: "bold",
-                            whiteSpace: "nowrap"
-                          }}>
-                            🔒 Privado en YouTube
-                          </span>
                           <button
                             type="button"
                             onClick={() => handleSelectLocalVideo(video)}
@@ -4586,164 +4599,4 @@ export default function Dashboard() {
 
                 {logoUploadProgress !== null && (
                   <div style={{ flex: 1, minWidth: "150px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>
-                      <span>Subiendo archivo...</span>
-                      <span>{logoUploadProgress}%</span>
-                    </div>
-                    <div className={styles.batchSyncProgressOuter} style={{ height: "6px", marginTop: 0 }}>
-                      <div
-                        className={styles.batchSyncProgressInner}
-                        style={{
-                          width: `${logoUploadProgress}%`,
-                          background: "linear-gradient(90deg, #a855f7 0%, #ec4899 100%)",
-                          boxShadow: "0 0 8px rgba(168, 85, 247, 0.4)"
-                        }}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Listado de logotipos existentes */}
-            <h3 style={{ fontSize: "0.9rem", fontWeight: "600", marginBottom: "0.5rem" }}>Logotipos Registrados ({programLogosCatalog.length})</h3>
-            <div style={{ maxHeight: "250px", overflowY: "auto", display: "grid", gridTemplateColumns: "1fr", gap: "0.5rem", padding: "0.25rem" }}>
-              {programLogosCatalog.length === 0 ? (
-                <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", textAlign: "center", padding: "1rem" }}>
-                  No hay logotipos registrados en el catálogo.
-                </div>
-              ) : (
-                programLogosCatalog.map(logo => {
-                  const logoName = typeof logo === "string" ? logo : logo.name;
-                  const logoPlaylistId = typeof logo === "string" ? null : logo.playlistId;
-                  return (
-                    <div key={logoName} style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      padding: "0.5rem",
-                      background: "var(--bg-card, #0f172a)",
-                      border: "1px solid var(--border-color, #334155)",
-                      borderRadius: "8px",
-                      gap: "0.5rem"
-                    }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", minWidth: 0, flex: 1 }}>
-                        <img src={`/program_logos/${logoName}`} alt="" style={{ width: "32px", height: "32px", objectFit: "contain", borderRadius: "4px", background: "rgba(255,255,255,0.05)" }} />
-                        <span style={{ fontSize: "0.75rem", fontWeight: "600", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
-                          {logoName.replace(/\.[^/.]+$/, "").replace(/_/g, " ")}
-                        </span>
-                      </div>
-                      
-                      {/* Vinculación de Playlist */}
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
-                        <select
-                          value={logoPlaylistId || ""}
-                          onChange={async (e) => {
-                            const val = e.target.value;
-                            try {
-                              const res = await fetch("/api/program-logos", {
-                                method: "PATCH",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ filename: logoName, playlistId: val || null }),
-                              });
-                              if (res.ok) {
-                                await fetchProgramLogosCatalog();
-                              } else {
-                                const data = await res.json();
-                                alert("Error al vincular playlist: " + (data.error || "error desconocido"));
-                              }
-                            } catch (err) {
-                              console.error(logoName, err);
-                              alert("Error de red al vincular playlist");
-                            }
-                          }}
-                          style={{
-                            padding: "0.25rem 0.5rem",
-                            background: "var(--bg-surface-secondary, #1e293b)",
-                            border: "1px solid var(--border-color, #334155)",
-                            borderRadius: "6px",
-                            color: "#fff",
-                            fontSize: "0.7rem",
-                            maxWidth: "180px"
-                          }}
-                        >
-                          <option value="">-- Sin Playlist --</option>
-                          {playlists.map(pl => (
-                            <option key={pl.id} value={pl.id}>
-                              {pl.title}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <button
-                        type="button"
-                        aria-label={`Eliminar ${logoName}`}
-                        style={{
-                          background: "transparent",
-                          border: "none",
-                          color: "#ef4444",
-                          cursor: "pointer",
-                          fontSize: "0.85rem",
-                          padding: "0.25rem"
-                        }}
-                        onClick={async () => {
-                          if (!confirm(`¿Eliminar el logotipo "${logoName}"?`)) return;
-                          try {
-                            const res = await fetch("/api/program-logos", {
-                              method: "DELETE",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ filename: logoName }),
-                            });
-                            if (res.ok) {
-                              await fetchProgramLogosCatalog();
-                            } else {
-                              const data = await res.json();
-                              alert("Error al eliminar logotipo: " + (data.error || "error desconocido"));
-                            }
-                          } catch (err) {
-                            console.error("Error al eliminar logotipo:", err);
-                            alert("Error de red o de cliente: " + err.message);
-                          }
-                        }}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Overlay de Sincronización en Lote */}
-      {isSyncingBatch && (
-        <div className={styles.batchSyncOverlay}>
-          <div className={styles.batchSyncModal}>
-            <div className={styles.batchSyncSpinner} />
-            <h3 style={{ fontSize: "1.25rem", fontWeight: "800", color: "#f8fafc", margin: 0 }}>
-              Sincronizando Videos en Lote
-            </h3>
-            <p style={{ fontSize: "0.9rem", color: "#94a3b8", margin: 0 }}>
-              {syncProgress.status}
-            </p>
-            <div style={{ width: "100%" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "#64748b", marginBottom: "0.25rem" }}>
-                <span>Progreso</span>
-                <span>{syncProgress.current} de {syncProgress.total}</span>
-              </div>
-              <div className={styles.batchSyncProgressOuter}>
-                <div
-                  className={styles.batchSyncProgressInner}
-                  style={{ width: `${syncProgress.total > 0 ? (syncProgress.current / syncProgress.total) * 100 : 0}%` }}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+                    <div style={{ display: "flex", justifyContent: "space-betw

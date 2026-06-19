@@ -903,22 +903,37 @@ export default function SubidorPage() {
                       <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.2rem" }}>
                         Archivo: <code>{video.filename}</code> | Creado: {formatDate(video.createdAt)}
                       </div>
+                      {/* Info de estado del vídeo */}
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginTop: "0.4rem", flexWrap: "wrap" }}>
+                        <span style={{
+                          fontSize: "0.68rem",
+                          color: "#f87171",
+                          background: "rgba(239, 68, 68, 0.12)",
+                          border: "1px solid rgba(239, 68, 68, 0.3)",
+                          padding: "2px 7px",
+                          borderRadius: "6px",
+                          fontWeight: "600",
+                          whiteSpace: "nowrap"
+                        }}>
+                          🔒 Privado en YouTube
+                        </span>
+                        <span style={{
+                          fontSize: "0.68rem",
+                          color: "#fbbf24",
+                          background: "rgba(245, 158, 11, 0.1)",
+                          border: "1px solid rgba(245, 158, 11, 0.3)",
+                          padding: "2px 7px",
+                          borderRadius: "6px",
+                          fontWeight: "600",
+                          whiteSpace: "nowrap"
+                        }}>
+                          ⏳ En proceso de edición...
+                        </span>
+                      </div>
+                      {/* No se necesita info adicional aquí, ya que el editor se encarga */}
                     </div>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                    {/* Badge: vídeo siempre privado en YouTube hasta que el editor lo publique */}
-                    <span style={{
-                      fontSize: "0.7rem",
-                      color: "#f87171",
-                      background: "rgba(239, 68, 68, 0.12)",
-                      border: "1px solid rgba(239, 68, 68, 0.3)",
-                      padding: "2px 8px",
-                      borderRadius: "8px",
-                      fontWeight: "bold",
-                      whiteSpace: "nowrap"
-                    }}>
-                      🔒 Privado en YouTube
-                    </span>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
                     <button
                       type="button"
                       title="Eliminar vídeo de la cola"
@@ -1198,3 +1213,4 @@ export default function SubidorPage() {
     </main>
   );
 }
+               
