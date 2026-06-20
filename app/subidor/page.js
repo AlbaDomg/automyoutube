@@ -393,7 +393,7 @@ export default function SubidorPage() {
     try {
       const file = simpleVideoFile;
       const uploadId = generateUUID();
-      const chunkSize = 10 * 1024 * 1024; // 10MB
+      const chunkSize = 4 * 1024 * 1024; // 4MB (límite seguro para Vercel)
       const totalChunks = Math.ceil(file.size / chunkSize);
 
       for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {

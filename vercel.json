@@ -1,1 +1,7 @@
-{}
+{
+  "functions": {
+    "app/api/upload/chunk/route.js": {
+      "maxDuration": 60
+    }
+  }
+}
