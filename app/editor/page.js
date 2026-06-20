@@ -473,6 +473,24 @@ export default function Dashboard() {
     setFrameTime(15);
   };
 
+  const handleCloseEditor = async () => {
+    if (selectedYoutubeVideo && selectedYoutubeVideo.isLocal) {
+      try {
+        await fetch(`/api/videos?id=${selectedYoutubeVideo.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "LOCAL_DRAFT" })
+        });
+        fetchScheduledUpdates();
+      } catch (err) {
+        console.error("Error resetting video status to LOCAL_DRAFT:", err);
+      }
+    }
+    setSelectedYoutubeVideo(null);
+    setYoutubeId("");
+    handleResetThumbnailStates();
+  };
+
   // Helper para obtener el logotipo asociado a una playlist
   const getMatchedLogoForPlaylist = (playlistId) => {
     if (!playlistId || playlistId === "") return "none";
@@ -1385,11 +1403,11 @@ export default function Dashboard() {
         setScheduledUpdates(active);
 
         // Cola de vídeos locales subidos (excluyendo los que ya están en proceso de subida o programados)
-        const queue = data.filter(v => v.status === "READY");
+        const queue = data.filter(v => v.status === "LOCAL_DRAFT" || v.status === "EDITING");
         setLocalVideosQueue(queue);
 
         // Vídeos locales completados
-        const completed = data.filter(v => v.status === "COMPLETED" && v.youtubeId);
+        const completed = data.filter(v => (v.status === "COMPLETED" || v.status === "READY") && v.youtubeId);
         setCompletedLocalVideos(completed);
 
         // Auto-ejecutar scheduler si hay videos cuya hora ya ha pasado
@@ -1641,6 +1659,20 @@ export default function Dashboard() {
       playlistId: detectedPlaylistId
     });
     handleResetThumbnailStates();
+
+    // Actualizar el estado en BD a EDITING para informar a otros usuarios
+    if (video.status === "LOCAL_DRAFT") {
+      try {
+        await fetch(`/api/videos?id=${video.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "EDITING" })
+        });
+        fetchScheduledUpdates();
+      } catch (err) {
+        console.error("Error setting video status to EDITING:", err);
+      }
+    }
 
     // Cargar el vídeo en el elemento oculto para permitir el ajuste manual del fotograma si es necesario
     if (video.filePath && !['PDF_PARSED', 'YOUTUBE_UPLOAD', 'YOUTUBE_UPDATE'].includes(video.filePath)) {
@@ -2453,7 +2485,7 @@ export default function Dashboard() {
             playlistId: updateForm.playlistId || null,
             thumbnailBase64: newThumbnailBase64 || null,
             scheduledAt: updateForm.isScheduled ? toUTCISOString(updateForm.scheduledAt) : null,
-            status: 'READY'
+            status: updateForm.isScheduled ? 'SCHEDULED' : 'UPLOADING'
           })
         });
 
@@ -2462,10 +2494,14 @@ export default function Dashboard() {
           throw new Error(errData.error || "Fallo al guardar metadatos locales");
         }
 
-        // 2. Descargar el archivo temporal de Supabase
-        const blobRes = await fetch(selectedYoutubeVideo.filePath);
+        // 2. Descargar el archivo de vídeo (desde Supabase si es URL, o desde la API local si está en el disco del servidor)
+        const fetchUrl = selectedYoutubeVideo.filePath.startsWith("http")
+          ? selectedYoutubeVideo.filePath
+          : `/api/videos/stream?id=${selectedYoutubeVideo.id}`;
+        
+        const blobRes = await fetch(fetchUrl);
         if (!blobRes.ok) {
-          throw new Error("No se pudo descargar el vídeo temporal de la nube. Es posible que el archivo haya sido eliminado.");
+          throw new Error("No se pudo descargar el vídeo del servidor. Es posible que el archivo haya sido eliminado.");
         }
         const videoBlob = await blobRes.blob();
 
@@ -3706,19 +3742,45 @@ export default function Dashboard() {
                           </div>
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
-                          {/* Badge: siempre privado hasta que el editor lo publique */}
                           <span style={{
-                            fontSize: "0.7rem",
-                            color: "#f87171",
-                            background: "rgba(239, 68, 68, 0.12)",
-                            border: "1px solid rgba(239, 68, 68, 0.3)",
-                            padding: "2px 8px",
-                            borderRadius: "8px",
-                            fontWeight: "bold",
+                            fontSize: "0.68rem",
+                            color: "#38bdf8",
+                            background: "rgba(14, 165, 233, 0.15)",
+                            border: "1px solid rgba(14, 165, 233, 0.3)",
+                            padding: "2.5px 7px",
+                            borderRadius: "6px",
+                            fontWeight: "600",
                             whiteSpace: "nowrap"
                           }}>
-                            🔒 Privado en YouTube
+                            🖥️ Servidor
                           </span>
+                          {video.status === "EDITING" ? (
+                            <span style={{
+                              fontSize: "0.68rem",
+                              color: "#c084fc",
+                              background: "rgba(168, 85, 247, 0.15)",
+                              border: "1px solid rgba(168, 85, 247, 0.3)",
+                              padding: "2.5px 7px",
+                              borderRadius: "6px",
+                              fontWeight: "600",
+                              whiteSpace: "nowrap"
+                            }}>
+                              ✍️ En Edición
+                            </span>
+                          ) : (
+                            <span style={{
+                              fontSize: "0.68rem",
+                              color: "#fbbf24",
+                              background: "rgba(245, 158, 11, 0.15)",
+                              border: "1px solid rgba(245, 158, 11, 0.3)",
+                              padding: "2.5px 7px",
+                              borderRadius: "6px",
+                              fontWeight: "600",
+                              whiteSpace: "nowrap"
+                            }}>
+                              ⏳ Esperando
+                            </span>
+                          )}
                           <button
                             type="button"
                             onClick={() => handleSelectLocalVideo(video)}
@@ -3749,11 +3811,7 @@ export default function Dashboard() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => {
-                    setSelectedYoutubeVideo(null);
-                    setYoutubeId("");
-                    handleResetThumbnailStates();
-                  }}
+                  onClick={handleCloseEditor}
                   className={styles.closeBtn}
                 >✕</button>
               </div>
@@ -4295,11 +4353,7 @@ export default function Dashboard() {
                   }}>
                     <button
                       type="button"
-                      onClick={() => {
-                        setSelectedYoutubeVideo(null);
-                        setYoutubeId("");
-                        handleResetThumbnailStates();
-                      }}
+                      onClick={handleCloseEditor}
                       className={styles.btnCancel}
                       style={{
                         flex: 1,

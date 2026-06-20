@@ -231,7 +231,7 @@ async function handleCompleteUpload(request) {
     where: { id: videoId },
     data: {
       youtubeId: youtubeId,
-      status: 'READY',
+      status: 'COMPLETED',
       uploadProgress: 100
     }
   });

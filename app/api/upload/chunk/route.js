@@ -92,7 +92,7 @@ export async function POST(request) {
               id: uploadId,
               filename: fileName,
               filePath: finalFilePath,
-              status: 'READY',
+              status: 'LOCAL_DRAFT',
               userEmail: email,
               channelId: channel ? channel.id : null
             }

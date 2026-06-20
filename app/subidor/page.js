@@ -204,12 +204,12 @@ export default function SubidorPage() {
         const active = data.filter(v => v.status === "SCHEDULED" || v.status === "UPLOADING");
         setScheduledUpdates(active);
 
-        // Cola de vídeos locales subidos pendientes de procesar
-        const queue = data.filter(v => v.status === "READY");
+        // Cola de vídeos locales subidos pendientes de procesar (inbox del servidor)
+        const queue = data.filter(v => v.status === "LOCAL_DRAFT" || v.status === "EDITING");
         setLocalVideosQueue(queue);
 
-        // Vídeos locales completados
-        const completed = data.filter(v => v.status === "COMPLETED" && v.youtubeId);
+        // Vídeos locales completados en YouTube
+        const completed = data.filter(v => (v.status === "COMPLETED" || v.status === "READY") && v.youtubeId);
         setCompletedLocalVideos(completed);
 
         // Auto-ejecutar scheduler si hay videos cuya hora ya ha pasado
@@ -361,7 +361,7 @@ export default function SubidorPage() {
     }
   };
 
-  // Subida de vídeo directa a YouTube (sesión resumible de Google)
+  // Subida de vídeo por fragmentos (chunked upload) al servidor local
   const handleSimpleVideoUpload = async (e) => {
     e.preventDefault();
     if (!simpleVideoFile) {
@@ -375,88 +375,64 @@ export default function SubidorPage() {
 
     setIsSimpleUploading(true);
     setSimpleUploadProgress(0);
-    setSimpleUploadStatus("Iniciando sesión de subida en YouTube...");
+    setSimpleUploadStatus("Iniciando subida al servidor local...");
 
     try {
       const file = simpleVideoFile;
+      const uploadId = generateUUID();
+      const chunkSize = 10 * 1024 * 1024; // 10MB
+      const totalChunks = Math.ceil(file.size / chunkSize);
 
-      // 1. Iniciar sesión de subida resumible en el servidor (obtiene la uploadUrl de YouTube)
-      const initiateRes = await fetch("/api/upload", {
-        method: "POST",
+      for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+        const start = chunkIndex * chunkSize;
+        const end = Math.min(start + chunkSize, file.size);
+        const chunkBlob = file.slice(start, end);
+
+        const formData = new FormData();
+        formData.append("chunk", chunkBlob);
+        formData.append("fileName", file.name);
+        formData.append("uploadId", uploadId);
+        formData.append("chunkIndex", chunkIndex.toString());
+        formData.append("totalChunks", totalChunks.toString());
+
+        setSimpleUploadStatus(`Subiendo al servidor: Parte ${chunkIndex + 1} de ${totalChunks}...`);
+
+        const chunkRes = await fetch("/api/upload/chunk", {
+          method: "POST",
+          body: formData
+        });
+
+        if (!chunkRes.ok) {
+          const errData = await chunkRes.json();
+          throw new Error(errData.error || `Fallo al subir fragmento ${chunkIndex + 1}`);
+        }
+
+        const percent = Math.round(((chunkIndex + 1) / totalChunks) * 100);
+        setSimpleUploadProgress(percent);
+      }
+
+      setSimpleUploadStatus("Guardando metadatos del borrador...");
+
+      // Una vez que el chunk merge está completo, actualizamos los metadatos y guardamos el frame extraído
+      const patchRes = await fetch(`/api/videos?id=${uploadId}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: simpleTitle,
           description: simpleDescription,
-          fileName: file.name,
-          fileSize: file.size,
-          fileType: file.type || "video/mp4",
           rawFrameBase64: localExtractedFrame,
-          playlistId: ""
+          status: "LOCAL_DRAFT"
         })
       });
 
-      if (!initiateRes.ok) {
-        const errData = await initiateRes.json();
-        throw new Error(errData.error || "Fallo al iniciar sesión de subida");
-      }
-
-      const { uploadUrl, videoId } = await initiateRes.json();
-      setSimpleUploadStatus("Subiendo vídeo directamente a YouTube...");
-
-      // 2. Subida directa del archivo (PUT) a YouTube con barra de progreso real
-      const youtubeId = await new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open("PUT", uploadUrl, true);
-        xhr.setRequestHeader("Content-Type", file.type || "video/mp4");
-
-        xhr.upload.onprogress = (evt) => {
-          if (evt.lengthComputable) {
-            const percent = Math.round((evt.loaded / evt.total) * 100);
-            setSimpleUploadProgress(percent);
-            setSimpleUploadStatus(`Subiendo a YouTube: ${percent}%...`);
-          }
-        };
-
-        xhr.onload = () => {
-          if (xhr.status === 200 || xhr.status === 201) {
-            try {
-              const responseJson = JSON.parse(xhr.responseText);
-              if (responseJson && responseJson.id) {
-                resolve(responseJson.id);
-              } else {
-                reject(new Error("No se recibió el ID del vídeo de la respuesta de YouTube"));
-              }
-            } catch (err) {
-              reject(new Error("Error al analizar respuesta de YouTube: " + err.message));
-            }
-          } else {
-            reject(new Error(`YouTube rechazó la subida: ${xhr.status} ${xhr.statusText}`));
-          }
-        };
-
-        xhr.onerror = () => {
-          reject(new Error("Error de conexión al subir directamente a YouTube."));
-        };
-
-        xhr.send(file);
-      });
-
-      // 3. Marcar la subida como completada en la base de datos
-      setSimpleUploadStatus("Finalizando registro en base de datos...");
-      const completeRes = await fetch("/api/upload?action=complete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ videoId, youtubeId })
-      });
-
-      if (!completeRes.ok) {
-        const errData = await completeRes.json();
-        throw new Error(errData.error || "Fallo al completar subida en base de datos");
+      if (!patchRes.ok) {
+        const errData = await patchRes.json();
+        throw new Error(errData.error || "Fallo al guardar los metadatos en el servidor");
       }
 
       setSimpleUploadProgress(100);
-      setSimpleUploadStatus("✅ ¡Vídeo subido a YouTube con éxito!");
-      alert("¡Vídeo subido directamente a YouTube con éxito!");
+      setSimpleUploadStatus("✅ ¡Vídeo subido al servidor correctamente!");
+      alert("¡Vídeo subido al servidor y guardado como borrador local!");
 
       // Limpiar formulario y refrescar lista
       setSimpleVideoFile(null);
@@ -470,7 +446,7 @@ export default function SubidorPage() {
     } catch (err) {
       console.error(err);
       setSimpleUploadStatus(`❌ Error: ${err.message}`);
-      alert(`Error en la subida: ${err.message}`);
+      alert(`Error en la subida al servidor: ${err.message}`);
     } finally {
       setIsSimpleUploading(false);
       setSimpleUploadProgress(0);
@@ -1166,30 +1142,44 @@ export default function SubidorPage() {
                       <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginTop: "0.4rem", flexWrap: "wrap" }}>
                         <span style={{
                           fontSize: "0.68rem",
-                          color: "#f87171",
-                          background: "rgba(239, 68, 68, 0.12)",
-                          border: "1px solid rgba(239, 68, 68, 0.3)",
+                          color: "#38bdf8",
+                          background: "rgba(14, 165, 233, 0.15)",
+                          border: "1px solid rgba(14, 165, 233, 0.3)",
                           padding: "2px 7px",
                           borderRadius: "6px",
                           fontWeight: "600",
                           whiteSpace: "nowrap"
                         }}>
-                          🔒 Privado en YouTube
+                          🖥️ Guardado en Servidor
                         </span>
-                        <span style={{
-                          fontSize: "0.68rem",
-                          color: "#fbbf24",
-                          background: "rgba(245, 158, 11, 0.1)",
-                          border: "1px solid rgba(245, 158, 11, 0.3)",
-                          padding: "2px 7px",
-                          borderRadius: "6px",
-                          fontWeight: "600",
-                          whiteSpace: "nowrap"
-                        }}>
-                          ⏳ En proceso de edición...
-                        </span>
+                        {video.status === "EDITING" ? (
+                          <span style={{
+                            fontSize: "0.68rem",
+                            color: "#c084fc",
+                            background: "rgba(168, 85, 247, 0.15)",
+                            border: "1px solid rgba(168, 85, 247, 0.3)",
+                            padding: "2px 7px",
+                            borderRadius: "6px",
+                            fontWeight: "600",
+                            whiteSpace: "nowrap"
+                          }}>
+                            ✍️ En Proceso de Edición
+                          </span>
+                        ) : (
+                          <span style={{
+                            fontSize: "0.68rem",
+                            color: "#fbbf24",
+                            background: "rgba(245, 158, 11, 0.15)",
+                            border: "1px solid rgba(245, 158, 11, 0.3)",
+                            padding: "2px 7px",
+                            borderRadius: "6px",
+                            fontWeight: "600",
+                            whiteSpace: "nowrap"
+                          }}>
+                            ⏳ Esperando Editor
+                          </span>
+                        )}
                       </div>
-                      {/* No se necesita info adicional aquí, ya que el editor se encarga */}
                     </div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
