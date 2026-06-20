@@ -961,54 +961,6 @@ export default function SubidorPage() {
                 />
               </div>
 
-              {localExtractedFrame && (
-                <div style={{
-                  background: "rgba(255, 255, 255, 0.02)",
-                  border: "1px solid var(--border-color)",
-                  borderRadius: "12px",
-                  padding: "1rem",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "0.75rem"
-                }}>
-                  <span style={{ fontSize: "0.8rem", fontWeight: "600", color: "var(--text-secondary)" }}>
-                    🖼️ Portada (miniatura) del vídeo:
-                  </span>
-                  <img
-                    src={localExtractedFrame}
-                    alt="Miniatura del vídeo"
-                    style={{
-                      width: "100%",
-                      aspectRatio: "16/9",
-                      objectFit: "cover",
-                      borderRadius: "8px",
-                      border: "1px solid rgba(255, 255, 255, 0.1)"
-                    }}
-                  />
-                  {videoDuration > 0 && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                        <span>Ajustar segundo de captura:</span>
-                        <span style={{ fontWeight: "700", color: "#a855f7" }}>{Math.round(frameTime)}s / {Math.round(videoDuration)}s</span>
-                      </div>
-                      <input
-                        type="range"
-                        min={0}
-                        max={videoDuration}
-                        step={0.5}
-                        value={frameTime}
-                        onChange={handleSliderChange}
-                        style={{
-                          width: "100%",
-                          accentColor: "#a855f7",
-                          cursor: "pointer"
-                        }}
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
-
               <div className={styles.inputGroup}>
                 <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span>Título en YouTube</span>
