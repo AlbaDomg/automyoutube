@@ -309,17 +309,30 @@ export default function SubidorPage() {
       alert("Introduce algún texto primero para optimizar.");
       return;
     }
+
+    // Si es un título, extraer el sufijo "| NOMBREPROGRAMA" para reañadirlo después de la optimización IA
+    let suffix = "";
+    let textToOptimize = text;
+    if (field === 'title') {
+      const pipeIndex = text.lastIndexOf(" | ");
+      if (pipeIndex !== -1) {
+        suffix = text.substring(pipeIndex); // Ej.: " | Canal Galego"
+        textToOptimize = text.substring(0, pipeIndex).trim();
+      }
+    }
+
     setLoaderFn(true);
     try {
       const res = await fetch("/api/youtube/optimize-seo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, field })
+        body: JSON.stringify({ text: textToOptimize, field })
       });
       if (res.ok) {
         const data = await res.json();
         if (data.optimizedText) {
-          setFieldFn(data.optimizedText);
+          // Para títulos, reañadir el sufijo del programa si existía
+          setFieldFn(data.optimizedText + suffix);
         }
       } else {
         const data = await res.json();
