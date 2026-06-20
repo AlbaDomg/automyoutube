@@ -469,6 +469,8 @@ export default function Dashboard() {
     setCustomBgBase64(null);
     setIsAutoThumbnailEnabled(false);
     setNewThumbnailBase64(null);
+    setVideoDuration(0);
+    setFrameTime(15);
   };
 
   // Helper para obtener el logotipo asociado a una playlist
@@ -1069,13 +1071,25 @@ export default function Dashboard() {
             }
           }
         } else {
-          const cleanUrl = getCleanVideoFrameUrl(videoVal?.thumbnail, videoVal?.id);
-          if (cleanUrl) {
+          // Si el vídeo tiene una captura inteligente local (rawFrameBase64) guardada en la base de datos, la usamos preferiblemente
+          if (videoVal?.rawFrameBase64) {
             try {
-              const proxiedUrl = `/api/youtube/thumbnail-proxy?url=${encodeURIComponent(cleanUrl)}`;
-              bgImg = await loadImage(proxiedUrl);
-            } catch (proxyErr) {
-              console.warn(`[Thumbnail Generator] Fallo al cargar fotograma de YouTube, intentando con logo de programa. Error: ${proxyErr.message}`);
+              bgImg = await loadImage(videoVal.rawFrameBase64);
+            } catch (rawErr) {
+              console.warn("[Thumbnail Generator] Fallo al cargar rawFrameBase64:", rawErr.message);
+            }
+          }
+
+          // Si no tiene rawFrameBase64 o falló la carga, usamos el fotograma por defecto de YouTube
+          if (!bgImg) {
+            const cleanUrl = getCleanVideoFrameUrl(videoVal?.thumbnail, videoVal?.id);
+            if (cleanUrl) {
+              try {
+                const proxiedUrl = `/api/youtube/thumbnail-proxy?url=${encodeURIComponent(cleanUrl)}`;
+                bgImg = await loadImage(proxiedUrl);
+              } catch (proxyErr) {
+                console.warn(`[Thumbnail Generator] Fallo al cargar fotograma de YouTube, intentando con logo de programa. Error: ${proxyErr.message}`);
+              }
             }
           }
         }
@@ -1556,7 +1570,8 @@ export default function Dashboard() {
       isLocal: !video.youtubeId, // Si ya se subió a YouTube, no lo tratamos como local
       filePath: video.filePath,
       fileName: video.filename || video.filePath || "",
-      createdAt: video.createdAt
+      createdAt: video.createdAt,
+      rawFrameBase64: video.rawFrameBase64 || null
     });
     setYoutubeId(video.id);
 
@@ -1580,6 +1595,23 @@ export default function Dashboard() {
       playlistId: detectedPlaylistId
     });
     handleResetThumbnailStates();
+
+    // Cargar el vídeo en el elemento oculto para permitir el ajuste manual del fotograma si es necesario
+    if (video.filePath && !['PDF_PARSED', 'YOUTUBE_UPLOAD', 'YOUTUBE_UPDATE'].includes(video.filePath)) {
+      const srcUrl = video.filePath.startsWith('https://') 
+        ? video.filePath 
+        : `/api/videos/stream?id=${video.id}`;
+      
+      if (videoObjectURL) {
+        URL.revokeObjectURL(videoObjectURL);
+      }
+      setVideoObjectURL("");
+      
+      if (hiddenVideoRef.current) {
+        hiddenVideoRef.current.src = srcUrl;
+        hiddenVideoRef.current.load();
+      }
+    }
 
     if (video.rawFrameBase64) {
       setCustomBgBase64(video.rawFrameBase64);
@@ -3869,6 +3901,27 @@ export default function Dashboard() {
                             }}
                             style={{ background: "transparent", border: "none", fontSize: "0.8rem" }}
                           />
+                          {videoDuration > 0 && (
+                            <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", marginTop: "0.5rem" }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.72rem", color: "var(--text-muted)" }}>
+                                <span>Ajustar segundo de captura:</span>
+                                <span style={{ fontWeight: "700", color: "#a855f7" }}>{Math.round(frameTime)}s / {Math.round(videoDuration)}s</span>
+                              </div>
+                              <input
+                                type="range"
+                                min={0}
+                                max={videoDuration}
+                                step={0.5}
+                                value={frameTime}
+                                onChange={handleSliderChange}
+                                style={{
+                                  width: "100%",
+                                  accentColor: "#a855f7",
+                                  cursor: "pointer"
+                                }}
+                              />
+                            </div>
+                          )}
                         </div>
 
                         <div className={styles.inputGroup} style={{ margin: 0 }}>
