@@ -3881,48 +3881,28 @@ export default function Dashboard() {
                           )}
                         </div>
 
-                        <div className={styles.inputGroup} style={{ margin: 0 }}>
-                          <label style={{ fontSize: "0.75rem", display: "flex", justifyContent: "space-between" }}>
-                            <span>Fondo Personalizado</span>
-                            {customBgBase64 && (
-                              <button type="button" onClick={() => setCustomBgBase64(null)} style={{ background: "none", border: "none", color: "#ef4444", fontSize: "0.7rem", cursor: "pointer", padding: 0 }}>Restaurar</button>
-                            )}
-                          </label>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) => {
-                              const file = e.target.files[0];
-                              if (file) {
-                                const reader = new FileReader();
-                                reader.onload = (ev) => setCustomBgBase64(ev.target.result);
-                                reader.readAsDataURL(file);
-                              }
-                            }}
-                            style={{ background: "transparent", border: "none", fontSize: "0.8rem" }}
-                          />
-                          {videoDuration > 0 && (
-                            <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", marginTop: "0.5rem" }}>
-                              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.72rem", color: "var(--text-muted)" }}>
-                                <span>Ajustar segundo de captura:</span>
-                                <span style={{ fontWeight: "700", color: "#a855f7" }}>{Math.round(frameTime)}s / {Math.round(videoDuration)}s</span>
-                              </div>
-                              <input
-                                type="range"
-                                min={0}
-                                max={videoDuration}
-                                step={0.5}
-                                value={frameTime}
-                                onChange={handleSliderChange}
-                                style={{
-                                  width: "100%",
-                                  accentColor: "#a855f7",
-                                  cursor: "pointer"
-                                }}
-                              />
+                        {videoDuration > 0 && (
+                          <div className={styles.inputGroup} style={{ margin: 0 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                              <span>Ajustar fotograma del vídeo (segundo):</span>
+                              <span style={{ fontWeight: "700", color: "#a855f7" }}>{Math.round(frameTime)}s / {Math.round(videoDuration)}s</span>
                             </div>
-                          )}
-                        </div>
+                            <input
+                              type="range"
+                              min={0}
+                              max={videoDuration}
+                              step={0.5}
+                              value={frameTime}
+                              onChange={handleSliderChange}
+                              style={{
+                                width: "100%",
+                                accentColor: "#a855f7",
+                                cursor: "pointer",
+                                marginTop: "0.25rem"
+                              }}
+                            />
+                          </div>
+                        )}
 
                         <div className={styles.inputGroup} style={{ margin: 0 }}>
                           <label style={{ fontSize: "0.75rem", display: "flex", justifyContent: "space-between" }}>
