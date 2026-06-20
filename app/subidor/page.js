@@ -1423,29 +1423,6 @@ export default function SubidorPage() {
                         })()}
                       </div>
                     </div>
-                    <a
-                      href={`https://studio.youtube.com/video/${item.youtubeId}/edit`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={styles.btnSubmit}
-                      style={{
-                        width: "auto",
-                        fontSize: "0.75rem",
-                        padding: "0.3rem 0.75rem",
-                        background: "#0284c7",
-                        border: "none",
-                        textDecoration: "none",
-                        color: "#fff",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "0.25rem",
-                        borderRadius: "4px",
-                        fontWeight: "500",
-                        height: "fit-content"
-                      }}
-                    >
-                      ✏️ Editar en YouTube
-                    </a>
                   </div>
                 </div>
               ))}
