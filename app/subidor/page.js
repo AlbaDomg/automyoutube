@@ -83,6 +83,57 @@ export default function SubidorPage() {
   const [localVideosQueue, setLocalVideosQueue] = useState([]);
 
   const simpleVideoInputRef = useRef(null);
+  const hiddenVideoRef = useRef(null);
+  const [videoDuration, setVideoDuration] = useState(0);
+  const [frameTime, setFrameTime] = useState(15);
+  const [videoObjectURL, setVideoObjectURL] = useState("");
+
+  // Limpiar URL del objeto de vídeo al desmontar
+  useEffect(() => {
+    return () => {
+      if (videoObjectURL) {
+        URL.revokeObjectURL(videoObjectURL);
+      }
+    };
+  }, [videoObjectURL]);
+
+  const handleVideoLoadedMetadata = () => {
+    if (hiddenVideoRef.current) {
+      const duration = hiddenVideoRef.current.duration;
+      setVideoDuration(duration);
+      // Por defecto capturamos a los 15 segundos, o a la mitad del vídeo si dura menos de 30 segundos
+      const defaultSeek = duration > 30 ? 15 : duration / 2;
+      setFrameTime(defaultSeek);
+      hiddenVideoRef.current.currentTime = defaultSeek;
+    }
+  };
+
+  const handleVideoSeeked = () => {
+    if (hiddenVideoRef.current) {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = 1280;
+        canvas.height = 720;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(hiddenVideoRef.current, 0, 0, canvas.width, canvas.height);
+          const base64 = canvas.toDataURL("image/jpeg", 0.85);
+          setLocalExtractedFrame(base64);
+          setSimpleUploadStatus("Portada del vídeo capturada correctamente.");
+        }
+      } catch (err) {
+        console.error("Error al extraer fotograma en seeked:", err);
+      }
+    }
+  };
+
+  const handleSliderChange = (e) => {
+    const newTime = parseFloat(e.target.value);
+    setFrameTime(newTime);
+    if (hiddenVideoRef.current) {
+      hiddenVideoRef.current.currentTime = newTime;
+    }
+  };
 
   // Validar estado de autenticación al cargar
   useEffect(() => {
@@ -282,74 +333,31 @@ export default function SubidorPage() {
     }
   };
 
-  // Extrae un fotograma del vídeo local de forma asíncrona mediante un canvas
-  const extractFrameFromLocalFile = (file) => {
-    return new Promise((resolve, reject) => {
-      const video = document.createElement("video");
-      video.preload = "auto";
-      video.muted = true;
-      video.playsInline = true;
-      
-      const fileUrl = URL.createObjectURL(file);
-      video.src = fileUrl;
-
-      let timeoutId = setTimeout(() => {
-        cleanup();
-        reject(new Error("Timeout al extraer fotograma del vídeo"));
-      }, 15000);
-
-      const cleanup = () => {
-        clearTimeout(timeoutId);
-        URL.revokeObjectURL(fileUrl);
-      };
-
-      video.addEventListener("loadedmetadata", () => {
-        const seekTime = Math.min(5, video.duration > 2 ? 5 : video.duration / 2);
-        video.currentTime = seekTime;
-      });
-
-      video.addEventListener("seeked", () => {
-        try {
-          const canvas = document.createElement("canvas");
-          canvas.width = 1280;
-          canvas.height = 720;
-          const ctx = canvas.getContext("2d");
-          if (ctx) {
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const base64 = canvas.toDataURL("image/jpeg", 0.85);
-            cleanup();
-            resolve(base64);
-          } else {
-            cleanup();
-            reject(new Error("No se pudo obtener el contexto 2D del canvas"));
-          }
-        } catch (err) {
-          cleanup();
-          reject(err);
-        }
-      });
-
-      video.addEventListener("error", (err) => {
-        cleanup();
-        reject(err);
-      });
-    });
-  };
-
   // Manejar cambio del input del archivo de vídeo
-  const handleFileChange = async (e) => {
+  const handleFileChange = (e) => {
     const file = e.target.files[0];
     setSimpleVideoFile(file);
-    if (!file) return;
+    if (!file) {
+      setLocalExtractedFrame(null);
+      setVideoDuration(0);
+      setFrameTime(15);
+      return;
+    }
 
     setSimpleUploadStatus("Extrayendo portada del vídeo local...");
     try {
-      const frameBase64 = await extractFrameFromLocalFile(file);
-      setLocalExtractedFrame(frameBase64);
-      setSimpleUploadStatus("Fotograma extraído correctamente como portada.");
+      if (videoObjectURL) {
+        URL.revokeObjectURL(videoObjectURL);
+      }
+      const url = URL.createObjectURL(file);
+      setVideoObjectURL(url);
+      if (hiddenVideoRef.current) {
+        hiddenVideoRef.current.src = url;
+        hiddenVideoRef.current.load();
+      }
     } catch (err) {
-      console.error("Error al extraer fotograma local:", err);
-      setSimpleUploadStatus("No se pudo extraer el fotograma (se usará captura por defecto en YouTube).");
+      console.error("Error al iniciar carga de vídeo:", err);
+      setSimpleUploadStatus("No se pudo iniciar la carga del vídeo para la captura.");
     }
   };
 
@@ -953,6 +961,54 @@ export default function SubidorPage() {
                 />
               </div>
 
+              {localExtractedFrame && (
+                <div style={{
+                  background: "rgba(255, 255, 255, 0.02)",
+                  border: "1px solid var(--border-color)",
+                  borderRadius: "12px",
+                  padding: "1rem",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "0.75rem"
+                }}>
+                  <span style={{ fontSize: "0.8rem", fontWeight: "600", color: "var(--text-secondary)" }}>
+                    🖼️ Portada (miniatura) del vídeo:
+                  </span>
+                  <img
+                    src={localExtractedFrame}
+                    alt="Miniatura del vídeo"
+                    style={{
+                      width: "100%",
+                      aspectRatio: "16/9",
+                      objectFit: "cover",
+                      borderRadius: "8px",
+                      border: "1px solid rgba(255, 255, 255, 0.1)"
+                    }}
+                  />
+                  {videoDuration > 0 && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                        <span>Ajustar segundo de captura:</span>
+                        <span style={{ fontWeight: "700", color: "#a855f7" }}>{Math.round(frameTime)}s / {Math.round(videoDuration)}s</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={videoDuration}
+                        step={0.5}
+                        value={frameTime}
+                        onChange={handleSliderChange}
+                        style={{
+                          width: "100%",
+                          accentColor: "#a855f7",
+                          cursor: "pointer"
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className={styles.inputGroup}>
                 <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span>Título en YouTube</span>
@@ -1438,6 +1494,16 @@ export default function SubidorPage() {
           </div>
         )}
       </div>
+      {/* Elemento de vídeo oculto para extracción de miniaturas */}
+      <video
+        ref={hiddenVideoRef}
+        style={{ display: "none" }}
+        preload="auto"
+        muted
+        playsInline
+        onLoadedMetadata={handleVideoLoadedMetadata}
+        onSeeked={handleVideoSeeked}
+      />
     </main>
   );
 }
