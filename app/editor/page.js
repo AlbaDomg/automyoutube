@@ -1503,15 +1503,35 @@ export default function Dashboard() {
   };
 
   // Seleccionar video e inicializar formulario
-  const handleSelectVideo = (video) => {
-    setSelectedYoutubeVideo(video);
+  const handleSelectVideo = async (video) => {
     setYoutubeId(video.id);
+
+    // Buscar si hay un registro correspondiente en nuestra base de datos local
+    let dbVideo = null;
+    try {
+      const res = await fetch("/api/videos", { cache: "no-store" });
+      if (res.ok) {
+        const dbVideos = await res.json();
+        dbVideo = dbVideos.find(v => v.youtubeId === video.id);
+      }
+    } catch (err) {
+      console.warn("No se pudo buscar el video en la base de datos local:", err.message);
+    }
+
+    const combinedVideo = {
+      ...video,
+      rawFrameBase64: dbVideo?.rawFrameBase64 || null,
+      filePath: dbVideo?.filePath || null,
+      dbId: dbVideo?.id || null
+    };
+
+    setSelectedYoutubeVideo(combinedVideo);
 
     // Buscar si ya hay una actualización programada para este video
     const scheduledUpdate = scheduledUpdates.find(u => u.youtubeId === video.id);
 
     // Auto-detectar programa y playlist utilizando nuestro nuevo helper
-    const detected = detectProgramAndPlaylist(video.title, video.description, video.fileName || video.filename || "");
+    const detected = detectProgramAndPlaylist(video.title, video.description, video.fileName || video.filename || dbVideo?.filename || "");
     const detectedPlaylistId = detected.playlistId;
     const detectedLogo = detected.logoName;
 
@@ -1531,6 +1551,32 @@ export default function Dashboard() {
     });
     setOptimizationSuggestions(null);
     handleResetThumbnailStates();
+
+    // Cargar el vídeo en el elemento oculto para permitir el ajuste manual del fotograma si existe el archivo
+    if (combinedVideo.filePath && !['PDF_PARSED', 'YOUTUBE_UPLOAD', 'YOUTUBE_UPDATE'].includes(combinedVideo.filePath)) {
+      const srcUrl = combinedVideo.filePath.startsWith('https://') 
+        ? combinedVideo.filePath 
+        : `/api/videos/stream?id=${combinedVideo.dbId}`;
+      
+      if (videoObjectURL) {
+        URL.revokeObjectURL(videoObjectURL);
+      }
+      setVideoObjectURL("");
+      
+      if (hiddenVideoRef.current) {
+        hiddenVideoRef.current.src = srcUrl;
+        hiddenVideoRef.current.load();
+      }
+    }
+
+    // Establecer el fotograma de fondo (prioridad base64 local sobre YouTube proxy)
+    if (combinedVideo.rawFrameBase64) {
+      setCustomBgBase64(combinedVideo.rawFrameBase64);
+    } else {
+      const directUrl = `https://img.youtube.com/vi/${video.id}/maxresdefault.jpg`;
+      const proxiedUrl = `/api/youtube/thumbnail-proxy?url=${encodeURIComponent(directUrl)}`;
+      setCustomBgBase64(proxiedUrl);
+    }
     
     // Asignar el logotipo detectado y habilitar miniatura automática si es distinto de "none"
     if (detectedLogo !== "none") {
