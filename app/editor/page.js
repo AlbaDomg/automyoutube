@@ -3864,6 +3864,42 @@ export default function Dashboard() {
                             >
                               Editar
                             </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (window.confirm("¿Estás seguro de que deseas eliminar este borrador de la lista? Se borrará de la base de datos local y dejará de aparecer en esta cola.")) {
+                                  try {
+                                    const ytId = video.id?.videoId || video.id;
+                                    const dbVideo = dbVideos.find(dbv => dbv.youtubeId === ytId);
+                                    const dbId = dbVideo?.id || video.dbId || video.id;
+                                    const res = await fetch(`/api/videos?id=${dbId}`, { method: "DELETE" });
+                                    if (res.ok) {
+                                      alert("Borrador eliminado correctamente de la base de datos.");
+                                      fetchScheduledUpdates();
+                                    } else {
+                                      const errData = await res.json();
+                                      alert(`Error al eliminar: ${errData.error || 'error desconocido'}`);
+                                    }
+                                  } catch (err) {
+                                    alert(`Error de red al intentar eliminar: ${err.message}`);
+                                  }
+                                }
+                              }}
+                              className={styles.btnDelete}
+                              style={{
+                                width: "auto",
+                                fontSize: "0.72rem",
+                                padding: "0.35rem 0.6rem",
+                                background: "rgba(239, 68, 68, 0.15)",
+                                color: "#ef4444",
+                                border: "1px solid rgba(239, 68, 68, 0.3)",
+                                borderRadius: "6px",
+                                cursor: "pointer"
+                              }}
+                              title="Eliminar borrador de la aplicación"
+                            >
+                              ✕
+                            </button>
                           </div>
                         </div>
                       );
