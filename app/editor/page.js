@@ -4629,17 +4629,18 @@ export default function Dashboard() {
                       <strong>Ejecución:</strong> {formatDate(update.scheduledAt)} |{' '}
                       <strong>Destino:</strong>{' '}
                       {(() => {
+                        const isDraftUpload = update.status === "UPLOADING" && !update.youtubeId;
                         const isPub = update.privacyStatus === 'public';
                         return (
                           <span style={{
-                            color: isPub ? '#34d399' : '#f87171',
-                            background: isPub ? 'rgba(52, 211, 153, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                            color: isDraftUpload ? '#38bdf8' : (isPub ? '#34d399' : '#f87171'),
+                            background: isDraftUpload ? 'rgba(56, 189, 248, 0.15)' : (isPub ? 'rgba(52, 211, 153, 0.15)' : 'rgba(239, 68, 68, 0.15)'),
                             padding: '1px 6px',
                             borderRadius: '8px',
                             fontSize: '0.7rem',
                             fontWeight: 'bold'
                           }}>
-                            {isPub ? 'Público' : 'Privado'}
+                            {isDraftUpload ? 'Borrador' : (isPub ? 'Público' : 'Privado')}
                           </span>
                         );
                       })()}
