@@ -825,9 +825,7 @@ export default function SubidorPage() {
             <h3 style={{ fontSize: "1.25rem", fontWeight: "800", marginBottom: "1.25rem", background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
               📄 Procesar Escaleta (PDF o Word)
             </h3>
-            <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginBottom: "1.5rem", lineHeight: "1.5" }}>
-              Sube la escaleta del programa en formato PDF o Word para detectar automáticamente los títulos y descripciones. Podrás rellenar el formulario de subida con un solo clic.
-            </p>
+
 
             <form onSubmit={handleAnalyzeFile} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
               <div className={styles.inputGroup} style={{ marginBottom: 0 }}>
