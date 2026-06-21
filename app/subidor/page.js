@@ -83,6 +83,7 @@ export default function SubidorPage() {
 
   const simpleVideoInputRef = useRef(null);
   const hiddenVideoRef = useRef(null);
+  const autoSchedulerRunningRef = useRef(false);
   const [videoDuration, setVideoDuration] = useState(0);
   const [frameTime, setFrameTime] = useState(15);
   const [videoObjectURL, setVideoObjectURL] = useState("");
@@ -200,7 +201,17 @@ export default function SubidorPage() {
         const data = await res.json();
         
         // Videos activos: subiéndose a YouTube o programados para publicarse
-        const active = data.filter(v => v.status === "SCHEDULED" || (v.status === "UPLOADING" && v.filePath !== "YOUTUBE_UPLOAD"));
+        const activeMap = new Map();
+        data
+          .filter(v => v.status === "SCHEDULED" || v.status === "UPLOADING")
+          .forEach(v => {
+            const key = v.youtubeId || v.id;
+            const prev = activeMap.get(key);
+            if (!prev || new Date(v.updatedAt || v.createdAt || 0) > new Date(prev.updatedAt || prev.createdAt || 0)) {
+              activeMap.set(key, v);
+            }
+          });
+        const active = Array.from(activeMap.values());
         setScheduledUpdates(active);
 
         // Vídeos ya subidos a YouTube correctamente (COMPLETED con youtubeId)
@@ -210,20 +221,23 @@ export default function SubidorPage() {
         // Auto-ejecutar scheduler si hay videos cuya hora ya ha pasado
         const now = new Date();
         const overdue = active.filter(v => v.status === "SCHEDULED" && v.scheduledAt && new Date(v.scheduledAt) <= now);
-        if (overdue.length > 0) {
+        if (overdue.length > 0 && !autoSchedulerRunningRef.current) {
+          autoSchedulerRunningRef.current = true;
           console.log(`[Auto-Scheduler] ${overdue.length} video(s) vencido(s). Ejecutando scheduler automáticamente...`);
           try {
-            await fetch("/api/cron/scheduler", { cache: "no-store" });
+            await fetch("/api/scheduler", { cache: "no-store" });
             setTimeout(async () => {
               const res2 = await fetch("/api/videos", { cache: "no-store" });
               if (res2.ok) {
                 const data2 = await res2.json();
                 setScheduledUpdates(data2.filter(v => v.status === "SCHEDULED" || v.status === "UPLOADING"));
               }
-              await fetchTasks();
+              await fetchTasks(true);
+              autoSchedulerRunningRef.current = false;
             }, 2000);
           } catch (cronErr) {
             console.error("[Auto-Scheduler] Error al auto-ejecutar scheduler:", cronErr);
+            autoSchedulerRunningRef.current = false;
           }
         }
       }
@@ -409,12 +423,45 @@ export default function SubidorPage() {
 
       const { uploadUrl, videoId } = await initRes.json();
       setSimpleUploadStatus("Subiendo vídeo directamente a YouTube...");
+      setScheduledUpdates(prev => [
+        {
+          id: videoId,
+          title: simpleTitle,
+          description: simpleDescription,
+          status: "UPLOADING",
+          uploadProgress: 0,
+          filePath: "YOUTUBE_UPLOAD"
+        },
+        ...prev.filter(item => item.id !== videoId)
+      ]);
 
       // Fase 2: Subir el archivo directamente a YouTube en chunks
       // El archivo va del navegador a YouTube — no pasa por Vercel, sin límite de tamaño
       const CHUNK_SIZE = 5 * 1024 * 1024; // 5 MB por chunk directo a YouTube
       let offset = 0;
       let youtubeVideoId = null;
+      let lastPersistedProgress = -1;
+      let lastPersistedAt = 0;
+      const persistUploadProgress = (percent, force = false) => {
+        const progress = Math.max(0, Math.min(100, Math.round(percent)));
+        setScheduledUpdates(prev => prev.map(item =>
+          item.id === videoId ? { ...item, status: "UPLOADING", uploadProgress: progress } : item
+        ));
+
+        const now = Date.now();
+        if (!force && progress < 100 && progress - lastPersistedProgress < 5 && now - lastPersistedAt < 1000) {
+          return;
+        }
+        lastPersistedProgress = progress;
+        lastPersistedAt = now;
+        fetch(`/api/videos?id=${videoId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "UPLOADING", uploadProgress: progress })
+        }).catch(progressErr => {
+          console.warn("[Subidor Upload] Failed to persist upload progress:", progressErr);
+        });
+      };
 
       while (offset < file.size) {
         const chunkEnd = Math.min(offset + CHUNK_SIZE, file.size);
@@ -434,6 +481,7 @@ export default function SubidorPage() {
           const data = await chunkRes.json();
           youtubeVideoId = data.id;
           setSimpleUploadProgress(100);
+          persistUploadProgress(100, true);
           break;
         } else if (chunkRes.status === 308) {
           // 308 Resume Incomplete: YouTube confirma el chunk y espera el siguiente
@@ -442,6 +490,7 @@ export default function SubidorPage() {
           const progress = Math.round((offset / file.size) * 100);
           setSimpleUploadProgress(progress);
           setSimpleUploadStatus(`Subiendo a YouTube: ${progress}%`);
+          persistUploadProgress(progress);
         } else {
           const errText = await chunkRes.text();
           throw new Error(`Error en la subida a YouTube (${chunkRes.status}): ${errText.substring(0, 200)}`);
@@ -597,7 +646,29 @@ export default function SubidorPage() {
         isLocal: true
       }));
 
-    return [...taskItems, ...videoItems].sort((a, b) => {
+    const mergedByYoutubeId = new Map();
+    [...taskItems, ...videoItems].forEach(item => {
+      const key = item.youtubeId || item.id;
+      const existing = mergedByYoutubeId.get(key);
+      if (!existing) {
+        mergedByYoutubeId.set(key, item);
+        return;
+      }
+
+      const itemDate = item.completedAt ? new Date(item.completedAt) : new Date(0);
+      const existingDate = existing.completedAt ? new Date(existing.completedAt) : new Date(0);
+      mergedByYoutubeId.set(key, {
+        ...existing,
+        ...item,
+        title: item.title || existing.title,
+        youtubeId: item.youtubeId || existing.youtubeId,
+        completedAt: itemDate >= existingDate ? item.completedAt : existing.completedAt,
+        privacyStatus: item.privacyStatus || existing.privacyStatus,
+        isLocal: existing.isLocal && item.isLocal
+      });
+    });
+
+    return Array.from(mergedByYoutubeId.values()).sort((a, b) => {
       const dateA = a.completedAt ? new Date(a.completedAt) : new Date(0);
       const dateB = b.completedAt ? new Date(b.completedAt) : new Date(0);
       return dateB - dateA;
@@ -1231,19 +1302,21 @@ export default function SubidorPage() {
                       }}>
                         {update.status === "UPLOADING" ? `Subiendo… ${update.uploadProgress || 0}%` : "Programado"}
                       </span>
-                      <button
-                        type="button"
-                        title="Cancelar"
-                        onClick={async () => {
-                          if (!confirm(`¿Cancelar la publicación de "${update.title || update.youtubeId}"?`)) return;
-                          try {
-                            const res = await fetch(`/api/videos?id=${update.id}`, { method: "DELETE" });
-                            if (res.ok) { fetchScheduledUpdates(); fetchTasks(); }
-                            else alert("Error al cancelar.");
-                          } catch (err) { console.error(err); }
-                        }}
-                        style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", color: "#ef4444", borderRadius: "50%", width: "22px", height: "22px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: "0.7rem", fontWeight: "bold" }}
-                      >✕</button>
+                      {update.status !== "UPLOADING" && (
+                        <button
+                          type="button"
+                          title="Cancelar"
+                          onClick={async () => {
+                            if (!confirm(`¿Cancelar la publicación de "${update.title || update.youtubeId}"?`)) return;
+                            try {
+                              const res = await fetch(`/api/videos?id=${update.id}`, { method: "DELETE" });
+                              if (res.ok) { fetchScheduledUpdates(); fetchTasks(); }
+                              else alert("Error al cancelar.");
+                            } catch (err) { console.error(err); }
+                          }}
+                          style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", color: "#ef4444", borderRadius: "50%", width: "22px", height: "22px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: "0.7rem", fontWeight: "bold" }}
+                        >✕</button>
+                      )}
                     </div>
                   </div>
                   <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "0.4rem", display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
