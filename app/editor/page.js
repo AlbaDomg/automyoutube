@@ -365,6 +365,7 @@ export default function Dashboard() {
           ctx.drawImage(hiddenVideoRef.current, 0, 0, canvas.width, canvas.height);
           const base64 = canvas.toDataURL("image/jpeg", 0.85);
           setLocalExtractedFrame(base64);
+          setCustomBgBase64(base64);
           setSimpleUploadStatus("Portada del vídeo capturada correctamente.");
         }
       } catch (err) {
@@ -2551,6 +2552,7 @@ export default function Dashboard() {
             tags: updateForm.tags,
             playlistId: updateForm.playlistId || null,
             thumbnailBase64: newThumbnailBase64 || null,
+            rawFrameBase64: (customBgBase64 && customBgBase64.startsWith("data:")) ? customBgBase64 : undefined,
             scheduledAt: updateForm.isScheduled ? toUTCISOString(updateForm.scheduledAt) : null,
             status: updateForm.isScheduled ? 'SCHEDULED' : 'UPLOADING'
           })
@@ -2757,6 +2759,7 @@ export default function Dashboard() {
               tags: updateForm.tags,
               playlistId: updateForm.playlistId || null,
               thumbnailBase64: newThumbnailBase64 || null,
+              rawFrameBase64: (customBgBase64 && customBgBase64.startsWith("data:")) ? customBgBase64 : undefined,
               status: newStatus,
               privacyStatus: privacyStatus || 'private', // ← guardar estado real
               scheduledAt: isScheduled ? toUTCISOString(updateForm.scheduledAt) : null
@@ -4058,7 +4061,7 @@ export default function Dashboard() {
                           )}
                         </div>
 
-                        {videoDuration > 0 && (
+                        {videoDuration > 0 ? (
                           <div className={styles.inputGroup} style={{ margin: 0 }}>
                             <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "var(--text-muted)" }}>
                               <span>Ajustar fotograma del vídeo (segundo):</span>
@@ -4076,6 +4079,44 @@ export default function Dashboard() {
                                 accentColor: "#a855f7",
                                 cursor: "pointer",
                                 marginTop: "0.25rem"
+                              }}
+                            />
+                          </div>
+                        ) : (
+                          <div className={styles.inputGroup} style={{ margin: 0 }}>
+                            <label style={{ fontSize: "0.75rem", display: "flex", justifyContent: "space-between", color: "var(--text-muted)", marginBottom: "0.25rem" }}>
+                              <span>📁 Cargar vídeo local para ajustar fotograma:</span>
+                            </label>
+                            <input
+                              type="file"
+                              accept="video/*"
+                              onChange={(e) => {
+                                const file = e.target.files[0];
+                                if (file) {
+                                  try {
+                                    if (videoObjectURL) {
+                                      URL.revokeObjectURL(videoObjectURL);
+                                    }
+                                    const url = URL.createObjectURL(file);
+                                    setVideoObjectURL(url);
+                                    if (hiddenVideoRef.current) {
+                                      hiddenVideoRef.current.src = url;
+                                      hiddenVideoRef.current.load();
+                                    }
+                                  } catch (err) {
+                                    console.error("Error al cargar vídeo local:", err);
+                                  }
+                                }
+                              }}
+                              style={{
+                                width: "100%",
+                                fontSize: "0.75rem",
+                                padding: "4px",
+                                color: "var(--text-secondary)",
+                                background: "rgba(255, 255, 255, 0.05)",
+                                border: "1px dashed var(--border-color, rgba(255, 255, 255, 0.15))",
+                                borderRadius: "6px",
+                                cursor: "pointer"
                               }}
                             />
                           </div>
@@ -5158,7 +5199,15 @@ export default function Dashboard() {
       {/* Elemento de vídeo oculto para extracción de miniaturas */}
       <video
         ref={hiddenVideoRef}
-        style={{ display: "none" }}
+        style={{
+          position: "absolute",
+          top: "-9999px",
+          left: "-9999px",
+          width: "160px",
+          height: "90px",
+          opacity: 0,
+          pointerEvents: "none"
+        }}
         preload="auto"
         muted
         playsInline

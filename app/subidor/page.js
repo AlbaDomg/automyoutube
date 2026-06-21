@@ -1493,7 +1493,15 @@ export default function SubidorPage() {
       {/* Elemento de vídeo oculto para extracción de miniaturas */}
       <video
         ref={hiddenVideoRef}
-        style={{ display: "none" }}
+        style={{
+          position: "absolute",
+          top: "-9999px",
+          left: "-9999px",
+          width: "160px",
+          height: "90px",
+          opacity: 0,
+          pointerEvents: "none"
+        }}
         preload="auto"
         muted
         playsInline
