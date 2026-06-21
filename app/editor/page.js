@@ -3679,7 +3679,7 @@ export default function Dashboard() {
                           </div>
                           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
                             <span style={{ fontSize: "0.68rem", fontWeight: "700", color: "#f59e0b", background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", padding: "2px 9px", borderRadius: "6px", whiteSpace: "nowrap" }}>
-                              Privado
+                              Borrador
                             </span>
                             <button
                               type="button"
