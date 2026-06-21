@@ -3799,16 +3799,30 @@ export default function Dashboard() {
                             </span>
                           </div>
                         </div>
-                        <button
-                          onClick={() => {
-                            handleSelectVideo(video);
-                            setSearchResults([]);
-                          }}
-                          className={styles.btnSubmit}
-                          style={{ width: "auto", fontSize: "0.75rem", padding: "0.3rem 0.6rem" }}
-                        >
-                          Editar
-                        </button>
+                        {(() => {
+                          const dbVid = dbVideos.find(v => v.youtubeId === video.id);
+                          const isUploading = dbVid?.status === "UPLOADING" || video.status === "UPLOADING";
+                          return (
+                            <button
+                              onClick={() => {
+                                if (isUploading) return;
+                                handleSelectVideo(video);
+                                setSearchResults([]);
+                              }}
+                              disabled={isUploading}
+                              className={styles.btnSubmit}
+                              style={{
+                                width: "auto",
+                                fontSize: "0.75rem",
+                                padding: "0.3rem 0.6rem",
+                                background: isUploading ? "#4b5563" : undefined,
+                                cursor: isUploading ? "not-allowed" : "pointer"
+                              }}
+                            >
+                              {isUploading ? "Subiendo..." : "Editar"}
+                            </button>
+                          );
+                        })()}
                       </div>
                     ))}
                   </div>
@@ -3856,14 +3870,31 @@ export default function Dashboard() {
                             <span style={{ fontSize: "0.68rem", fontWeight: "700", color: "#f59e0b", background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", padding: "2px 9px", borderRadius: "6px", whiteSpace: "nowrap" }}>
                               Borrador
                             </span>
-                            <button
-                              type="button"
-                              onClick={() => handleSelectVideo(video)}
-                              className={styles.btnSubmit}
-                              style={{ width: "auto", fontSize: "0.72rem", padding: "0.35rem 0.8rem" }}
-                            >
-                              Editar
-                            </button>
+                            {(() => {
+                              const ytId = video.id?.videoId || video.id;
+                              const dbVid = dbVideos.find(v => v.youtubeId === ytId);
+                              const isUploading = dbVid?.status === "UPLOADING" || video.status === "UPLOADING";
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (isUploading) return;
+                                    handleSelectVideo(video);
+                                  }}
+                                  disabled={isUploading}
+                                  className={styles.btnSubmit}
+                                  style={{
+                                    width: "auto",
+                                    fontSize: "0.72rem",
+                                    padding: "0.35rem 0.8rem",
+                                    background: isUploading ? "#4b5563" : undefined,
+                                    cursor: isUploading ? "not-allowed" : "pointer"
+                                  }}
+                                >
+                                  {isUploading ? "Subiendo..." : "Editar"}
+                                </button>
+                              );
+                            })()}
                             <button
                               type="button"
                               onClick={async () => {
