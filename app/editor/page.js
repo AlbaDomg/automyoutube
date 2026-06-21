@@ -3549,7 +3549,7 @@ export default function Dashboard() {
               <div className={styles.card}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
                   <div>
-                    <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.08em", color: "#f59e0b", marginBottom: "0.2rem" }}>Cola 1 · Subidor (solo lectura)</div>
+                    <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.08em", color: "#f59e0b", marginBottom: "0.2rem" }}>Subidor (solo lectura)</div>
                     <h3 style={{ fontSize: "1rem", fontWeight: "700", color: "#f8fafc", margin: 0 }}>Borradores · Pendientes de edición</h3>
                     <p style={{ fontSize: "0.71rem", color: "var(--text-muted)", margin: "0.15rem 0 0 0" }}>Vídeos subidos por el subidor como borrador privado en YouTube, esperando tu edición.</p>
                   </div>
@@ -3677,7 +3677,7 @@ export default function Dashboard() {
               <div className={styles.card}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
                   <div>
-                    <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.08em", color: "#f59e0b", marginBottom: "0.2rem" }}>Cola 1 · Editor</div>
+                    <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.08em", color: "#f59e0b", marginBottom: "0.2rem" }}>Editor</div>
                     <h3 style={{ fontSize: "1rem", fontWeight: "700", color: "#f8fafc", margin: 0 }}>Borradores · Pendientes de edición</h3>
                     <p style={{ fontSize: "0.71rem", color: "var(--text-muted)", margin: "0.15rem 0 0 0" }}>Borradores privados y vídeos ocultos en YouTube esperando que los completes y publiques.</p>
                   </div>
@@ -4568,7 +4568,7 @@ export default function Dashboard() {
             <div className={styles.card} style={{ marginTop: "1.5rem" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.1rem" }}>
                 <div>
-                  <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.08em", color: "#34d399", marginBottom: "0.25rem" }}>Cola 3 · Editor</div>
+                  <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.08em", color: "#34d399", marginBottom: "0.25rem" }}>Editor</div>
                   <h3 style={{ fontSize: "1rem", fontWeight: "700", color: "#f8fafc", margin: 0 }}>Historial de publicaciones</h3>
                   <p style={{ fontSize: "0.72rem", color: "var(--text-muted)", margin: "0.2rem 0 0 0" }}>Vídeos completados y publicados en YouTube.</p>
                 </div>

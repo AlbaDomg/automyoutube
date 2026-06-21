@@ -1141,7 +1141,7 @@ export default function SubidorPage() {
         <div className={styles.card} style={{ marginTop: "1.5rem" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.1rem" }}>
             <div>
-              <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.08em", color: "#f59e0b", marginBottom: "0.25rem" }}>Cola 1 · Subidor</div>
+              <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.08em", color: "#f59e0b", marginBottom: "0.25rem" }}>Subidor</div>
               <h3 style={{ fontSize: "1rem", fontWeight: "700", color: "#f8fafc", margin: 0 }}>Borradores · Pendientes de edición</h3>
               <p style={{ fontSize: "0.72rem", color: "var(--text-muted)", margin: "0.2rem 0 0 0" }}>Vídeos subidos a YouTube como borrador privado. El editor debe completarlos y publicarlos.</p>
             </div>
@@ -1200,7 +1200,7 @@ export default function SubidorPage() {
           <div className={styles.card} style={{ marginTop: "1.5rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.1rem" }}>
               <div>
-                <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.08em", color: "#38bdf8", marginBottom: "0.25rem" }}>Cola 2 · Subidor</div>
+                <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.08em", color: "#38bdf8", marginBottom: "0.25rem" }}>Subidor</div>
                 <h3 style={{ fontSize: "1rem", fontWeight: "700", color: "#f8fafc", margin: 0 }}>En proceso de publicación</h3>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
@@ -1272,7 +1272,7 @@ export default function SubidorPage() {
         <div className={styles.card} style={{ marginTop: "1.5rem" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.1rem" }}>
             <div>
-              <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.08em", color: "#34d399", marginBottom: "0.25rem" }}>Cola 3 · Subidor</div>
+              <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.08em", color: "#34d399", marginBottom: "0.25rem" }}>Subidor</div>
               <h3 style={{ fontSize: "1rem", fontWeight: "700", color: "#f8fafc", margin: 0 }}>Historial de publicaciones</h3>
               <p style={{ fontSize: "0.72rem", color: "var(--text-muted)", margin: "0.2rem 0 0 0" }}>Vídeos completados y publicados en YouTube.</p>
             </div>
