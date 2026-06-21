@@ -558,26 +558,44 @@ export default function SubidorPage() {
 
 
 
+  // Filtrar los borradores de YouTube para mostrar solo los que realmente están pendientes
+  const pendingPrivateVideos = useMemo(() => {
+    const completedOrScheduledIds = new Set([
+      ...completedLocalVideos.map(v => v.youtubeId),
+      ...scheduledUpdates.map(v => v.youtubeId),
+      ...tasks.filter(t => t.status === "COMPLETED" || t.status === "SCHEDULED").map(t => t.youtubeId)
+    ].filter(Boolean));
+
+    return privateVideos.filter(video => {
+      const ytId = video.id?.videoId || video.id;
+      return !completedOrScheduledIds.has(ytId);
+    });
+  }, [privateVideos, completedLocalVideos, scheduledUpdates, tasks]);
+
   // Unir historial: tareas completadas del editor + vídeos subidos directamente a YouTube por el subidor
   const mergedCompletedItems = useMemo(() => {
-    const taskItems = tasks.filter(t => t.status === "COMPLETED").map(t => ({
-      id: t.id,
-      title: t.title,
-      youtubeId: t.youtubeId,
-      completedAt: t.completedAt,
-      privacyStatus: t.privacyStatus || null,
-      isLocal: false
-    }));
+    const taskItems = tasks
+      .filter(t => t.status === "COMPLETED")
+      .map(t => ({
+        id: t.id,
+        title: t.title,
+        youtubeId: t.youtubeId,
+        completedAt: t.completedAt,
+        privacyStatus: t.privacyStatus || null,
+        isLocal: false
+      }));
 
     // Vídeos subidos a YouTube directamente por el subidor (COMPLETED con youtubeId)
-    const videoItems = completedLocalVideos.map(v => ({
-      id: v.id,
-      title: v.title,
-      youtubeId: v.youtubeId,
-      completedAt: v.updatedAt,
-      privacyStatus: v.privacyStatus || null,
-      isLocal: true
-    }));
+    const videoItems = completedLocalVideos
+      .filter(v => v.youtubeId)
+      .map(v => ({
+        id: v.id,
+        title: v.title,
+        youtubeId: v.youtubeId,
+        completedAt: v.updatedAt,
+        privacyStatus: v.privacyStatus || null,
+        isLocal: true
+      }));
 
     return [...taskItems, ...videoItems].sort((a, b) => {
       const dateA = a.completedAt ? new Date(a.completedAt) : new Date(0);
@@ -1130,17 +1148,17 @@ export default function SubidorPage() {
               <p style={{ fontSize: "0.72rem", color: "var(--text-muted)", margin: "0.2rem 0 0 0" }}>Vídeos subidos a YouTube como borrador privado. El editor debe completarlos y publicarlos.</p>
             </div>
             <span style={{ fontSize: "0.72rem", fontWeight: "700", color: "#f59e0b", background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", padding: "3px 12px", borderRadius: "20px", whiteSpace: "nowrap", flexShrink: 0 }}>
-              {privateVideos.length} borrador{privateVideos.length !== 1 ? "es" : ""}
+              {pendingPrivateVideos.length} borrador{pendingPrivateVideos.length !== 1 ? "es" : ""}
             </span>
           </div>
 
-          {privateVideos.length === 0 ? (
+          {pendingPrivateVideos.length === 0 ? (
             <div className={styles.emptyState}>
               No hay borradores pendientes. Los vídeos subidos por el subidor aparecerán aquí.
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", maxHeight: "320px", overflowY: "auto", paddingRight: "0.25rem" }}>
-              {privateVideos.map(video => {
+              {pendingPrivateVideos.map(video => {
                 const videoTitle = video.snippet?.title || video.title || "Sin título";
                 const publishedAt = video.snippet?.publishedAt || video.createdAt;
                 const ytId = video.id?.videoId || video.id;

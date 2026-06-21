@@ -1536,6 +1536,20 @@ export default function Dashboard() {
       console.warn("No se pudo buscar el video en la base de datos local:", err.message);
     }
 
+    // Actualizar el estado en BD a EDITING para informar a otros usuarios
+    if (dbVideo && dbVideo.status === "LOCAL_DRAFT") {
+      try {
+        await fetch(`/api/videos?id=${dbVideo.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "EDITING" })
+        });
+        fetchScheduledUpdates();
+      } catch (err) {
+        console.error("Error setting video status to EDITING:", err);
+      }
+    }
+
     const combinedVideo = {
       ...video,
       rawFrameBase64: dbVideo?.rawFrameBase64 || null,
@@ -2646,12 +2660,13 @@ export default function Dashboard() {
 
         const responseData = await res.json();
 
-        // Si viene de la cola local de pendientes (tiene youtubeId además del ID de la base de datos)
-        if (selectedYoutubeVideo.youtubeId) {
+        // Si viene de la cola local de pendientes o está registrado en la base de datos local
+        if (selectedYoutubeVideo.youtubeId || selectedYoutubeVideo.dbId) {
           const isScheduled = updateForm.isScheduled;
           const newStatus = isScheduled ? 'SCHEDULED' : 'COMPLETED';
+          const videoDbId = selectedYoutubeVideo.dbId || selectedYoutubeVideo.id;
 
-          const dbRes = await fetch(`/api/videos?id=${selectedYoutubeVideo.id}`, {
+          const dbRes = await fetch(`/api/videos?id=${videoDbId}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -2799,24 +2814,42 @@ export default function Dashboard() {
     return [...dbPending, ...filteredLocal];
   }, [tasks, parsedVideos, scheduledUpdates]);
 
-  const mergedCompletedItems = useMemo(() => {
-    const taskItems = tasks.filter(t => t.status === "COMPLETED").map(t => ({
-      id: t.id,
-      title: t.title,
-      youtubeId: t.youtubeId,
-      completedAt: t.completedAt,
-      privacyStatus: t.privacyStatus || null,
-      isLocal: false
-    }));
+  // Filtrar los borradores de YouTube para mostrar solo los que realmente están pendientes
+  const pendingPrivateVideos = useMemo(() => {
+    const completedOrScheduledIds = new Set([
+      ...completedLocalVideos.map(v => v.youtubeId),
+      ...scheduledUpdates.map(v => v.youtubeId),
+      ...tasks.filter(t => t.status === "COMPLETED" || t.status === "SCHEDULED").map(t => t.youtubeId)
+    ].filter(Boolean));
 
-    const localItems = completedLocalVideos.map(v => ({
-      id: v.id,
-      title: v.title,
-      youtubeId: v.youtubeId,
-      completedAt: v.updatedAt,
-      privacyStatus: v.privacyStatus || null,
-      isLocal: true
-    }));
+    return privateVideos.filter(video => {
+      const ytId = video.id?.videoId || video.id;
+      return !completedOrScheduledIds.has(ytId);
+    });
+  }, [privateVideos, completedLocalVideos, scheduledUpdates, tasks]);
+
+  const mergedCompletedItems = useMemo(() => {
+    const taskItems = tasks
+      .filter(t => t.status === "COMPLETED")
+      .map(t => ({
+        id: t.id,
+        title: t.title,
+        youtubeId: t.youtubeId,
+        completedAt: t.completedAt,
+        privacyStatus: t.privacyStatus || null,
+        isLocal: false
+      }));
+
+    const localItems = completedLocalVideos
+      .filter(v => v.youtubeId)
+      .map(v => ({
+        id: v.id,
+        title: v.title,
+        youtubeId: v.youtubeId,
+        completedAt: v.updatedAt,
+        privacyStatus: v.privacyStatus || null,
+        isLocal: true
+      }));
 
     return [...taskItems, ...localItems].sort((a, b) => {
       const dateA = a.completedAt ? new Date(a.completedAt) : new Date(0);
@@ -3521,14 +3554,14 @@ export default function Dashboard() {
                     <p style={{ fontSize: "0.71rem", color: "var(--text-muted)", margin: "0.15rem 0 0 0" }}>Vídeos subidos por el subidor como borrador privado en YouTube, esperando tu edición.</p>
                   </div>
                   <span style={{ fontSize: "0.72rem", fontWeight: "700", color: "#f59e0b", background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", padding: "3px 12px", borderRadius: "20px", whiteSpace: "nowrap", flexShrink: 0 }}>
-                    {privateVideos.length} borrador{privateVideos.length !== 1 ? "es" : ""}
+                    {pendingPrivateVideos.length} borrador{pendingPrivateVideos.length !== 1 ? "es" : ""}
                   </span>
                 </div>
-                {privateVideos.length === 0 ? (
+                {pendingPrivateVideos.length === 0 ? (
                   <div className={styles.emptyState}>No hay borradores pendientes de edición del subidor.</div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", maxHeight: "320px", overflowY: "auto", paddingRight: "0.25rem" }}>
-                    {privateVideos.map(video => {
+                    {pendingPrivateVideos.map(video => {
                       const vTitle = video.snippet?.title || video.title || "Sin título";
                       const vDate = video.snippet?.publishedAt || video.createdAt;
                       const vId = video.id?.videoId || video.id;
@@ -3649,14 +3682,14 @@ export default function Dashboard() {
                     <p style={{ fontSize: "0.71rem", color: "var(--text-muted)", margin: "0.15rem 0 0 0" }}>Borradores privados y vídeos ocultos en YouTube esperando que los completes y publiques.</p>
                   </div>
                   <span style={{ fontSize: "0.72rem", fontWeight: "700", color: "#f59e0b", background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", padding: "3px 12px", borderRadius: "20px", whiteSpace: "nowrap", flexShrink: 0 }}>
-                    {privateVideos.length} borrador{privateVideos.length !== 1 ? "es" : ""}
+                    {pendingPrivateVideos.length} borrador{pendingPrivateVideos.length !== 1 ? "es" : ""}
                   </span>
                 </div>
-                {privateVideos.length === 0 ? (
+                {pendingPrivateVideos.length === 0 ? (
                   <div className={styles.emptyState}>No hay borradores pendientes. Cuando el subidor suba un vídeo aparecerá aquí.</div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", maxHeight: "350px", overflowY: "auto", paddingRight: "0.25rem" }}>
-                    {privateVideos.map(video => {
+                    {pendingPrivateVideos.map(video => {
                       const vTitle = video.snippet?.title || video.title || "Sin título";
                       const vDate = video.snippet?.publishedAt || video.createdAt;
                       const vId = video.id?.videoId || video.id;
@@ -4332,7 +4365,7 @@ export default function Dashboard() {
                             e.currentTarget.style.boxShadow = "0 4px 15px rgba(59, 130, 246, 0.25)";
                           }}
                         >
-                          {updatingYoutubeVideo ? "Programando..." : "⏰ Programar Privado"}
+                          {updatingYoutubeVideo ? "Programando..." : "⏰ Programar Borrador"}
                         </button>
                       </>
                     ) : (
@@ -4399,7 +4432,7 @@ export default function Dashboard() {
                             e.currentTarget.style.boxShadow = "0 4px 15px rgba(59, 130, 246, 0.25)";
                           }}
                         >
-                          {updatingYoutubeVideo ? "Publicando..." : "🔒 Privado"}
+                          {updatingYoutubeVideo ? "Publicando..." : "🔒 Borrador"}
                         </button>
                       </>
                     )}
