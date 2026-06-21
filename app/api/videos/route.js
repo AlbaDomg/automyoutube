@@ -187,39 +187,102 @@ export async function DELETE(request) {
       return NextResponse.json({ error: 'Missing videoId parameter' }, { status: 400 });
     }
 
-    const video = await prisma.video.findUnique({
+    // Buscar si existe en la base de datos por ID (UUID)
+    let video = await prisma.video.findUnique({
       where: { id: videoId }
     });
 
-    if (!video || (video.channelId && video.channelId !== channel.id)) {
-      return NextResponse.json({ error: 'Video not found' }, { status: 404 });
-    }
+    let ytId = null;
 
-    // Delete local video file if it exists
-    if (video.filePath && fs.existsSync(video.filePath)) {
-      try {
-        fs.unlinkSync(video.filePath);
-        console.log(`[API Video Delete] Deleted file from disk: ${video.filePath}`);
-      } catch (fileError) {
-        console.warn(`[API Video Delete] Failed to delete file: ${video.filePath}`, fileError);
+    if (video) {
+      ytId = video.youtubeId;
+    } else {
+      // Intentar buscar por youtubeId si el videoId recibido es el de YouTube
+      const videosByYt = await prisma.video.findMany({
+        where: { youtubeId: videoId }
+      });
+      if (videosByYt.length > 0) {
+        video = videosByYt[0];
+        ytId = video.youtubeId;
+      } else {
+        // Si no está en la BD local, asumir que videoId es el youtubeId directo
+        ytId = videoId;
       }
     }
 
-    // Delete local thumbnail if it exists
-    const thumbnailPath = path.join(process.cwd(), 'uploads', `${videoId}-thumbnail.jpg`);
-    if (fs.existsSync(thumbnailPath)) {
-      try {
-        fs.unlinkSync(thumbnailPath);
-        console.log(`[API Video Delete] Deleted thumbnail from disk: ${thumbnailPath}`);
-      } catch (thumbError) {
-        console.warn(`[API Video Delete] Failed to delete thumbnail: ${thumbnailPath}`, thumbError);
+    // Si encontramos el registro en la base de datos, validar canal y eliminarlo junto con sus archivos
+    if (video) {
+      if (video.channelId && video.channelId !== channel.id) {
+        return NextResponse.json({ error: 'Forbidden: Video belongs to another channel' }, { status: 403 });
       }
+
+      // Eliminar archivo de vídeo si existe localmente
+      if (video.filePath && fs.existsSync(video.filePath)) {
+        try {
+          fs.unlinkSync(video.filePath);
+          console.log(`[API Video Delete] Deleted file from disk: ${video.filePath}`);
+        } catch (fileError) {
+          console.warn(`[API Video Delete] Failed to delete file: ${video.filePath}`, fileError);
+        }
+      }
+
+      // Eliminar miniatura local si existe
+      const thumbnailPath = path.join(process.cwd(), 'uploads', `${video.id}-thumbnail.jpg`);
+      if (fs.existsSync(thumbnailPath)) {
+        try {
+          fs.unlinkSync(thumbnailPath);
+          console.log(`[API Video Delete] Deleted thumbnail from disk: ${thumbnailPath}`);
+        } catch (thumbError) {
+          console.warn(`[API Video Delete] Failed to delete thumbnail: ${thumbnailPath}`, thumbError);
+        }
+      }
+
+      // Eliminar de la base de datos
+      await prisma.video.delete({
+        where: { id: video.id }
+      });
     }
 
-    // Delete database record
-    await prisma.video.delete({
-      where: { id: videoId }
-    });
+    // Intentar borrar también del canal de YouTube si el cliente tiene credenciales activas y disponemos de ytId
+    if (ytId && ytId.length === 11) {
+      try {
+        const oauth2Client = await getOAuth2Client();
+        oauth2Client.setCredentials({
+          access_token: channel.accessToken,
+          refresh_token: channel.refreshToken,
+          expiry_date: channel.tokenExpiry.getTime()
+        });
+
+        // Refrescar token si queda menos de 5 minutos
+        if (channel.tokenExpiry.getTime() - Date.now() < 300 * 1000) {
+          const { credentials } = await oauth2Client.refreshAccessToken();
+          await prisma.channel.update({
+            where: { dbId: channel.dbId },
+            data: {
+              accessToken: credentials.access_token,
+              tokenExpiry: new Date(credentials.expiry_date)
+            }
+          });
+          oauth2Client.setCredentials({
+            access_token: credentials.access_token,
+            tokenExpiry: new Date(credentials.expiry_date)
+          });
+        }
+
+        const youtube = google.youtube({
+          version: 'v3',
+          auth: oauth2Client
+        });
+
+        console.log(`[API Video Delete] Deleting video ${ytId} from YouTube...`);
+        await youtube.videos.delete({
+          id: ytId
+        });
+        console.log('[API Video Delete] Deleted video from YouTube successfully!');
+      } catch (ytErr) {
+        console.warn('[API Video Delete] Failed to delete video from YouTube (might be already deleted):', ytErr.message);
+      }
+    }
 
     return NextResponse.json({ success: true, message: 'Video deleted successfully' });
   } catch (error) {
