@@ -145,7 +145,7 @@ export default function SubidorPage() {
           if (err === "unauthorized_email") {
             setAuthError(`O correo ${emailParam || ""} non está na lista de autorizados.`);
           } else {
-            setAuthError("Erro ao iniciar sesión con Google.");
+            setAuthError("Error al iniciar sesión con Google.");
           }
           window.history.replaceState({}, document.title, window.location.pathname);
         } else if (urlParams.has("login")) {
@@ -461,7 +461,7 @@ export default function SubidorPage() {
       });
 
       setSimpleUploadStatus("¡Vídeo subido a YouTube correctamente!");
-      alert("Vídeo subido a YouTube como privado. El editor puede procesarlo y publicarlo.");
+      alert("Vídeo subido a YouTube como borrador. El editor puede procesarlo y publicarlo.");
 
       // Limpiar formulario
       setSimpleVideoFile(null);

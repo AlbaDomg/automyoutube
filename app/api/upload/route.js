@@ -231,7 +231,8 @@ async function handleCompleteUpload(request) {
     where: { id: videoId },
     data: {
       youtubeId: youtubeId,
-      status: 'COMPLETED',
+      status: 'LOCAL_DRAFT',
+      privacyStatus: 'private',
       uploadProgress: 100
     }
   });
