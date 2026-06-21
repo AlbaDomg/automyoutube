@@ -4365,7 +4365,7 @@ export default function Dashboard() {
                             e.currentTarget.style.boxShadow = "0 4px 15px rgba(59, 130, 246, 0.25)";
                           }}
                         >
-                          {updatingYoutubeVideo ? "Programando..." : "⏰ Programar Borrador"}
+                          {updatingYoutubeVideo ? "Programando..." : "⏰ Programar Privado"}
                         </button>
                       </>
                     ) : (
@@ -4432,7 +4432,7 @@ export default function Dashboard() {
                             e.currentTarget.style.boxShadow = "0 4px 15px rgba(59, 130, 246, 0.25)";
                           }}
                         >
-                          {updatingYoutubeVideo ? "Publicando..." : "🔒 Borrador"}
+                          {updatingYoutubeVideo ? "Publicando..." : "🔒 Privado"}
                         </button>
                       </>
                     )}
