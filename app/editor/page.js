@@ -234,6 +234,7 @@ export default function Dashboard() {
   const [isOptimizingSimpleDesc, setIsOptimizingSimpleDesc] = useState(false);
   const [localVideosQueue, setLocalVideosQueue] = useState([]);
   const [completedLocalVideos, setCompletedLocalVideos] = useState([]);
+  const [dbVideos, setDbVideos] = useState([]);
 
   // Estado del canal
   const [channel, setChannel] = useState({ connected: false, channel: null });
@@ -1400,6 +1401,7 @@ export default function Dashboard() {
       const res = await fetch("/api/videos", { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
+        setDbVideos(data);
         const activeMap = new Map();
         data
           .filter(v => v.status === "SCHEDULED" || v.status === "UPLOADING")
@@ -1434,6 +1436,7 @@ export default function Dashboard() {
               const res2 = await fetch("/api/videos", { cache: "no-store" });
               if (res2.ok) {
                 const data2 = await res2.json();
+                setDbVideos(data2);
                 setScheduledUpdates(data2.filter(v => v.status === "SCHEDULED" || v.status === "UPLOADING"));
               }
               await fetchTasks(true);
@@ -2893,6 +2896,25 @@ export default function Dashboard() {
     return [...dbPending, ...filteredLocal];
   }, [tasks, parsedVideos, scheduledUpdates]);
 
+  // Obtener borradores locales desde la base de datos
+  const localDrafts = useMemo(() => {
+    return dbVideos
+      .filter(v => (v.status === "LOCAL_DRAFT" || v.status === "EDITING") && v.youtubeId)
+      .map(v => ({
+        id: v.youtubeId,
+        dbId: v.id,
+        title: v.title,
+        description: v.description,
+        thumbnail: v.thumbnailBase64 || v.rawFrameBase64 || '',
+        publishedAt: v.createdAt,
+        tags: v.tags || '',
+        privacyStatus: v.privacyStatus || 'private',
+        fileName: v.filename || '',
+        isLocalDraft: true,
+        createdAt: v.createdAt
+      }));
+  }, [dbVideos]);
+
   // Filtrar los borradores de YouTube para mostrar solo los que realmente están pendientes
   const pendingPrivateVideos = useMemo(() => {
     const completedOrScheduledIds = new Set([
@@ -2901,11 +2923,24 @@ export default function Dashboard() {
       ...tasks.filter(t => t.status === "COMPLETED" || t.status === "SCHEDULED").map(t => t.youtubeId)
     ].filter(Boolean));
 
-    return privateVideos.filter(video => {
-      const ytId = video.id?.videoId || video.id;
-      return !completedOrScheduledIds.has(ytId);
+    const mergedList = [...privateVideos];
+    localDrafts.forEach(ld => {
+      if (!mergedList.some(v => (v.id?.videoId || v.id) === ld.id)) {
+        mergedList.push(ld);
+      }
     });
-  }, [privateVideos, completedLocalVideos, scheduledUpdates, tasks]);
+
+    return mergedList
+      .filter(video => {
+        const ytId = video.id?.videoId || video.id;
+        return !completedOrScheduledIds.has(ytId);
+      })
+      .sort((a, b) => {
+        const dateA = new Date(a.publishedAt || a.createdAt || 0);
+        const dateB = new Date(b.publishedAt || b.createdAt || 0);
+        return dateB - dateA;
+      });
+  }, [privateVideos, localDrafts, completedLocalVideos, scheduledUpdates, tasks]);
 
   const mergedCompletedItems = useMemo(() => {
     const taskItems = tasks
@@ -2916,7 +2951,8 @@ export default function Dashboard() {
         youtubeId: t.youtubeId,
         completedAt: t.completedAt,
         privacyStatus: t.privacyStatus || null,
-        isLocal: false
+        taskId: t.id,
+        videoId: null
       }));
 
     const localItems = completedLocalVideos
@@ -2927,7 +2963,8 @@ export default function Dashboard() {
         youtubeId: v.youtubeId,
         completedAt: v.updatedAt,
         privacyStatus: v.privacyStatus || null,
-        isLocal: true
+        taskId: null,
+        videoId: v.id
       }));
 
     const mergedByYoutubeId = new Map();
@@ -2948,7 +2985,8 @@ export default function Dashboard() {
         youtubeId: item.youtubeId || existing.youtubeId,
         completedAt: itemDate >= existingDate ? item.completedAt : existing.completedAt,
         privacyStatus: item.privacyStatus || existing.privacyStatus,
-        isLocal: existing.isLocal && item.isLocal
+        taskId: existing.taskId || item.taskId,
+        videoId: existing.videoId || item.videoId
       });
     });
 
@@ -3749,12 +3787,12 @@ export default function Dashboard() {
                             </div>
                             <span style={{
                               fontSize: "0.7rem",
-                              color: video.privacyStatus === 'private' ? "#ef4444" : "#f59e0b",
-                              background: video.privacyStatus === 'private' ? "rgba(239, 68, 68, 0.15)" : "rgba(245, 158, 11, 0.15)",
+                              color: video.privacyStatus === 'private' ? "#f59e0b" : "#38bdf8",
+                              background: video.privacyStatus === 'private' ? "rgba(245, 158, 11, 0.15)" : "rgba(56, 189, 248, 0.15)",
                               padding: "1px 6px",
                               borderRadius: "10px"
                             }}>
-                              {video.privacyStatus === 'private' ? "Privado" : "Oculto"}
+                              {video.privacyStatus === 'private' ? "Borrador" : "Oculto"}
                             </span>
                           </div>
                         </div>
@@ -4585,12 +4623,15 @@ export default function Dashboard() {
                             ? `Subiendo... ${update.uploadProgress || 0}%`
                             : (update.status === "SCHEDULED" ? "Programada" : "Aplicando...")}
                         </span>
-                        {update.status !== "UPLOADING" && (
                           <button
                             type="button"
                             title="Cancelar programación"
                             onClick={async () => {
-                              if (!confirm(`¿Cancelar la sincronización programada de "${update.title || update.youtubeId}"?`)) return;
+                              const isUploading = update.status === "UPLOADING";
+                              const msg = isUploading 
+                                ? `⚠️ ¿Cancelar y eliminar esta subida activa de "${update.title || "video"}"? Si la subida está en curso en el navegador del subidor, se cancelará.`
+                                : `¿Cancelar la sincronización programada de "${update.title || update.youtubeId}"?`;
+                              if (!confirm(msg)) return;
                               try {
                                 const res = await fetch(`/api/videos?id=${update.id}`, { method: "DELETE" });
                                 if (res.ok) {
@@ -4621,7 +4662,6 @@ export default function Dashboard() {
                               flexShrink: 0
                             }}
                           >✕</button>
-                        )}
                       </div>
                     </div>
                     <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.4rem", display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
@@ -4765,20 +4805,26 @@ export default function Dashboard() {
                           type="button"
                           title="Eliminar del historial"
                           onClick={async () => {
+                            if (!confirm(`¿Eliminar "${item.title || "este vídeo"}" del historial?`)) return;
                             try {
-                              const deleteUrl = item.isLocal ? `/api/videos?id=${item.id}` : `/api/tasks?id=${item.id}`;
-                              const res = await fetch(deleteUrl, { method: 'DELETE' });
-                              if (res.ok) {
-                                if (item.isLocal) {
-                                  fetchScheduledUpdates();
-                                } else {
-                                  fetchTasks();
-                                }
+                              let success = true;
+                              if (item.taskId) {
+                                const res = await fetch(`/api/tasks?id=${item.taskId}`, { method: 'DELETE' });
+                                if (!res.ok) success = false;
+                              }
+                              if (item.videoId) {
+                                const res = await fetch(`/api/videos?id=${item.videoId}`, { method: 'DELETE' });
+                                if (!res.ok) success = false;
+                              }
+                              if (success) {
+                                fetchScheduledUpdates();
+                                fetchTasks();
                               } else {
-                                alert("Error al eliminar la tarea del historial local.");
+                                alert("Error al eliminar del historial.");
                               }
                             } catch (err) {
                               console.error(err);
+                              alert("Error de red al eliminar del historial.");
                             }
                           }}
                           className={styles.historyActionBtnDelete}
