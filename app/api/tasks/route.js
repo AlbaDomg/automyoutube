@@ -45,6 +45,74 @@ export async function GET(request) {
       where: { channelId: channel.id },
       orderBy: { createdAt: 'desc' }
     });
+
+    // Check if there are completed tasks that are missing privacyStatus
+    const missingPrivacyTasks = tasks.filter(t => t.status === 'COMPLETED' && !t.privacyStatus);
+    if (missingPrivacyTasks.length > 0) {
+      try {
+        const oauth2Client = await getOAuth2Client();
+        oauth2Client.setCredentials({
+          access_token: channel.accessToken,
+          refresh_token: channel.refreshToken,
+          expiry_date: channel.tokenExpiry.getTime()
+        });
+
+        if (channel.tokenExpiry.getTime() - Date.now() < 300 * 1000) {
+          const { credentials } = await oauth2Client.refreshAccessToken();
+          await prisma.channel.update({
+            where: { dbId: channel.dbId },
+            data: {
+              accessToken: credentials.access_token,
+              tokenExpiry: new Date(credentials.expiry_date)
+            }
+          });
+        }
+
+        const youtube = google.youtube({
+          version: 'v3',
+          auth: oauth2Client
+        });
+
+        // Batch query in chunks of 50
+        const chunkSize = 50;
+        const ytStatusMap = {};
+        for (let i = 0; i < missingPrivacyTasks.length; i += chunkSize) {
+          const chunk = missingPrivacyTasks.slice(i, i + chunkSize);
+          const ids = chunk.map(t => t.youtubeId).join(',');
+          const ytRes = await youtube.videos.list({
+            part: 'status',
+            id: ids
+          });
+          if (ytRes.data.items) {
+            for (const item of ytRes.data.items) {
+              ytStatusMap[item.id] = item.status?.privacyStatus;
+            }
+          }
+        }
+
+        // Update database and in-memory list
+        for (const task of missingPrivacyTasks) {
+          const livePrivacy = ytStatusMap[task.youtubeId];
+          if (livePrivacy) {
+            await prisma.videoTask.update({
+              where: { id: task.id },
+              data: { privacyStatus: livePrivacy }
+            });
+            task.privacyStatus = livePrivacy;
+          } else {
+            // If the video was not found on YouTube (e.g. deleted), we fallback to private
+            await prisma.videoTask.update({
+              where: { id: task.id },
+              data: { privacyStatus: 'private' }
+            });
+            task.privacyStatus = 'private';
+          }
+        }
+      } catch (ytErr) {
+        console.warn('[Tasks GET API] Failed to fetch live privacyStatus from YouTube:', ytErr.message);
+      }
+    }
+
     return NextResponse.json(tasks);
   } catch (error) {
     console.error('[Tasks GET API Error]:', error);

@@ -124,6 +124,7 @@ export async function POST(request) {
             playlistId: playlistId || null,
             userEmail: email,
             channelId: channel.id,
+            privacyStatus: 'private',
             updatedAt: new Date()
           },
           create: {
@@ -133,7 +134,8 @@ export async function POST(request) {
             description: description || '',
             playlistId: playlistId || null,
             userEmail: email,
-            channelId: channel.id
+            channelId: channel.id,
+            privacyStatus: 'private'
           }
         });
         console.log(`[Update Video API] Upserted VideoTask status to SCHEDULED for youtubeVideoId: ${youtubeVideoId}`);
@@ -310,6 +312,7 @@ export async function POST(request) {
           playlistId: playlistId || null,
           userEmail: email,
           channelId: channel.id,
+          privacyStatus: privacyStatus || 'private',
           updatedAt: new Date()
         },
         create: {
@@ -320,7 +323,8 @@ export async function POST(request) {
           description: description || '',
           playlistId: playlistId || null,
           userEmail: email,
-          channelId: channel.id
+          channelId: channel.id,
+          privacyStatus: privacyStatus || 'private'
         }
       });
       console.log(`[Update Video API] Upserted VideoTask for youtubeVideoId: ${youtubeVideoId} to COMPLETED`);
