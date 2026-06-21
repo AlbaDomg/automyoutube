@@ -61,7 +61,6 @@ export default function SubidorPage() {
   const [isSimpleUploading, setIsSimpleUploading] = useState(false);
   const [simpleUploadProgress, setSimpleUploadProgress] = useState(0);
   const [simpleUploadStatus, setSimpleUploadStatus] = useState("");
-  const [activeUploadId, setActiveUploadId] = useState(null);
 
   // Estados del parser de documentos (PDF/Word)
   const [documentFile, setDocumentFile] = useState(null);
@@ -201,7 +200,7 @@ export default function SubidorPage() {
         const data = await res.json();
         
         // Videos activos: subiéndose a YouTube o programados para publicarse
-        const active = data.filter(v => v.status === "SCHEDULED" || v.status === "UPLOADING");
+        const active = data.filter(v => v.status === "SCHEDULED" || (v.status === "UPLOADING" && v.filePath !== "YOUTUBE_UPLOAD"));
         setScheduledUpdates(active);
 
         // Vídeos ya subidos a YouTube correctamente (COMPLETED con youtubeId)
@@ -409,8 +408,6 @@ export default function SubidorPage() {
       }
 
       const { uploadUrl, videoId } = await initRes.json();
-      setActiveUploadId(videoId);
-      await fetchScheduledUpdates();
       setSimpleUploadStatus("Subiendo vídeo directamente a YouTube...");
 
       // Fase 2: Subir el archivo directamente a YouTube en chunks
@@ -484,7 +481,6 @@ export default function SubidorPage() {
     } finally {
       setIsSimpleUploading(false);
       setSimpleUploadProgress(0);
-      setActiveUploadId(null);
     }
   };
 
@@ -1083,6 +1079,21 @@ export default function SubidorPage() {
 
               {isSimpleUploading && (
                 <div style={{ marginTop: "0.5rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.80rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>
+                    <span>{simpleUploadStatus}</span>
+                    <span>{simpleUploadProgress}%</span>
+                  </div>
+                  <div className={styles.batchSyncProgressOuter} style={{ marginTop: 0 }}>
+                    <div
+                      className={styles.batchSyncProgressInner}
+                      style={{
+                        width: `${simpleUploadProgress}%`,
+                        background: "linear-gradient(90deg, #a855f7 0%, #ec4899 100%)",
+                        boxShadow: "0 0 8px rgba(168, 85, 247, 0.4)"
+                      }}
+                    />
+                  </div>
+
                   {/* ⚠️ Aviso: no cerrar la página durante la subida */}
                   <style>{`
                     @keyframes warningPulse {
@@ -1208,57 +1219,51 @@ export default function SubidorPage() {
               </div>
             </div>
             <div className={styles.tasksList}>
-              {scheduledUpdates.map(update => {
-                const isThisUploading = isSimpleUploading && update.id === activeUploadId;
-                const currentProgress = isThisUploading ? simpleUploadProgress : (update.uploadProgress || 0);
-                const currentStatusText = isThisUploading ? `Subiendo… ${simpleUploadProgress}%` : (update.status === "UPLOADING" ? `Subiendo… ${update.uploadProgress || 0}%` : "Programado");
-
-                return (
-                  <div key={update.id} className={styles.taskCardPending} style={{ borderLeftColor: update.status === "UPLOADING" ? "#38bdf8" : "#f59e0b" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                      <h4 style={{ fontSize: "0.85rem", margin: 0, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{update.title || "Publicación pendiente"}</h4>
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginLeft: "0.5rem", flexShrink: 0 }}>
-                        <span className={styles.statusBadge} style={{
-                          background: update.status === "UPLOADING" ? "rgba(56,189,248,0.15)" : "rgba(245,158,11,0.15)",
-                          color: update.status === "UPLOADING" ? "#38bdf8" : "#f59e0b",
-                          padding: "2px 8px", borderRadius: "12px", fontSize: "0.68rem", whiteSpace: "nowrap"
-                        }}>
-                          {currentStatusText}
-                        </span>
-                        <button
-                          type="button"
-                          title="Cancelar"
-                          onClick={async () => {
-                            if (!confirm(`¿Cancelar la publicación de "${update.title || update.youtubeId}"?`)) return;
-                            try {
-                              const res = await fetch(`/api/videos?id=${update.id}`, { method: "DELETE" });
-                              if (res.ok) { fetchScheduledUpdates(); fetchTasks(); }
-                              else alert("Error al cancelar.");
-                            } catch (err) { console.error(err); }
-                          }}
-                          style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", color: "#ef4444", borderRadius: "50%", width: "22px", height: "22px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: "0.7rem", fontWeight: "bold" }}
-                        >✕</button>
-                      </div>
+              {scheduledUpdates.map(update => (
+                <div key={update.id} className={styles.taskCardPending} style={{ borderLeftColor: update.status === "UPLOADING" ? "#38bdf8" : "#f59e0b" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <h4 style={{ fontSize: "0.85rem", margin: 0, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{update.title || "Publicación pendiente"}</h4>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginLeft: "0.5rem", flexShrink: 0 }}>
+                      <span className={styles.statusBadge} style={{
+                        background: update.status === "UPLOADING" ? "rgba(56,189,248,0.15)" : "rgba(245,158,11,0.15)",
+                        color: update.status === "UPLOADING" ? "#38bdf8" : "#f59e0b",
+                        padding: "2px 8px", borderRadius: "12px", fontSize: "0.68rem", whiteSpace: "nowrap"
+                      }}>
+                        {update.status === "UPLOADING" ? `Subiendo… ${update.uploadProgress || 0}%` : "Programado"}
+                      </span>
+                      <button
+                        type="button"
+                        title="Cancelar"
+                        onClick={async () => {
+                          if (!confirm(`¿Cancelar la publicación de "${update.title || update.youtubeId}"?`)) return;
+                          try {
+                            const res = await fetch(`/api/videos?id=${update.id}`, { method: "DELETE" });
+                            if (res.ok) { fetchScheduledUpdates(); fetchTasks(); }
+                            else alert("Error al cancelar.");
+                          } catch (err) { console.error(err); }
+                        }}
+                        style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", color: "#ef4444", borderRadius: "50%", width: "22px", height: "22px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: "0.7rem", fontWeight: "bold" }}
+                      >✕</button>
                     </div>
-                    <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "0.4rem", display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-                      {update.youtubeId && <span>ID YouTube: <code>{update.youtubeId}</code></span>}
-                      {update.scheduledAt && <span>· Programado para: <strong>{formatDate(update.scheduledAt)}</strong></span>}
-                      {update.privacyStatus && (
-                        <span style={{ color: update.privacyStatus === 'public' ? '#34d399' : '#f87171', background: update.privacyStatus === 'public' ? 'rgba(52,211,153,0.12)' : 'rgba(239,68,68,0.12)', padding: '1px 7px', borderRadius: '8px', fontSize: '0.68rem', fontWeight: '700' }}>
-                          {update.privacyStatus === 'public' ? 'Público' : update.privacyStatus === 'unlisted' ? 'Oculto' : 'Privado'}
-                        </span>
-                      )}
-                    </div>
-                    {(update.status === "UPLOADING" || isThisUploading) && (
-                      <div style={{ marginTop: "0.6rem" }}>
-                        <div className={styles.batchSyncProgressOuter} style={{ height: "4px", marginTop: 0 }}>
-                          <div className={styles.batchSyncProgressInner} style={{ width: `${currentProgress}%`, background: "linear-gradient(90deg, #38bdf8 0%, #818cf8 100%)", height: "100%" }} />
-                        </div>
-                      </div>
+                  </div>
+                  <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "0.4rem", display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                    {update.youtubeId && <span>ID YouTube: <code>{update.youtubeId}</code></span>}
+                    {update.scheduledAt && <span>· Programado para: <strong>{formatDate(update.scheduledAt)}</strong></span>}
+                    {update.privacyStatus && (
+                      <span style={{ color: update.privacyStatus === 'public' ? '#34d399' : '#f87171', background: update.privacyStatus === 'public' ? 'rgba(52,211,153,0.12)' : 'rgba(239,68,68,0.12)', padding: '1px 7px', borderRadius: '8px', fontSize: '0.68rem', fontWeight: '700' }}>
+                        {update.privacyStatus === 'public' ? 'Público' : update.privacyStatus === 'unlisted' ? 'Oculto' : 'Privado'}
+                      </span>
                     )}
                   </div>
-                );
-              })}
+                  {update.status === "UPLOADING" && (
+                    <div style={{ marginTop: "0.6rem" }}>
+                      <div className={styles.batchSyncProgressOuter} style={{ height: "4px", marginTop: 0 }}>
+                        <div className={styles.batchSyncProgressInner} style={{ width: `${update.uploadProgress || 0}%`, background: "linear-gradient(90deg, #38bdf8 0%, #818cf8 100%)", height: "100%" }} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
         )}
