@@ -80,7 +80,6 @@ export default function SubidorPage() {
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [completedLocalVideos, setCompletedLocalVideos] = useState([]);
   const [privateVideos, setPrivateVideos] = useState([]);
-  const [localVideosQueue, setLocalVideosQueue] = useState([]);
 
   const simpleVideoInputRef = useRef(null);
   const hiddenVideoRef = useRef(null);
@@ -200,16 +199,12 @@ export default function SubidorPage() {
       if (res.ok) {
         const data = await res.json();
         
-        // Videos programados
+        // Videos activos: subiéndose a YouTube o programados para publicarse
         const active = data.filter(v => v.status === "SCHEDULED" || v.status === "UPLOADING");
         setScheduledUpdates(active);
 
-        // Cola de vídeos locales subidos pendientes de procesar (inbox del servidor)
-        const queue = data.filter(v => v.status === "LOCAL_DRAFT" || v.status === "EDITING");
-        setLocalVideosQueue(queue);
-
-        // Vídeos locales completados en YouTube
-        const completed = data.filter(v => (v.status === "COMPLETED" || v.status === "READY") && v.youtubeId);
+        // Vídeos ya subidos a YouTube correctamente (COMPLETED con youtubeId)
+        const completed = data.filter(v => v.status === "COMPLETED" && v.youtubeId);
         setCompletedLocalVideos(completed);
 
         // Auto-ejecutar scheduler si hay videos cuya hora ya ha pasado
@@ -374,7 +369,7 @@ export default function SubidorPage() {
     }
   };
 
-  // Subida de vídeo por fragmentos (chunked upload) al servidor local
+  // Subida de vídeo directamente a YouTube mediante sesión resumible
   const handleSimpleVideoUpload = async (e) => {
     e.preventDefault();
     if (!simpleVideoFile) {
@@ -388,78 +383,101 @@ export default function SubidorPage() {
 
     setIsSimpleUploading(true);
     setSimpleUploadProgress(0);
-    setSimpleUploadStatus("Iniciando subida al servidor local...");
+    setSimpleUploadStatus("Iniciando sesión de subida en YouTube...");
 
     try {
       const file = simpleVideoFile;
-      const uploadId = generateUUID();
-      const chunkSize = 4 * 1024 * 1024; // 4MB (límite seguro para Vercel)
-      const totalChunks = Math.ceil(file.size / chunkSize);
 
-      for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
-        const start = chunkIndex * chunkSize;
-        const end = Math.min(start + chunkSize, file.size);
-        const chunkBlob = file.slice(start, end);
-
-        const formData = new FormData();
-        formData.append("chunk", chunkBlob);
-        formData.append("fileName", file.name);
-        formData.append("uploadId", uploadId);
-        formData.append("chunkIndex", chunkIndex.toString());
-        formData.append("totalChunks", totalChunks.toString());
-
-        setSimpleUploadStatus(`Subiendo al servidor: Parte ${chunkIndex + 1} de ${totalChunks}...`);
-
-        const chunkRes = await fetch("/api/upload/chunk", {
-          method: "POST",
-          body: formData
-        });
-
-        if (!chunkRes.ok) {
-          const errData = await chunkRes.json();
-          throw new Error(errData.error || `Fallo al subir fragmento ${chunkIndex + 1}`);
-        }
-
-        const percent = Math.round(((chunkIndex + 1) / totalChunks) * 100);
-        setSimpleUploadProgress(percent);
-      }
-
-      setSimpleUploadStatus("Guardando metadatos del borrador...");
-
-      // Una vez que el chunk merge está completo, actualizamos los metadatos y guardamos el frame extraído
-      const patchRes = await fetch(`/api/videos?id=${uploadId}`, {
-        method: "PATCH",
+      // Fase 1: Obtener URL de sesión resumible de YouTube a través de nuestro servidor
+      const initRes = await fetch("/api/upload", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: simpleTitle,
           description: simpleDescription,
-          rawFrameBase64: localExtractedFrame,
-          status: "LOCAL_DRAFT"
+          fileName: file.name,
+          fileSize: file.size,
+          fileType: file.type || "video/mp4",
+          rawFrameBase64: localExtractedFrame
         })
       });
 
-      if (!patchRes.ok) {
-        const errData = await patchRes.json();
-        throw new Error(errData.error || "Fallo al guardar los metadatos en el servidor");
+      if (!initRes.ok) {
+        const errData = await initRes.json();
+        throw new Error(errData.error || "Error al iniciar la sesión de subida en YouTube.");
       }
 
-      setSimpleUploadProgress(100);
-      setSimpleUploadStatus("✅ ¡Vídeo subido al servidor correctamente!");
-      alert("¡Vídeo subido al servidor y guardado como borrador local!");
+      const { uploadUrl, videoId } = await initRes.json();
+      setSimpleUploadStatus("Subiendo vídeo directamente a YouTube...");
 
-      // Limpiar formulario y refrescar lista
+      // Fase 2: Subir el archivo directamente a YouTube en chunks
+      // El archivo va del navegador a YouTube — no pasa por Vercel, sin límite de tamaño
+      const CHUNK_SIZE = 5 * 1024 * 1024; // 5 MB por chunk directo a YouTube
+      let offset = 0;
+      let youtubeVideoId = null;
+
+      while (offset < file.size) {
+        const chunkEnd = Math.min(offset + CHUNK_SIZE, file.size);
+        const chunk = file.slice(offset, chunkEnd);
+
+        const chunkRes = await fetch(uploadUrl, {
+          method: "PUT",
+          headers: {
+            "Content-Range": `bytes ${offset}-${chunkEnd - 1}/${file.size}`,
+            "Content-Type": file.type || "video/mp4"
+          },
+          body: chunk
+        });
+
+        if (chunkRes.status === 200 || chunkRes.status === 201) {
+          // Subida completada: YouTube devuelve el objeto del vídeo creado
+          const data = await chunkRes.json();
+          youtubeVideoId = data.id;
+          setSimpleUploadProgress(100);
+          break;
+        } else if (chunkRes.status === 308) {
+          // 308 Resume Incomplete: YouTube confirma el chunk y espera el siguiente
+          const rangeHeader = chunkRes.headers.get("Range");
+          offset = rangeHeader ? parseInt(rangeHeader.split("-")[1]) + 1 : chunkEnd;
+          const progress = Math.round((offset / file.size) * 100);
+          setSimpleUploadProgress(progress);
+          setSimpleUploadStatus(`Subiendo a YouTube: ${progress}%`);
+        } else {
+          const errText = await chunkRes.text();
+          throw new Error(`Error en la subida a YouTube (${chunkRes.status}): ${errText.substring(0, 200)}`);
+        }
+      }
+
+      if (!youtubeVideoId) {
+        throw new Error("No se recibió el ID de YouTube al finalizar la subida.");
+      }
+
+      // Fase 3: Notificar al servidor que la subida completó correctamente
+      setSimpleUploadStatus("Registrando vídeo en el sistema...");
+      await fetch(`/api/upload?action=complete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videoId, youtubeId: youtubeVideoId })
+      });
+
+      setSimpleUploadStatus("¡Vídeo subido a YouTube correctamente!");
+      alert("Vídeo subido a YouTube como privado. El editor puede procesarlo y publicarlo.");
+
+      // Limpiar formulario
       setSimpleVideoFile(null);
       setLocalExtractedFrame(null);
       setSimpleTitle("");
       setSimpleDescription("");
-      if (simpleVideoInputRef.current) {
-        simpleVideoInputRef.current.value = "";
-      }
+      if (simpleVideoInputRef.current) simpleVideoInputRef.current.value = "";
+
+      // Refrescar listas
+      fetchPrivateVideos();
       fetchScheduledUpdates();
+
     } catch (err) {
-      console.error(err);
-      setSimpleUploadStatus(`❌ Error: ${err.message}`);
-      alert(`Error en la subida al servidor: ${err.message}`);
+      console.error("Error en la subida a YouTube:", err);
+      setSimpleUploadStatus(`Error: ${err.message}`);
+      alert(`Error en la subida: ${err.message}`);
     } finally {
       setIsSimpleUploading(false);
       setSimpleUploadProgress(0);
@@ -540,27 +558,28 @@ export default function SubidorPage() {
 
 
 
-  // Unir historial de tareas completadas de YouTube e historial local
+  // Unir historial: tareas completadas del editor + vídeos subidos directamente a YouTube por el subidor
   const mergedCompletedItems = useMemo(() => {
     const taskItems = tasks.filter(t => t.status === "COMPLETED").map(t => ({
       id: t.id,
       title: t.title,
       youtubeId: t.youtubeId,
       completedAt: t.completedAt,
-      privacyStatus: t.privacyStatus || null, // puede no existir en VideoTask
+      privacyStatus: t.privacyStatus || null,
       isLocal: false
     }));
 
-    const localItems = completedLocalVideos.map(v => ({
+    // Vídeos subidos a YouTube directamente por el subidor (COMPLETED con youtubeId)
+    const videoItems = completedLocalVideos.map(v => ({
       id: v.id,
       title: v.title,
       youtubeId: v.youtubeId,
       completedAt: v.updatedAt,
-      privacyStatus: v.privacyStatus || null, // guardado por el editor al publicar
+      privacyStatus: v.privacyStatus || null,
       isLocal: true
     }));
 
-    return [...taskItems, ...localItems].sort((a, b) => {
+    return [...taskItems, ...videoItems].sort((a, b) => {
       const dateA = a.completedAt ? new Date(a.completedAt) : new Date(0);
       const dateB = b.completedAt ? new Date(b.completedAt) : new Date(0);
       return dateB - dateA;
@@ -1102,250 +1121,128 @@ export default function SubidorPage() {
           </div>
         </div>
 
-        {/* 1. Cola de Vídeos Locales subidos pendientes de procesar */}
+        {/* Cola 1: Borradores en YouTube esperando que el editor los procese */}
         <div className={styles.card} style={{ marginTop: "1.5rem" }}>
-          <div className={styles.cardTitle} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span>⏳ Cola de Vídeos Pendientes</span>
-            <span style={{
-              fontSize: "0.75rem",
-              color: "#a855f7",
-              background: "rgba(168, 85, 247, 0.15)",
-              padding: "2px 8px",
-              borderRadius: "10px",
-              fontWeight: "bold"
-            }}>
-              {localVideosQueue.length} vídeos
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.1rem" }}>
+            <div>
+              <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.08em", color: "#f59e0b", marginBottom: "0.25rem" }}>Cola 1 · Subidor</div>
+              <h3 style={{ fontSize: "1rem", fontWeight: "700", color: "#f8fafc", margin: 0 }}>Borradores · Pendientes de edición</h3>
+              <p style={{ fontSize: "0.72rem", color: "var(--text-muted)", margin: "0.2rem 0 0 0" }}>Vídeos subidos a YouTube como borrador privado. El editor debe completarlos y publicarlos.</p>
+            </div>
+            <span style={{ fontSize: "0.72rem", fontWeight: "700", color: "#f59e0b", background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", padding: "3px 12px", borderRadius: "20px", whiteSpace: "nowrap", flexShrink: 0 }}>
+              {privateVideos.length} borrador{privateVideos.length !== 1 ? "es" : ""}
             </span>
           </div>
 
-          {localVideosQueue.length === 0 ? (
+          {privateVideos.length === 0 ? (
             <div className={styles.emptyState}>
-              No hay vídeos locales pendientes de procesar.
+              No hay borradores pendientes. Los vídeos subidos por el subidor aparecerán aquí.
             </div>
           ) : (
-            <div style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "0.75rem",
-              maxHeight: "350px",
-              overflowY: "auto",
-              paddingRight: "0.25rem"
-            }}>
-              {localVideosQueue.map(video => (
-                <div key={video.id} style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  padding: "0.75rem 1rem",
-                  background: "rgba(255,255,255,0.02)",
-                  border: "1px solid var(--border-color)",
-                  borderRadius: "12px",
-                  gap: "1rem"
-                }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", minWidth: 0, flex: 1 }}>
-                    <div style={{ fontSize: "1.5rem" }}>🎬</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", maxHeight: "320px", overflowY: "auto", paddingRight: "0.25rem" }}>
+              {privateVideos.map(video => {
+                const videoTitle = video.snippet?.title || video.title || "Sin título";
+                const publishedAt = video.snippet?.publishedAt || video.createdAt;
+                const ytId = video.id?.videoId || video.id;
+                return (
+                  <div key={ytId} style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "0.8rem 1rem",
+                    background: "rgba(245,158,11,0.04)",
+                    border: "1px solid rgba(245,158,11,0.15)",
+                    borderRadius: "10px",
+                    gap: "1rem"
+                  }}>
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div style={{ fontSize: "0.85rem", fontWeight: "600", color: "#f8fafc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {video.title || "Sin título"}
+                        {videoTitle}
                       </div>
-                      <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.2rem" }}>
-                        Archivo: <code>{video.filename}</code> | Creado: {formatDate(video.createdAt)}
-                      </div>
-                      {/* Info de estado del vídeo */}
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginTop: "0.4rem", flexWrap: "wrap" }}>
-                        <span style={{
-                          fontSize: "0.68rem",
-                          color: "#38bdf8",
-                          background: "rgba(14, 165, 233, 0.15)",
-                          border: "1px solid rgba(14, 165, 233, 0.3)",
-                          padding: "2px 7px",
-                          borderRadius: "6px",
-                          fontWeight: "600",
-                          whiteSpace: "nowrap"
-                        }}>
-                          🖥️ Guardado en Servidor
-                        </span>
-                        {video.status === "EDITING" ? (
-                          <span style={{
-                            fontSize: "0.68rem",
-                            color: "#c084fc",
-                            background: "rgba(168, 85, 247, 0.15)",
-                            border: "1px solid rgba(168, 85, 247, 0.3)",
-                            padding: "2px 7px",
-                            borderRadius: "6px",
-                            fontWeight: "600",
-                            whiteSpace: "nowrap"
-                          }}>
-                            ✍️ En Proceso de Edición
-                          </span>
-                        ) : (
-                          <span style={{
-                            fontSize: "0.68rem",
-                            color: "#fbbf24",
-                            background: "rgba(245, 158, 11, 0.15)",
-                            border: "1px solid rgba(245, 158, 11, 0.3)",
-                            padding: "2px 7px",
-                            borderRadius: "6px",
-                            fontWeight: "600",
-                            whiteSpace: "nowrap"
-                          }}>
-                            ⏳ Esperando Editor
-                          </span>
-                        )}
+                      <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
+                        ID YouTube: <code style={{ color: "#94a3b8" }}>{ytId}</code>
+                        {publishedAt && <span> · Subido el {formatDate(publishedAt)}</span>}
                       </div>
                     </div>
+                    <span style={{
+                      fontSize: "0.68rem", fontWeight: "700",
+                      color: "#f59e0b", background: "rgba(245,158,11,0.12)",
+                      border: "1px solid rgba(245,158,11,0.25)",
+                      padding: "2px 9px", borderRadius: "6px", whiteSpace: "nowrap", flexShrink: 0
+                    }}>
+                      Borrador · Pendiente de edición
+                    </span>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
-                    <button
-                      type="button"
-                      title="Eliminar vídeo de la cola"
-                      onClick={async () => {
-                        if (!window.confirm(`¿Eliminar "${video.title || video.filename}" de la cola?`)) return;
-                        try {
-                          const res = await fetch(`/api/videos?id=${video.id}`, { method: "DELETE" });
-                          if (res.ok) {
-                            fetchScheduledUpdates();
-                          } else {
-                            alert("Error al eliminar el vídeo.");
-                          }
-                        } catch (err) {
-                          console.error(err);
-                        }
-                      }}
-                      style={{
-                        background: "rgba(239, 68, 68, 0.15)",
-                        border: "1px solid rgba(239, 68, 68, 0.3)",
-                        color: "#ef4444",
-                        borderRadius: "50%",
-                        width: "26px",
-                        height: "26px",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        cursor: "pointer",
-                        fontSize: "0.75rem",
-                        fontWeight: "bold",
-                        flexShrink: 0
-                      }}
-                    >✕</button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
 
-        {/* 2. Actualizaciones locales programadas activas */}
+        {/* Cola 2: Vídeos en proceso de publicación o programados */}
         {scheduledUpdates.length > 0 && (
           <div className={styles.card} style={{ marginTop: "1.5rem" }}>
-            <div className={styles.cardTitle} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span>Videos Pendientes de Sincronización(Programados)</span>
-              <button
-                type="button"
-                onClick={handleExecuteScheduler}
-                disabled={executingScheduler}
-                className={styles.btnSubmit}
-                style={{
-                  width: "auto",
-                  fontSize: "0.75rem",
-                  padding: "0.3rem 0.75rem",
-                  background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-                  border: "none",
-                  margin: 0,
-                  opacity: executingScheduler ? 0.6 : 1,
-                  cursor: executingScheduler ? "not-allowed" : "pointer"
-                }}
-              >
-                {executingScheduler ? "Ejecutando..." : "⚡ Ejecutar Programados Ahora"}
-              </button>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.1rem" }}>
+              <div>
+                <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.08em", color: "#38bdf8", marginBottom: "0.25rem" }}>Cola 2 · Subidor</div>
+                <h3 style={{ fontSize: "1rem", fontWeight: "700", color: "#f8fafc", margin: 0 }}>En proceso de publicación</h3>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                <span style={{ fontSize: "0.72rem", fontWeight: "700", color: "#38bdf8", background: "rgba(14,165,233,0.12)", border: "1px solid rgba(14,165,233,0.25)", padding: "3px 12px", borderRadius: "20px", whiteSpace: "nowrap" }}>
+                  {scheduledUpdates.length} vídeo{scheduledUpdates.length !== 1 ? "s" : ""}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleExecuteScheduler}
+                  disabled={executingScheduler}
+                  className={styles.btnSubmit}
+                  style={{ width: "auto", fontSize: "0.72rem", padding: "0.3rem 0.85rem", background: "linear-gradient(135deg, #10b981 0%, #059669 100%)", border: "none", margin: 0, opacity: executingScheduler ? 0.6 : 1, cursor: executingScheduler ? "not-allowed" : "pointer" }}
+                >
+                  {executingScheduler ? "Ejecutando..." : "Ejecutar ahora"}
+                </button>
+              </div>
             </div>
             <div className={styles.tasksList}>
               {scheduledUpdates.map(update => (
-                <div key={update.id} className={styles.taskCardPending} style={{ borderLeftColor: update.status === "UPLOADING" ? "#10b981" : "#f59e0b" }}>
+                <div key={update.id} className={styles.taskCardPending} style={{ borderLeftColor: update.status === "UPLOADING" ? "#38bdf8" : "#f59e0b" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                    <h4 style={{ fontSize: "0.85rem", margin: 0, flex: 1 }}>{update.title || "Actualización pendiente"}</h4>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginLeft: "0.5rem" }}>
+                    <h4 style={{ fontSize: "0.85rem", margin: 0, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{update.title || "Publicación pendiente"}</h4>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginLeft: "0.5rem", flexShrink: 0 }}>
                       <span className={styles.statusBadge} style={{
-                        background: update.status === "UPLOADING" ? "rgba(16, 185, 129, 0.15)" : "rgba(245, 158, 11, 0.15)",
-                        color: update.status === "UPLOADING" ? "#10b981" : "#f59e0b",
-                        padding: "2px 8px",
-                        borderRadius: "12px",
-                        fontSize: "0.7rem",
-                        whiteSpace: "nowrap"
+                        background: update.status === "UPLOADING" ? "rgba(56,189,248,0.15)" : "rgba(245,158,11,0.15)",
+                        color: update.status === "UPLOADING" ? "#38bdf8" : "#f59e0b",
+                        padding: "2px 8px", borderRadius: "12px", fontSize: "0.68rem", whiteSpace: "nowrap"
                       }}>
-                        {update.status === "UPLOADING"
-                          ? `Subiendo... ${update.uploadProgress || 0}%`
-                          : (update.status === "SCHEDULED" ? "Programada" : "Aplicando...")}
+                        {update.status === "UPLOADING" ? `Subiendo… ${update.uploadProgress || 0}%` : "Programado"}
                       </span>
                       <button
                         type="button"
-                        title="Cancelar programación"
+                        title="Cancelar"
                         onClick={async () => {
-                          if (!confirm(`¿Cancelar la sincronización programada de "${update.title || update.youtubeId}"?`)) return;
+                          if (!confirm(`¿Cancelar la publicación de "${update.title || update.youtubeId}"?`)) return;
                           try {
                             const res = await fetch(`/api/videos?id=${update.id}`, { method: "DELETE" });
-                            if (res.ok) {
-                              fetchScheduledUpdates();
-                              fetchTasks();
-                            } else {
-                              const data = await res.json();
-                              alert("Error al cancelar: " + (data.error || "error desconocido"));
-                            }
-                          } catch (err) {
-                            console.error(err);
-                            alert("Error de red al cancelar la programación.");
-                          }
+                            if (res.ok) { fetchScheduledUpdates(); fetchTasks(); }
+                            else alert("Error al cancelar.");
+                          } catch (err) { console.error(err); }
                         }}
-                        style={{
-                          background: "rgba(239, 68, 68, 0.15)",
-                          border: "1px solid rgba(239, 68, 68, 0.3)",
-                          color: "#ef4444",
-                          borderRadius: "50%",
-                          width: "22px",
-                          height: "22px",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          cursor: "pointer",
-                          fontSize: "0.7rem",
-                          fontWeight: "bold",
-                          flexShrink: 0
-                        }}
+                        style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", color: "#ef4444", borderRadius: "50%", width: "22px", height: "22px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: "0.7rem", fontWeight: "bold" }}
                       >✕</button>
                     </div>
                   </div>
-                  <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.4rem", display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-                    <strong>ID YouTube:</strong> <code>{update.youtubeId || "En creación..."}</code> |{' '}
-                    <strong>Ejecución:</strong> {formatDate(update.scheduledAt)} |{' '}
-                    <strong>Destino:</strong>{' '}
-                    {(() => {
-                      const isPub = update.privacyStatus === 'public';
-                      return (
-                        <span style={{
-                          color: isPub ? '#34d399' : '#f87171',
-                          background: isPub ? 'rgba(52, 211, 153, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                          padding: '1px 6px',
-                          borderRadius: '8px',
-                          fontSize: '0.7rem',
-                          fontWeight: 'bold'
-                        }}>
-                          {isPub ? 'Público' : 'Privado'}
-                        </span>
-                      );
-                    })()}
+                  <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "0.4rem", display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                    {update.youtubeId && <span>ID YouTube: <code>{update.youtubeId}</code></span>}
+                    {update.scheduledAt && <span>· Programado para: <strong>{formatDate(update.scheduledAt)}</strong></span>}
+                    {update.privacyStatus && (
+                      <span style={{ color: update.privacyStatus === 'public' ? '#34d399' : '#f87171', background: update.privacyStatus === 'public' ? 'rgba(52,211,153,0.12)' : 'rgba(239,68,68,0.12)', padding: '1px 7px', borderRadius: '8px', fontSize: '0.68rem', fontWeight: '700' }}>
+                        {update.privacyStatus === 'public' ? 'Público' : update.privacyStatus === 'unlisted' ? 'Oculto' : 'Privado'}
+                      </span>
+                    )}
                   </div>
                   {update.status === "UPLOADING" && (
-                    <div style={{ marginTop: "0.75rem" }}>
-                      <div className={styles.batchSyncProgressOuter} style={{ height: "6px", marginTop: 0 }}>
-                        <div
-                          className={styles.batchSyncProgressInner}
-                          style={{
-                            width: `${update.uploadProgress || 0}%`,
-                            background: "linear-gradient(90deg, #10b981 0%, #3b82f6 100%)",
-                            boxShadow: "0 0 8px rgba(16, 185, 129, 0.4)",
-                            height: "100%"
-                          }}
-                        />
+                    <div style={{ marginTop: "0.6rem" }}>
+                      <div className={styles.batchSyncProgressOuter} style={{ height: "4px", marginTop: 0 }}>
+                        <div className={styles.batchSyncProgressInner} style={{ width: `${update.uploadProgress || 0}%`, background: "linear-gradient(90deg, #38bdf8 0%, #818cf8 100%)", height: "100%" }} />
                       </div>
                     </div>
                   )}
@@ -1355,86 +1252,86 @@ export default function SubidorPage() {
           </div>
         )}
 
-        {/* 3. Historial de Sincronizaciones Realizadas */}
+        {/* Cola 3: Historial de publicaciones */}
         <div className={styles.card} style={{ marginTop: "1.5rem" }}>
-          <div className={styles.cardTitle}>Historial: Sincronizaciones Realizadas</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.1rem" }}>
+            <div>
+              <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.08em", color: "#34d399", marginBottom: "0.25rem" }}>Cola 3 · Subidor</div>
+              <h3 style={{ fontSize: "1rem", fontWeight: "700", color: "#f8fafc", margin: 0 }}>Historial de publicaciones</h3>
+              <p style={{ fontSize: "0.72rem", color: "var(--text-muted)", margin: "0.2rem 0 0 0" }}>Vídeos completados y publicados en YouTube.</p>
+            </div>
+            <span style={{ fontSize: "0.72rem", fontWeight: "700", color: "#34d399", background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.25)", padding: "3px 12px", borderRadius: "20px", whiteSpace: "nowrap", flexShrink: 0 }}>
+              {mergedCompletedItems.length} publicado{mergedCompletedItems.length !== 1 ? "s" : ""}
+            </span>
+          </div>
 
           {loadingTasks ? (
-            <div className={styles.emptyState}>Cargando tareas...</div>
+            <div className={styles.emptyState}>Cargando historial...</div>
           ) : mergedCompletedItems.length === 0 ? (
-            <div className={styles.emptyState}>No hay videos sincronizados recientemente.</div>
+            <div className={styles.emptyState}>No hay publicaciones registradas todavía.</div>
           ) : (
-            <div className={styles.tasksList}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", maxHeight: "350px", overflowY: "auto", paddingRight: "0.25rem" }}>
               {mergedCompletedItems.map(item => (
-                <div key={item.id} className={styles.taskCardCompleted}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
-                    <h4 className={styles.taskCardTitle} style={{ textDecoration: "line-through", color: "var(--text-muted)", flex: 1 }}>
-                      {item.title}
-                    </h4>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          const deleteUrl = item.isLocal ? `/api/videos?id=${item.id}` : `/api/tasks?id=${item.id}`;
-                          const res = await fetch(deleteUrl, { method: 'DELETE' });
-                          if (res.ok) {
-                            if (item.isLocal) {
-                              fetchScheduledUpdates();
-                            } else {
-                              fetchTasks();
-                            }
-                          } else {
-                            alert("Error al eliminar la tarea del historial local.");
-                          }
-                        } catch (err) {
-                          console.error(err);
-                        }
-                      }}
-                      className={styles.historyActionBtnDelete}
-                    >✕</button>
-                  </div>
-
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: "0.5rem" }}>
-                    <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                      <div><strong>ID YouTube:</strong> <code>{item.youtubeId}</code></div>
-                      {item.completedAt && (
-                        <div><strong>Sincronizado el:</strong> {formatDate(item.completedAt)}</div>
+                <div key={item.id} style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  padding: "0.75rem 1rem",
+                  background: "rgba(52,211,153,0.03)", border: "1px solid rgba(52,211,153,0.12)",
+                  borderRadius: "10px", gap: "1rem"
+                }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: "0.85rem", fontWeight: "600", color: "#f8fafc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {item.title || "Sin título"}
+                    </div>
+                    <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "0.25rem", display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                      {item.youtubeId && (
+                        <a href={`https://youtube.com/watch?v=${item.youtubeId}`} target="_blank" rel="noopener noreferrer"
+                          style={{ color: "#38bdf8", textDecoration: "none", fontWeight: "600" }}>
+                          Ver en YouTube ↗
+                        </a>
                       )}
-                      <div style={{ marginTop: "0.2rem", display: "flex", alignItems: "center", gap: "0.25rem" }}>
-                        <strong>Privacidad:</strong>
-                        {(() => {
-                          const ps = item.privacyStatus;
-                          if (ps === 'public') {
-                            return (
-                              <span style={{ color: '#34d399', background: 'rgba(52, 211, 153, 0.15)', padding: '1px 8px', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 'bold' }}>
-                                🌍 Público
-                              </span>
-                            );
-                          }
-                          if (ps === 'unlisted') {
-                            return (
-                              <span style={{ color: '#fbbf24', background: 'rgba(245, 158, 11, 0.15)', padding: '1px 8px', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 'bold' }}>
-                                🔗 Oculto
-                              </span>
-                            );
-                          }
-                          if (ps === 'private') {
-                            return (
-                              <span style={{ color: '#f87171', background: 'rgba(239, 68, 68, 0.15)', padding: '1px 8px', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 'bold' }}>
-                                🔒 Privado
-                              </span>
-                            );
-                          }
-                          // Sin dato guardado en BD (videos anteriores a esta funcionalidad)
-                          return (
-                            <span style={{ color: '#94a3b8', background: 'rgba(148, 163, 184, 0.1)', padding: '1px 8px', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 'bold' }}>
-                              — Sin dato
-                            </span>
-                          );
-                        })()}
-                      </div>
+                      {item.completedAt && <span>· {formatDate(item.completedAt)}</span>}
+                    </div>
+                    {/* Estado de privacidad — información crítica para el subidor */}
+                    <div style={{ marginTop: "0.4rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                      <span style={{ fontSize: "0.68rem", color: "var(--text-muted)", fontWeight: "500" }}>Estado en YouTube:</span>
+                      {(() => {
+                        const ps = item.privacyStatus;
+                        if (ps === 'public') return (
+                          <span style={{ fontSize: "0.72rem", fontWeight: "800", color: "#34d399", background: "rgba(52,211,153,0.15)", border: "1px solid rgba(52,211,153,0.3)", padding: "2px 10px", borderRadius: "6px" }}>
+                            Público
+                          </span>
+                        );
+                        if (ps === 'unlisted') return (
+                          <span style={{ fontSize: "0.72rem", fontWeight: "800", color: "#fbbf24", background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.3)", padding: "2px 10px", borderRadius: "6px" }}>
+                            Oculto (no listado)
+                          </span>
+                        );
+                        if (ps === 'private') return (
+                          <span style={{ fontSize: "0.72rem", fontWeight: "800", color: "#f87171", background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", padding: "2px 10px", borderRadius: "6px" }}>
+                            Privado
+                          </span>
+                        );
+                        return (
+                          <span style={{ fontSize: "0.68rem", fontWeight: "600", color: "#94a3b8", background: "rgba(148,163,184,0.1)", border: "1px solid rgba(148,163,184,0.2)", padding: "2px 9px", borderRadius: "6px" }}>
+                            Sin dato · Verificar en YouTube
+                          </span>
+                        );
+                      })()}
                     </div>
                   </div>
+                  <button
+                    type="button"
+                    title="Eliminar del historial"
+                    onClick={async () => {
+                      try {
+                        const deleteUrl = item.isLocal ? `/api/videos?id=${item.id}` : `/api/tasks?id=${item.id}`;
+                        const res = await fetch(deleteUrl, { method: 'DELETE' });
+                        if (res.ok) { item.isLocal ? fetchScheduledUpdates() : fetchTasks(); }
+                        else alert("Error al eliminar del historial.");
+                      } catch (err) { console.error(err); }
+                    }}
+                    className={styles.historyActionBtnDelete}
+                  >✕</button>
                 </div>
               ))}
             </div>

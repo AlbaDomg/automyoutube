@@ -4,13 +4,7 @@ import { NextResponse } from 'next/server';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
-// Desactivar el body parser automático de Next.js para permitir FormData grandes
-export const config = {
-  api: {
-    bodyParser: false,
-    responseLimit: false,
-  },
-};
+
 import fs from 'fs';
 import path from 'path';
 import prisma from '@/lib/db';

@@ -2805,6 +2805,7 @@ export default function Dashboard() {
       title: t.title,
       youtubeId: t.youtubeId,
       completedAt: t.completedAt,
+      privacyStatus: t.privacyStatus || null,
       isLocal: false
     }));
 
@@ -2813,6 +2814,7 @@ export default function Dashboard() {
       title: v.title,
       youtubeId: v.youtubeId,
       completedAt: v.updatedAt,
+      privacyStatus: v.privacyStatus || null,
       isLocal: true
     }));
 
@@ -3510,108 +3512,45 @@ export default function Dashboard() {
                 </form>
               </div>
 
-              {/* Cola de Vídeos Pendientes para Subidores (Solo lectura, con "En proceso...") */}
+              {/* Cola 1 – Subidor (solo lectura): Borradores en YouTube esperando edición */}
               <div className={styles.card}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem" }}>
-                  <h3 style={{ fontSize: "1.25rem", fontWeight: "800", margin: 0, background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-                    ⏳ Cola de Vídeos Pendientes
-                  </h3>
-                  <span style={{
-                    fontSize: "0.75rem",
-                    color: "var(--primary)",
-                    background: "rgba(168, 85, 247, 0.15)",
-                    padding: "2px 8px",
-                    borderRadius: "10px",
-                    fontWeight: "bold"
-                  }}>
-                    {localVideosQueue.length} vídeos
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+                  <div>
+                    <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.08em", color: "#f59e0b", marginBottom: "0.2rem" }}>Cola 1 · Subidor (solo lectura)</div>
+                    <h3 style={{ fontSize: "1rem", fontWeight: "700", color: "#f8fafc", margin: 0 }}>Borradores · Pendientes de edición</h3>
+                    <p style={{ fontSize: "0.71rem", color: "var(--text-muted)", margin: "0.15rem 0 0 0" }}>Vídeos subidos por el subidor como borrador privado en YouTube, esperando tu edición.</p>
+                  </div>
+                  <span style={{ fontSize: "0.72rem", fontWeight: "700", color: "#f59e0b", background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", padding: "3px 12px", borderRadius: "20px", whiteSpace: "nowrap", flexShrink: 0 }}>
+                    {privateVideos.length} borrador{privateVideos.length !== 1 ? "es" : ""}
                   </span>
                 </div>
-
-                {localVideosQueue.length === 0 ? (
-                  <div className={styles.emptyState}>
-                    No hay vídeos locales pendientes de procesar.
-                  </div>
+                {privateVideos.length === 0 ? (
+                  <div className={styles.emptyState}>No hay borradores pendientes de edición del subidor.</div>
                 ) : (
-                  <div style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "0.75rem",
-                    maxHeight: "350px",
-                    overflowY: "auto",
-                    paddingRight: "0.25rem"
-                  }}>
-                    {localVideosQueue.map(video => (
-                      <div key={video.id} style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        padding: "0.75rem 1rem",
-                        background: "rgba(255,255,255,0.02)",
-                        border: "1px solid var(--border-color)",
-                        borderRadius: "12px",
-                        gap: "1rem"
-                      }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", minWidth: 0, flex: 1 }}>
-                          <div style={{ fontSize: "1.5rem" }}>🎬</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", maxHeight: "320px", overflowY: "auto", paddingRight: "0.25rem" }}>
+                    {privateVideos.map(video => {
+                      const vTitle = video.snippet?.title || video.title || "Sin título";
+                      const vDate = video.snippet?.publishedAt || video.createdAt;
+                      const vId = video.id?.videoId || video.id;
+                      return (
+                        <div key={vId} style={{
+                          display: "flex", alignItems: "center", justifyContent: "space-between",
+                          padding: "0.75rem 1rem",
+                          background: "rgba(245,158,11,0.04)", border: "1px solid rgba(245,158,11,0.15)",
+                          borderRadius: "10px", gap: "1rem"
+                        }}>
                           <div style={{ minWidth: 0, flex: 1 }}>
-                            <div style={{ fontSize: "0.85rem", fontWeight: "600", color: "#f8fafc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {video.title || "Sin título"}
-                            </div>
-                            <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.2rem" }}>
-                              Archivo: <code>{video.filename}</code> | Creado: {formatDate(video.createdAt)}
+                            <div style={{ fontSize: "0.85rem", fontWeight: "600", color: "#f8fafc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{vTitle}</div>
+                            <div style={{ fontSize: "0.71rem", color: "var(--text-muted)", marginTop: "0.2rem" }}>
+                              ID: <code style={{ color: "#94a3b8" }}>{vId}</code>{vDate && <span> · {formatDate(vDate)}</span>}
                             </div>
                           </div>
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
-                          {/* Badge: siempre privado en YouTube hasta que el editor lo publique */}
-                          <span style={{
-                            fontSize: "0.7rem",
-                            color: "#f87171",
-                            background: "rgba(239, 68, 68, 0.12)",
-                            border: "1px solid rgba(239, 68, 68, 0.3)",
-                            padding: "2px 8px",
-                            borderRadius: "8px",
-                            fontWeight: "bold",
-                            whiteSpace: "nowrap"
-                          }}>
-                            🔒 Privado en YouTube
+                          <span style={{ fontSize: "0.68rem", fontWeight: "700", color: "#f59e0b", background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", padding: "2px 9px", borderRadius: "6px", whiteSpace: "nowrap", flexShrink: 0 }}>
+                            Borrador · Pendiente de edición
                           </span>
-                          <button
-                            type="button"
-                            title="Eliminar vídeo de la cola"
-                            onClick={async () => {
-                              if (!window.confirm(`¿Eliminar "${video.title || video.filename}" de la cola?`)) return;
-                              try {
-                                const res = await fetch(`/api/videos?id=${video.id}`, { method: "DELETE" });
-                                if (res.ok) {
-                                  setLocalVideosQueue(prev => prev.filter(v => v.id !== video.id));
-                                } else {
-                                  alert("Error al eliminar el vídeo.");
-                                }
-                              } catch (err) {
-                                alert("Error al eliminar: " + err.message);
-                              }
-                            }}
-                            style={{
-                              background: "rgba(239, 68, 68, 0.15)",
-                              border: "1px solid rgba(239, 68, 68, 0.4)",
-                              borderRadius: "8px",
-                              color: "#ef4444",
-                              cursor: "pointer",
-                              padding: "4px 8px",
-                              fontSize: "0.8rem",
-                              lineHeight: 1,
-                              transition: "background 0.2s"
-                            }}
-                            onMouseEnter={e => e.currentTarget.style.background = "rgba(239,68,68,0.3)"}
-                            onMouseLeave={e => e.currentTarget.style.background = "rgba(239,68,68,0.15)"}
-                          >
-                            🗑️
-                          </button>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -3701,110 +3640,59 @@ export default function Dashboard() {
                 )}
               </div>
 
-              {/* Cola de Vídeos Pendientes */}
+              {/* Cola 1 – Editor: Borradores en YouTube listos para editar */}
               <div className={styles.card}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem" }}>
-                  <h3 style={{ fontSize: "1.25rem", fontWeight: "800", margin: 0, background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-                    ⏳ Cola de Vídeos Pendientes
-                  </h3>
-                  <span style={{
-                    fontSize: "0.75rem",
-                    color: "var(--primary)",
-                    background: "rgba(168, 85, 247, 0.15)",
-                    padding: "2px 8px",
-                    borderRadius: "10px",
-                    fontWeight: "bold"
-                  }}>
-                    {localVideosQueue.length} vídeos
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+                  <div>
+                    <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.08em", color: "#f59e0b", marginBottom: "0.2rem" }}>Cola 1 · Editor</div>
+                    <h3 style={{ fontSize: "1rem", fontWeight: "700", color: "#f8fafc", margin: 0 }}>Borradores · Pendientes de edición</h3>
+                    <p style={{ fontSize: "0.71rem", color: "var(--text-muted)", margin: "0.15rem 0 0 0" }}>Borradores privados y vídeos ocultos en YouTube esperando que los completes y publiques.</p>
+                  </div>
+                  <span style={{ fontSize: "0.72rem", fontWeight: "700", color: "#f59e0b", background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", padding: "3px 12px", borderRadius: "20px", whiteSpace: "nowrap", flexShrink: 0 }}>
+                    {privateVideos.length} borrador{privateVideos.length !== 1 ? "es" : ""}
                   </span>
                 </div>
-
-                {localVideosQueue.length === 0 ? (
-                  <div className={styles.emptyState}>
-                    No hay vídeos locales pendientes de procesar.
-                  </div>
+                {privateVideos.length === 0 ? (
+                  <div className={styles.emptyState}>No hay borradores pendientes. Cuando el subidor suba un vídeo aparecerá aquí.</div>
                 ) : (
-                  <div style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "0.75rem",
-                    maxHeight: "350px",
-                    overflowY: "auto",
-                    paddingRight: "0.25rem"
-                  }}>
-                    {localVideosQueue.map(video => (
-                      <div key={video.id} style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        padding: "0.75rem 1rem",
-                        background: "rgba(255,255,255,0.02)",
-                        border: "1px solid var(--border-color)",
-                        borderRadius: "12px",
-                        gap: "1rem"
-                      }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", minWidth: 0, flex: 1 }}>
-                          <div style={{ fontSize: "1.5rem" }}>🎬</div>
-                          <div style={{ minWidth: 0, flex: 1 }}>
-                            <div style={{ fontSize: "0.85rem", fontWeight: "600", color: "#f8fafc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {video.title || "Sin título"}
-                            </div>
-                            <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.2rem" }}>
-                              Archivo: <code>{video.filename}</code> | Creado: {formatDate(video.createdAt)}
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", maxHeight: "350px", overflowY: "auto", paddingRight: "0.25rem" }}>
+                    {privateVideos.map(video => {
+                      const vTitle = video.snippet?.title || video.title || "Sin título";
+                      const vDate = video.snippet?.publishedAt || video.createdAt;
+                      const vId = video.id?.videoId || video.id;
+                      const vThumb = video.snippet?.thumbnails?.medium?.url || video.thumbnail;
+                      return (
+                        <div key={vId} style={{
+                          display: "flex", alignItems: "center", justifyContent: "space-between",
+                          padding: "0.75rem 1rem",
+                          background: "rgba(245,158,11,0.04)", border: "1px solid rgba(245,158,11,0.15)",
+                          borderRadius: "10px", gap: "1rem"
+                        }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", minWidth: 0, flex: 1 }}>
+                            {vThumb && <img src={vThumb} alt="" style={{ width: "64px", aspectRatio: "16/9", objectFit: "cover", borderRadius: "6px", flexShrink: 0 }} />}
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div style={{ fontSize: "0.85rem", fontWeight: "600", color: "#f8fafc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{vTitle}</div>
+                              <div style={{ fontSize: "0.71rem", color: "var(--text-muted)", marginTop: "0.2rem" }}>
+                                ID: <code style={{ color: "#94a3b8" }}>{vId}</code>{vDate && <span> · {formatDate(vDate)}</span>}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
-                          <span style={{
-                            fontSize: "0.68rem",
-                            color: "#38bdf8",
-                            background: "rgba(14, 165, 233, 0.15)",
-                            border: "1px solid rgba(14, 165, 233, 0.3)",
-                            padding: "2.5px 7px",
-                            borderRadius: "6px",
-                            fontWeight: "600",
-                            whiteSpace: "nowrap"
-                          }}>
-                            🖥️ Servidor
-                          </span>
-                          {video.status === "EDITING" ? (
-                            <span style={{
-                              fontSize: "0.68rem",
-                              color: "#c084fc",
-                              background: "rgba(168, 85, 247, 0.15)",
-                              border: "1px solid rgba(168, 85, 247, 0.3)",
-                              padding: "2.5px 7px",
-                              borderRadius: "6px",
-                              fontWeight: "600",
-                              whiteSpace: "nowrap"
-                            }}>
-                              ✍️ En Edición
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
+                            <span style={{ fontSize: "0.68rem", fontWeight: "700", color: "#f59e0b", background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", padding: "2px 9px", borderRadius: "6px", whiteSpace: "nowrap" }}>
+                              Privado
                             </span>
-                          ) : (
-                            <span style={{
-                              fontSize: "0.68rem",
-                              color: "#fbbf24",
-                              background: "rgba(245, 158, 11, 0.15)",
-                              border: "1px solid rgba(245, 158, 11, 0.3)",
-                              padding: "2.5px 7px",
-                              borderRadius: "6px",
-                              fontWeight: "600",
-                              whiteSpace: "nowrap"
-                            }}>
-                              ⏳ Esperando
-                            </span>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => handleSelectLocalVideo(video)}
-                            className={styles.btnSubmit}
-                            style={{ width: "auto", fontSize: "0.75rem", padding: "0.4rem 0.8rem" }}
-                          >
-                            Editar
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSelectVideo(video)}
+                              className={styles.btnSubmit}
+                              style={{ width: "auto", fontSize: "0.72rem", padding: "0.35rem 0.8rem" }}
+                            >
+                              Editar
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -4642,25 +4530,103 @@ export default function Dashboard() {
           )}
 
 
-          {/* Historial */}
+          {/* Cola 3: Historial de publicaciones */}
           <div className={styles.bottomGrid}>
             <div className={styles.card} style={{ marginTop: "1.5rem" }}>
-              <div className={styles.cardTitle}>Historial: Sincronizaciones Realizadas</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.1rem" }}>
+                <div>
+                  <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.08em", color: "#34d399", marginBottom: "0.25rem" }}>Cola 3 · Editor</div>
+                  <h3 style={{ fontSize: "1rem", fontWeight: "700", color: "#f8fafc", margin: 0 }}>Historial de publicaciones</h3>
+                  <p style={{ fontSize: "0.72rem", color: "var(--text-muted)", margin: "0.2rem 0 0 0" }}>Vídeos completados y publicados en YouTube.</p>
+                </div>
+                <span style={{ fontSize: "0.72rem", fontWeight: "700", color: "#34d399", background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.25)", padding: "3px 12px", borderRadius: "20px", whiteSpace: "nowrap", flexShrink: 0 }}>
+                  {mergedCompletedItems.length} publicado{mergedCompletedItems.length !== 1 ? "s" : ""}
+                </span>
+              </div>
 
               {loadingTasks ? (
                 <div className={styles.emptyState}>Cargando tareas...</div>
               ) : mergedCompletedItems.length === 0 ? (
-                <div className={styles.emptyState}>No hay videos sincronizados recientemente.</div>
+                <div className={styles.emptyState}>No hay publicaciones registradas todavía.</div>
               ) : (
-                <div className={styles.tasksList}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", maxHeight: "350px", overflowY: "auto", paddingRight: "0.25rem" }}>
                   {mergedCompletedItems.map(item => (
-                    <div key={item.id} className={styles.taskCardCompleted}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
-                        <h4 className={styles.taskCardTitle} style={{ textDecoration: "line-through", color: "var(--text-muted)" }}>
-                          {item.title}
-                        </h4>
+                    <div key={item.id} style={{
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                      padding: "0.75rem 1rem",
+                      background: "rgba(52,211,153,0.03)", border: "1px solid rgba(52,211,153,0.12)",
+                      borderRadius: "10px", gap: "1rem"
+                    }}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: "0.85rem", fontWeight: "600", color: "#f8fafc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {item.title || "Sin título"}
+                        </div>
+                        <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "0.25rem", display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                          {item.youtubeId && (
+                            <a href={`https://youtube.com/watch?v=${item.youtubeId}`} target="_blank" rel="noopener noreferrer"
+                              style={{ color: "#38bdf8", textDecoration: "none", fontWeight: "600" }}>
+                              Ver en YouTube ↗
+                            </a>
+                          )}
+                          {item.completedAt && <span>· {formatDate(item.completedAt)}</span>}
+                        </div>
+                        <div style={{ marginTop: "0.4rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                          <span style={{ fontSize: "0.68rem", color: "var(--text-muted)", fontWeight: "500" }}>Estado en YouTube:</span>
+                          {(() => {
+                            const ytVid = privateVideos.find(v => v.id === item.youtubeId);
+                            const ps = ytVid ? ytVid.privacyStatus : item.privacyStatus;
+                            
+                            if (ps === 'public') return (
+                              <span style={{ fontSize: "0.72rem", fontWeight: "800", color: "#34d399", background: "rgba(52,211,153,0.15)", border: "1px solid rgba(52,211,153,0.3)", padding: "2px 10px", borderRadius: "6px" }}>
+                                Público
+                              </span>
+                            );
+                            if (ps === 'unlisted') return (
+                              <span style={{ fontSize: "0.72rem", fontWeight: "800", color: "#fbbf24", background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.3)", padding: "2px 10px", borderRadius: "6px" }}>
+                                Oculto (no listado)
+                              </span>
+                            );
+                            if (ps === 'private') return (
+                              <span style={{ fontSize: "0.72rem", fontWeight: "800", color: "#f87171", background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", padding: "2px 10px", borderRadius: "6px" }}>
+                                Privado
+                              </span>
+                            );
+                            return (
+                              <span style={{ fontSize: "0.72rem", fontWeight: "800", color: "#34d399", background: "rgba(52,211,153,0.15)", border: "1px solid rgba(52,211,153,0.3)", padding: "2px 10px", borderRadius: "6px" }}>
+                                Público
+                              </span>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                      
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <a
+                          href={`https://studio.youtube.com/video/${item.youtubeId}/edit`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={styles.btnSubmit}
+                          style={{
+                            width: "auto",
+                            fontSize: "0.72rem",
+                            padding: "0.35rem 0.8rem",
+                            background: "#0284c7",
+                            border: "none",
+                            textDecoration: "none",
+                            color: "#fff",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "0.25rem",
+                            borderRadius: "6px",
+                            fontWeight: "600",
+                            height: "fit-content"
+                          }}
+                        >
+                          ✏️ Studio
+                        </a>
                         <button
                           type="button"
+                          title="Eliminar del historial"
                           onClick={async () => {
                             try {
                               const deleteUrl = item.isLocal ? `/api/videos?id=${item.id}` : `/api/tasks?id=${item.id}`;
@@ -4680,71 +4646,6 @@ export default function Dashboard() {
                           }}
                           className={styles.historyActionBtnDelete}
                         >✕</button>
-                      </div>
-
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: "0.5rem" }}>
-                        <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                          <div><strong>ID YouTube:</strong> <code>{item.youtubeId}</code></div>
-                          {item.completedAt && (
-                            <div><strong>Sincronizado el:</strong> {formatDate(item.completedAt)}</div>
-                          )}
-                          <div style={{ marginTop: "0.2rem", display: "flex", alignItems: "center", gap: "0.25rem" }}>
-                            <strong>Privacidad:</strong>
-                            {(() => {
-                              const ytVid = privateVideos.find(v => v.id === item.youtubeId);
-                              if (ytVid) {
-                                const isPrivate = ytVid.privacyStatus === 'private';
-                                return (
-                                  <span style={{
-                                    color: isPrivate ? '#f87171' : '#fbbf24',
-                                    background: isPrivate ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-                                    padding: '1px 6px',
-                                    borderRadius: '8px',
-                                    fontSize: '0.7rem',
-                                    fontWeight: 'bold'
-                                  }}>
-                                    {isPrivate ? 'Privado' : 'Oculto'}
-                                  </span>
-                                );
-                              }
-                              return (
-                                <span style={{
-                                  color: '#34d399',
-                                  background: 'rgba(52, 211, 153, 0.15)',
-                                  padding: '1px 6px',
-                                  borderRadius: '8px',
-                                  fontSize: '0.7rem',
-                                  fontWeight: 'bold'
-                                }}>
-                                  Público
-                                </span>
-                              );
-                            })()}
-                          </div>
-                        </div>
-                        <a
-                          href={`https://studio.youtube.com/video/${item.youtubeId}/edit`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className={styles.btnSubmit}
-                          style={{
-                            width: "auto",
-                            fontSize: "0.75rem",
-                            padding: "0.3rem 0.75rem",
-                            background: "#0284c7",
-                            border: "none",
-                            textDecoration: "none",
-                            color: "#fff",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "0.25rem",
-                            borderRadius: "4px",
-                            fontWeight: "500",
-                            height: "fit-content"
-                          }}
-                        >
-                          ✏️ Editar en YouTube
-                        </a>
                       </div>
                     </div>
                   ))}
