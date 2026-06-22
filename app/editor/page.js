@@ -4145,67 +4145,6 @@ export default function Dashboard() {
                           )}
                         </div>
 
-                        {videoDuration > 0 ? (
-                          <div className={styles.inputGroup} style={{ margin: 0 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                              <span>Ajustar fotograma del vídeo (segundo):</span>
-                              <span style={{ fontWeight: "700", color: "#a855f7" }}>{Math.round(frameTime)}s / {Math.round(videoDuration)}s</span>
-                            </div>
-                            <input
-                              type="range"
-                              min={0}
-                              max={videoDuration}
-                              step={0.5}
-                              value={frameTime}
-                              onChange={handleSliderChange}
-                              style={{
-                                width: "100%",
-                                accentColor: "#a855f7",
-                                cursor: "pointer",
-                                marginTop: "0.25rem"
-                              }}
-                            />
-                          </div>
-                        ) : (
-                          <div className={styles.inputGroup} style={{ margin: 0 }}>
-                            <label style={{ fontSize: "0.75rem", display: "flex", justifyContent: "space-between", color: "var(--text-muted)", marginBottom: "0.25rem" }}>
-                              <span>📁 Cargar vídeo local para ajustar fotograma:</span>
-                            </label>
-                            <input
-                              type="file"
-                              accept="video/*"
-                              onChange={(e) => {
-                                const file = e.target.files[0];
-                                if (file) {
-                                  try {
-                                    if (videoObjectURL) {
-                                      URL.revokeObjectURL(videoObjectURL);
-                                    }
-                                    const url = URL.createObjectURL(file);
-                                    setVideoObjectURL(url);
-                                    if (hiddenVideoRef.current) {
-                                      hiddenVideoRef.current.src = url;
-                                      hiddenVideoRef.current.load();
-                                    }
-                                  } catch (err) {
-                                    console.error("Error al cargar vídeo local:", err);
-                                  }
-                                }
-                              }}
-                              style={{
-                                width: "100%",
-                                fontSize: "0.75rem",
-                                padding: "4px",
-                                color: "var(--text-secondary)",
-                                background: "rgba(255, 255, 255, 0.05)",
-                                border: "1px dashed var(--border-color, rgba(255, 255, 255, 0.15))",
-                                borderRadius: "6px",
-                                cursor: "pointer"
-                              }}
-                            />
-                          </div>
-                        )}
-
                         <div className={styles.inputGroup} style={{ margin: 0 }}>
                           <label style={{ fontSize: "0.75rem", display: "flex", justifyContent: "space-between" }}>
                             <span>Logotipo de Programa (Catálogo)</span>
