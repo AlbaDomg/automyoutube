@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { verifyAppAuth, getCurrentUserEmail, getUserRole } from '@/lib/auth';
+import { sendInviteEmail } from '@/lib/email';
 
 // Helper to check if requester is Admin
 async function checkAdminAuth(request) {
@@ -64,6 +65,11 @@ export async function POST(request) {
         role,
         invitedBy: auth.email
       }
+    });
+
+    // Enviar correo de notificación asíncronamente
+    sendInviteEmail(cleanEmail, role, auth.email).catch(err => {
+      console.error('[API Users POST] Failed to send notification email:', err);
     });
 
     return NextResponse.json({ success: true, user });

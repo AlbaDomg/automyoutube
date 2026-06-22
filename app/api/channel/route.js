@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
-import { verifyAppAuth, getCurrentUserEmail } from '@/lib/auth';
+import { verifyAppAuth, getCurrentUserEmail, getUserRole } from '@/lib/auth';
 
 export async function GET(request) {
   try {
@@ -9,9 +9,18 @@ export async function GET(request) {
     }
 
     const email = await getCurrentUserEmail(request);
-    const channel = await prisma.channel.findUnique({
+    
+    // Buscar primero el canal vinculado a este correo
+    let channel = await prisma.channel.findUnique({
       where: { userEmail: email }
     });
+
+    // Fallback: buscar cualquier canal conectado en el sistema (canal central del Administrador)
+    if (!channel) {
+      channel = await prisma.channel.findFirst({
+        orderBy: { updatedAt: 'desc' }
+      });
+    }
 
     if (!channel) {
       return NextResponse.json({ connected: false });
@@ -39,9 +48,14 @@ export async function DELETE(request) {
     }
 
     const email = await getCurrentUserEmail(request);
-    await prisma.channel.deleteMany({
-      where: { userEmail: email }
-    });
+    
+    // Proteger para que solo Administradores puedan desconectar el canal central
+    const role = await getUserRole(email);
+    if (role !== 'ADMIN') {
+      return NextResponse.json({ error: 'Forbidden: Se requiere rol de Administrador' }, { status: 403 });
+    }
+
+    await prisma.channel.deleteMany();
     
     return NextResponse.json({ success: true, message: 'Disconnected channel successfully' });
   } catch (error) {
@@ -49,4 +63,3 @@ export async function DELETE(request) {
     return NextResponse.json({ error: 'Failed to disconnect channel' }, { status: 500 });
   }
 }
-

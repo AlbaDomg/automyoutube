@@ -52,6 +52,7 @@ export default function SubidorPage() {
   const [currentUserEmail, setCurrentUserEmail] = useState("");
   const [currentUserRole, setCurrentUserRole] = useState("PRODUCTORA");
   const [channel, setChannel] = useState({ connected: false, channel: null });
+  const [loadingChannel, setLoadingChannel] = useState(true);
 
   // Estados del uploader
   const [simpleVideoFile, setSimpleVideoFile] = useState(null);
@@ -213,12 +214,15 @@ export default function SubidorPage() {
   }, []);
 
   const fetchChannel = async () => {
+    setLoadingChannel(true);
     try {
       const res = await fetch("/api/channel", { cache: "no-store" });
       const data = await res.json();
       setChannel(data);
     } catch (err) {
       console.error("Error al obtener estado del canal:", err);
+    } finally {
+      setLoadingChannel(false);
     }
   };
 
@@ -1342,6 +1346,105 @@ export default function SubidorPage() {
           >
             🔑 Entrar con Google
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (loadingChannel && isAuthenticated) {
+    return (
+      <div style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: "100vh",
+        background: "#060814",
+        color: "#f8fafc",
+        fontFamily: "system-ui, -apple-system, sans-serif"
+      }}>
+        <div style={{
+          border: "4px solid rgba(168, 85, 247, 0.1)",
+          borderTop: "4px solid #a855f7",
+          borderRadius: "50%",
+          width: "40px",
+          height: "40px",
+          animation: "spin 1s linear infinite"
+        }} />
+        <style dangerouslySetInnerHTML={{
+          __html: `
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}} />
+        <p style={{ marginTop: "1rem", color: "#94a3b8", fontSize: "0.9rem" }}>Comprobando canal de YouTube...</p>
+      </div>
+    );
+  }
+
+  if (isAuthenticated && !channel.connected && currentUserRole !== "ADMIN") {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+        {isAuthenticated && <Navbar userEmail={currentUserEmail} userRole={currentUserRole} />}
+        <div style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "4rem 2rem",
+          background: "rgba(15, 23, 42, 0.3)",
+          border: "1px solid var(--border-color, rgba(255, 255, 255, 0.08))",
+          borderRadius: "24px",
+          textAlign: "center",
+          backdropFilter: "blur(12px)",
+          maxWidth: "600px",
+          margin: "8rem auto",
+          boxShadow: "0 20px 40px -15px rgba(0,0,0,0.5)",
+          fontFamily: "system-ui, -apple-system, sans-serif"
+        }}>
+          <div style={{
+            fontSize: "4rem",
+            marginBottom: "1.5rem",
+            background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
+            WebkitBackgroundClip: "text",
+            WebkitTextFillColor: "transparent",
+            filter: "drop-shadow(0 0 15px rgba(168, 85, 247, 0.4))",
+            display: "inline-block"
+          }}>
+            🔴
+          </div>
+          <h2 style={{
+            fontSize: "1.8rem",
+            fontWeight: "800",
+            color: "#f8fafc",
+            marginBottom: "1rem"
+          }}>
+            Canal de YouTube no vinculado
+          </h2>
+          <p style={{
+            color: "#94a3b8",
+            fontSize: "0.95rem",
+            lineHeight: "1.6",
+            marginBottom: "2rem",
+            maxWidth: "480px"
+          }}>
+            Para poder subir y sincronizar tus vídeos con YouTube, es necesario que la plataforma esté conectada a un canal.
+          </p>
+
+          <div style={{
+            background: "rgba(239, 68, 68, 0.1)",
+            border: "1px solid rgba(239, 68, 68, 0.2)",
+            borderRadius: "12px",
+            padding: "1rem",
+            color: "#f87171",
+            fontSize: "0.88rem",
+            lineHeight: "1.5",
+            maxWidth: "420px",
+            textAlign: "left"
+          }}>
+            ⚠️ <strong>Sin conexión:</strong> El administrador de la plataforma aún no ha configurado o conectado el canal de YouTube. Por favor, contacta con él para que realice la conexión para que puedas subir vídeos.
+          </div>
         </div>
       </div>
     );

@@ -87,11 +87,16 @@ export async function POST(request) {
             fs.unlinkSync(lockFilePath);
           }
 
-          // Crear la entrada del video en la base de datos
           const email = await getCurrentUserEmail(request);
-          const channel = await prisma.channel.findUnique({
+          let channel = await prisma.channel.findUnique({
             where: { userEmail: email }
           });
+
+          if (!channel) {
+            channel = await prisma.channel.findFirst({
+              orderBy: { updatedAt: 'desc' }
+            });
+          }
 
           const video = await prisma.video.create({
             data: {

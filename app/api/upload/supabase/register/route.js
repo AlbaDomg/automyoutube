@@ -29,7 +29,12 @@ export async function POST(request) {
     const publicVideoUrl = `${supabaseUrl}/storage/v1/object/public/videos/${supabasePath}`;
 
     const email = await getCurrentUserEmail(request);
-    const channel = await prisma.channel.findUnique({ where: { userEmail: email } });
+    let channel = await prisma.channel.findUnique({ where: { userEmail: email } });
+    if (!channel) {
+      channel = await prisma.channel.findFirst({
+        orderBy: { updatedAt: 'desc' }
+      });
+    }
 
     const videoId = crypto.randomUUID();
 

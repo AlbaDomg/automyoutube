@@ -36,9 +36,15 @@ async function handleInitiateUpload(request) {
   }
 
   const email = await getCurrentUserEmail(request);
-  const channel = await prisma.channel.findUnique({
+  let channel = await prisma.channel.findUnique({
     where: { userEmail: email }
   });
+
+  if (!channel) {
+    channel = await prisma.channel.findFirst({
+      orderBy: { updatedAt: 'desc' }
+    });
+  }
 
   if (!channel) {
     return NextResponse.json({ error: 'No YouTube channel connected. Please authenticate first.' }, { status: 400 });
@@ -174,9 +180,15 @@ async function handleCompleteUpload(request) {
   }
 
   const email = await getCurrentUserEmail(request);
-  const channel = await prisma.channel.findUnique({
+  let channel = await prisma.channel.findUnique({
     where: { userEmail: email }
   });
+
+  if (!channel) {
+    channel = await prisma.channel.findFirst({
+      orderBy: { updatedAt: 'desc' }
+    });
+  }
 
   // Si hay playlist seleccionada, añadir a la playlist en YouTube
   if (video.playlistId && channel) {
