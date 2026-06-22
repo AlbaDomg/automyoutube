@@ -2902,9 +2902,9 @@ export default function Dashboard() {
   // Obtener borradores locales desde la base de datos
   const localDrafts = useMemo(() => {
     return dbVideos
-      .filter(v => (v.status === "LOCAL_DRAFT" || v.status === "EDITING") && v.youtubeId)
+      .filter(v => v.status === "LOCAL_DRAFT" || v.status === "EDITING" || v.status === "UPLOADING")
       .map(v => ({
-        id: v.youtubeId,
+        id: v.youtubeId || v.id,
         dbId: v.id,
         title: v.title,
         description: v.description,
@@ -2914,9 +2914,12 @@ export default function Dashboard() {
         privacyStatus: v.privacyStatus || 'private',
         fileName: v.filename || '',
         isLocalDraft: true,
-        createdAt: v.createdAt
+        createdAt: v.createdAt,
+        status: v.status,
+        uploadProgress: v.uploadProgress || 0
       }));
   }, [dbVideos]);
+
 
   // Filtrar los borradores de YouTube para mostrar solo los que realmente están pendientes
   const pendingPrivateVideos = useMemo(() => {
@@ -3800,8 +3803,9 @@ export default function Dashboard() {
                           </div>
                         </div>
                         {(() => {
-                          const dbVid = dbVideos.find(v => v.youtubeId === video.id);
+                          const dbVid = dbVideos.find(v => v.youtubeId === video.id || (v.status === "UPLOADING" && v.title === video.title));
                           const isUploading = dbVid?.status === "UPLOADING" || video.status === "UPLOADING";
+
                           return (
                             <button
                               onClick={() => {
@@ -3850,6 +3854,12 @@ export default function Dashboard() {
                       const vDate = video.snippet?.publishedAt || video.createdAt;
                       const vId = video.id?.videoId || video.id;
                       const vThumb = video.snippet?.thumbnails?.medium?.url || video.thumbnail;
+
+                      const ytId = video.id?.videoId || video.id;
+                      const dbVid = dbVideos.find(v => v.youtubeId === ytId || v.id === ytId);
+                      const isUploading = dbVid?.status === "UPLOADING" || video.status === "UPLOADING";
+                      const uploadPercent = dbVid?.uploadProgress || video.uploadProgress || 0;
+
                       return (
                         <div key={vId} style={{
                           display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -3864,37 +3874,50 @@ export default function Dashboard() {
                               <div style={{ fontSize: "0.71rem", color: "var(--text-muted)", marginTop: "0.2rem" }}>
                                 ID: <code style={{ color: "#94a3b8" }}>{vId}</code>{vDate && <span> · {formatDate(vDate)}</span>}
                               </div>
+                              {isUploading && (
+                                <div style={{ marginTop: "0.4rem", maxWidth: "250px" }}>
+                                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.68rem", color: "#38bdf8", marginBottom: "0.15rem" }}>
+                                    <span>Subiendo al canal...</span>
+                                    <span>{uploadPercent}%</span>
+                                  </div>
+                                  <div style={{ width: "100%", height: "4px", background: "rgba(255,255,255,0.08)", borderRadius: "2px", overflow: "hidden" }}>
+                                    <div style={{ width: `${uploadPercent}%`, height: "100%", background: "#38bdf8", transition: "width 0.3s ease" }} />
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </div>
                           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
-                            <span style={{ fontSize: "0.68rem", fontWeight: "700", color: "#f59e0b", background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", padding: "2px 9px", borderRadius: "6px", whiteSpace: "nowrap" }}>
-                              Borrador
+                            <span style={{
+                              fontSize: "0.68rem",
+                              fontWeight: "700",
+                              color: isUploading ? "#38bdf8" : "#f59e0b",
+                              background: isUploading ? "rgba(56,189,248,0.12)" : "rgba(245,158,11,0.12)",
+                              border: isUploading ? "1px solid rgba(56,189,248,0.25)" : "1px solid rgba(245,158,11,0.25)",
+                              padding: "2px 9px",
+                              borderRadius: "6px",
+                              whiteSpace: "nowrap"
+                            }}>
+                              {isUploading ? "Subiendo" : "Borrador"}
                             </span>
-                            {(() => {
-                              const ytId = video.id?.videoId || video.id;
-                              const dbVid = dbVideos.find(v => v.youtubeId === ytId);
-                              const isUploading = dbVid?.status === "UPLOADING" || video.status === "UPLOADING";
-                              return (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (isUploading) return;
-                                    handleSelectVideo(video);
-                                  }}
-                                  disabled={isUploading}
-                                  className={styles.btnSubmit}
-                                  style={{
-                                    width: "auto",
-                                    fontSize: "0.72rem",
-                                    padding: "0.35rem 0.8rem",
-                                    background: isUploading ? "#4b5563" : undefined,
-                                    cursor: isUploading ? "not-allowed" : "pointer"
-                                  }}
-                                >
-                                  {isUploading ? "Subiendo..." : "Editar"}
-                                </button>
-                              );
-                            })()}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (isUploading) return;
+                                handleSelectVideo(video);
+                              }}
+                              disabled={isUploading}
+                              className={styles.btnSubmit}
+                              style={{
+                                width: "auto",
+                                fontSize: "0.72rem",
+                                padding: "0.35rem 0.8rem",
+                                background: isUploading ? "#4b5563" : undefined,
+                                cursor: isUploading ? "not-allowed" : "pointer"
+                              }}
+                            >
+                              {isUploading ? "Subiendo..." : "Editar"}
+                            </button>
                             <button
                               type="button"
                               onClick={async () => {
