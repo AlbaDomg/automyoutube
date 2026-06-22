@@ -486,6 +486,13 @@ export default function SubidorPage() {
                 if (cleanFileName.includes(cleanProgram)) {
                   score += 10;
                 }
+
+                // Coincidencia por siglas del programa (ej.: "lr" -> "land rober", "eo" -> "expediente oculto")
+                const initials = cleanProgram.split(/\s+/).map(w => w[0]).join("");
+                const fileWords = cleanFileName.split(/\s+/);
+                if (initials.length >= 2 && (fileWords.includes(initials) || cleanFileName === initials)) {
+                  score += 8;
+                }
               }
 
               const videoWords = video.title.toLowerCase().replace(/[^a-z0-9]/g, " ").split(/\s+/).filter(w => w.length > 3 && w !== "video" && w !== "programa");
@@ -929,6 +936,13 @@ export default function SubidorPage() {
                     const cleanProgram = video.programName.toLowerCase().replace(/[\_\-\.]/g, " ").replace(/\s+/g, " ").trim();
                     if (cleanFileName.includes(cleanProgram)) {
                       score += 10;
+                    }
+
+                    // Coincidencia por siglas del programa (ej.: "lr" -> "land rober", "eo" -> "expediente oculto")
+                    const initials = cleanProgram.split(/\s+/).map(w => w[0]).join("");
+                    const fileWords = cleanFileName.split(/\s+/);
+                    if (initials.length >= 2 && (fileWords.includes(initials) || cleanFileName === initials)) {
+                      score += 8;
                     }
                   }
 
