@@ -3888,31 +3888,11 @@ export default function Dashboard() {
                               <div style={{ fontSize: "0.71rem", color: "var(--text-muted)", marginTop: "0.2rem" }}>
                                 ID: <code style={{ color: "#94a3b8" }}>{vId}</code>{vDate && <span> · {formatDate(vDate)}</span>}
                               </div>
-                              {isUploading && (
-                                <div style={{ marginTop: "0.4rem", maxWidth: "250px" }}>
-                                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.68rem", color: "#38bdf8", marginBottom: "0.15rem" }}>
-                                    <span>Subiendo al canal...</span>
-                                    <span>{uploadPercent}%</span>
-                                  </div>
-                                  <div style={{ width: "100%", height: "4px", background: "rgba(255,255,255,0.08)", borderRadius: "2px", overflow: "hidden" }}>
-                                    <div style={{ width: `${uploadPercent}%`, height: "100%", background: "#38bdf8", transition: "width 0.3s ease" }} />
-                                  </div>
-                                </div>
-                              )}
                             </div>
                           </div>
                           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
-                            <span style={{
-                              fontSize: "0.68rem",
-                              fontWeight: "700",
-                              color: isUploading ? "#38bdf8" : "#f59e0b",
-                              background: isUploading ? "rgba(56,189,248,0.12)" : "rgba(245,158,11,0.12)",
-                              border: isUploading ? "1px solid rgba(56,189,248,0.25)" : "1px solid rgba(245,158,11,0.25)",
-                              padding: "2px 9px",
-                              borderRadius: "6px",
-                              whiteSpace: "nowrap"
-                            }}>
-                              {isUploading ? "Subiendo" : "Borrador"}
+                            <span style={{ fontSize: "0.68rem", fontWeight: "700", color: "#f59e0b", background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", padding: "2px 9px", borderRadius: "6px", whiteSpace: "nowrap" }}>
+                              Borrador
                             </span>
                             <button
                               type="button"
