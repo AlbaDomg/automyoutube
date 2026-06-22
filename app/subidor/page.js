@@ -1967,7 +1967,7 @@ export default function SubidorPage() {
                     <span style={{ fontSize: "1.2rem", flexShrink: 0 }}>⚠️</span>
                     <span style={{ fontSize: "0.82rem", color: "#fca5a5", fontWeight: "600", lineHeight: "1.4" }}>
                       <strong style={{ color: "#f87171" }}>¡No cierres esta pestaña!</strong><br />
-                      La subida en lote se pausará o cancelará si sales de esta página.
+                      La subida del video se pausará o cancelará si sales de esta página.
                     </span>
                   </div>
                 )}
