@@ -1906,7 +1906,7 @@ export default function SubidorPage() {
                         {(item.status === 'uploading' || item.status === 'completed') && (
                           <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "0.75rem", marginTop: "0.25rem" }}>
                             <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>
-                              <span>Progreso de subida directa a YouTube:</span>
+                              <span>Progreso de subida a Youtube como borrador:</span>
                               <span style={{ 
                                 color: (item.progress >= 100 || item.status === 'completed') ? '#10b981' : 'inherit', 
                                 fontWeight: (item.progress >= 100 || item.status === 'completed') ? '700' : 'normal' 
