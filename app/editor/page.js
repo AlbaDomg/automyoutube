@@ -2270,8 +2270,6 @@ export default function Dashboard() {
 
       // Esperar brevemente para mostrar el 100%
       await new Promise(r => setTimeout(r, 400));
-
-      alert(`¡Documento procesado con éxito! Se han detectado ${data.videos.length} videos. Por favor, revisa el mapeo de cada video antes de sincronizar.`);
     } catch (err) {
       clearInterval(progressInterval);
       alert("Error al procesar el archivo: " + err.message);
@@ -4681,7 +4679,7 @@ export default function Dashboard() {
           {scheduledUpdates.length > 0 && (
             <div className={styles.card} style={{ marginTop: "1.5rem" }}>
               <div className={styles.cardTitle} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span>En Proceso de Subida</span>
+                <span>Proceso de Subida</span>
                 <button
                   type="button"
                   onClick={handleExecuteScheduler}
