@@ -2008,14 +2008,51 @@ export default function SubidorPage() {
                         {publishedAt && <span> · Subido el {formatDate(publishedAt)}</span>}
                       </div>
                     </div>
-                    <span style={{
-                      fontSize: "0.68rem", fontWeight: "700",
-                      color: "#f59e0b", background: "rgba(245,158,11,0.12)",
-                      border: "1px solid rgba(245,158,11,0.25)",
-                      padding: "2px 9px", borderRadius: "6px", whiteSpace: "nowrap", flexShrink: 0
-                    }}>
-                      Borrador · Pendiente de edición
-                    </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                      <span style={{
+                        fontSize: "0.68rem", fontWeight: "700",
+                        color: "#f59e0b", background: "rgba(245,158,11,0.12)",
+                        border: "1px solid rgba(245,158,11,0.25)",
+                        padding: "2px 9px", borderRadius: "6px", whiteSpace: "nowrap", flexShrink: 0
+                      }}>
+                        Borrador · Pendiente de edición
+                      </span>
+                      <button
+                        type="button"
+                        title="Eliminar borrador de YouTube y del sistema"
+                        onClick={async () => {
+                          if (!confirm(`⚠️ ¿Seguro que quieres eliminar el borrador "${videoTitle}" de YouTube y del sistema? Esta acción no se puede deshacer.`)) return;
+                          try {
+                            const idToDelete = video.dbId || ytId;
+                            const res = await fetch(`/api/videos?id=${idToDelete}`, { method: 'DELETE' });
+                            if (res.ok) {
+                              fetchScheduledUpdates();
+                              fetchPrivateVideos();
+                            } else {
+                              alert("Error al eliminar el borrador.");
+                            }
+                          } catch (err) {
+                            console.error(err);
+                            alert("Error de red al eliminar el borrador.");
+                          }
+                        }}
+                        style={{
+                          background: "rgba(239, 68, 68, 0.15)",
+                          border: "1px solid rgba(239, 68, 68, 0.3)",
+                          color: "#ef4444",
+                          borderRadius: "50%",
+                          width: "22px",
+                          height: "22px",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          cursor: "pointer",
+                          fontSize: "0.7rem",
+                          fontWeight: "bold",
+                          flexShrink: 0
+                        }}
+                      >✕</button>
+                    </div>
                   </div>
                 );
               })}
