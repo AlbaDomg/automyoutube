@@ -1799,7 +1799,8 @@ export default function SubidorPage() {
                                   fontSize: "0.8rem",
                                   color: "#f8fafc",
                                   width: "100%",
-                                  resize: "vertical"
+                                  resize: "vertical",
+                                  fontFamily: "inherit"
                                 }}
                               />
                             </div>
