@@ -92,6 +92,12 @@ export default function SubidorPage() {
   const [frameTime, setFrameTime] = useState(15);
   const [videoObjectURL, setVideoObjectURL] = useState("");
 
+  // Estados de la cola de subidas por lote
+  const [batchFiles, setBatchFiles] = useState([]);
+  const [extractingIndex, setExtractingIndex] = useState(-1);
+  const [isBatchUploading, setIsBatchUploading] = useState(false);
+  const [optimizingBatchFields, setOptimizingBatchFields] = useState({});
+
   // Limpiar URL del objeto de vídeo al desmontar
   useEffect(() => {
     return () => {
@@ -112,7 +118,7 @@ export default function SubidorPage() {
     }
   };
 
-  const handleVideoSeeked = () => {
+  const handleVideoSeeked = async () => {
     if (hiddenVideoRef.current) {
       try {
         const canvas = document.createElement("canvas");
@@ -122,16 +128,29 @@ export default function SubidorPage() {
         if (ctx) {
           ctx.drawImage(hiddenVideoRef.current, 0, 0, canvas.width, canvas.height);
           const base64 = canvas.toDataURL("image/jpeg", 0.85);
-          setLocalExtractedFrame(base64);
-          setSimpleUploadStatus("Portada del vídeo capturada correctamente.");
 
-          // Disparar emparejamiento visual si no hemos encontrado coincidencia por texto y hay candidatos
-          if (parsedVideos && parsedVideos.length > 0) {
-            triggerVisualMatch(base64, parsedVideos, simpleVideoFile);
+          if (extractingIndex >= 0) {
+            const currentIdx = extractingIndex;
+            await processExtractionResult(currentIdx, base64);
+          } else {
+            setLocalExtractedFrame(base64);
+            setSimpleUploadStatus("Portada del vídeo capturada correctamente.");
+
+            // Disparar emparejamiento visual si no hemos encontrado coincidencia por texto y hay candidatos
+            if (parsedVideos && parsedVideos.length > 0) {
+              triggerVisualMatch(base64, parsedVideos, simpleVideoFile);
+            }
           }
         }
       } catch (err) {
         console.error("Error al extraer fotograma en seeked:", err);
+        if (extractingIndex >= 0) {
+          const currentIdx = extractingIndex;
+          setBatchFiles(prev => prev.map((item, idx) => 
+            idx === currentIdx ? { ...item, status: 'ready' } : item
+          ));
+          setExtractingIndex(-1);
+        }
       }
     }
   };
@@ -366,188 +385,441 @@ export default function SubidorPage() {
     }
   };
 
-  // Manejar cambio del input del archivo de vídeo
+  // Manejar cambio del input del archivo de vídeo (múltiple)
   const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    setSimpleVideoFile(file);
-    hasMatchedRef.current = false; // Resetear indicador de emparejamiento para el nuevo archivo
-    if (!file) {
-      setLocalExtractedFrame(null);
-      setVideoDuration(0);
-      setFrameTime(15);
-      return;
-    }
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
 
-    setSimpleUploadStatus("Extrayendo portada del vídeo local...");
-    try {
-      if (videoObjectURL) {
-        URL.revokeObjectURL(videoObjectURL);
-      }
-      const url = URL.createObjectURL(file);
-      setVideoObjectURL(url);
-      if (hiddenVideoRef.current) {
-        hiddenVideoRef.current.src = url;
-        hiddenVideoRef.current.load();
-      }
+    const newBatchItems = files.map(file => ({
+      id: generateUUID(),
+      file: file,
+      title: file.name.replace(/\.[^/.]+$/, ""),
+      description: "",
+      status: 'pending', // pending, extracting, ready, uploading, completed, failed
+      progress: 0,
+      rawFrameBase64: null,
+      hasMatched: false,
+      index: null
+    }));
 
-      // Auto-emparejar si ya tenemos la lista de vídeos parseada de la escaleta
-      if (parsedVideos && parsedVideos.length > 0) {
-        autoMatchAndFillVideo(file, parsedVideos);
-      }
-    } catch (err) {
-      console.error("Error al iniciar carga de vídeo:", err);
-      setSimpleUploadStatus("No se pudo iniciar la carga del vídeo para la captura.");
+    setBatchFiles(prev => [...prev, ...newBatchItems]);
+
+    // Limpiar input
+    if (e.target) {
+      e.target.value = "";
     }
   };
 
-  // Subida de vídeo directamente a YouTube mediante sesión resumible
-  const handleSimpleVideoUpload = async (e) => {
-    e.preventDefault();
-    if (!simpleVideoFile) {
-      alert("Por favor, selecciona un archivo de vídeo.");
-      return;
-    }
-    if (!simpleTitle.trim()) {
-      alert("Por favor, introduce un título para el vídeo.");
-      return;
-    }
+  // Actualizar metadatos de un vídeo en la cola
+  const handleUpdateBatchField = (id, field, value) => {
+    setBatchFiles(prev => prev.map(item => 
+      item.id === id ? { ...item, [field]: value } : item
+    ));
+  };
 
-    setIsSimpleUploading(true);
-    setSimpleUploadProgress(0);
-    setSimpleUploadStatus("Iniciando sesión de subida en YouTube...");
+  // Eliminar un vídeo de la cola
+  const handleRemoveBatchFile = (id) => {
+    setBatchFiles(prev => {
+      const isExtractingItemRemoved = prev.find(item => item.id === id)?.status === 'extracting';
+      if (isExtractingItemRemoved) {
+        setExtractingIndex(-1);
+        if (videoObjectURL) {
+          URL.revokeObjectURL(videoObjectURL);
+          setVideoObjectURL("");
+        }
+      }
+      return prev.filter(item => item.id !== id);
+    });
+  };
 
+  // Procesar el fotograma extraído y emparejar
+  const processExtractionResult = async (idx, base64) => {
+    setBatchFiles(prev => {
+      const item = prev[idx];
+      if (!item) {
+        setExtractingIndex(-1);
+        return prev;
+      }
+
+      // Limpiar videoObjectURL
+      if (videoObjectURL) {
+        URL.revokeObjectURL(videoObjectURL);
+        setVideoObjectURL("");
+      }
+
+      let matchedTitle = item.title;
+      let matchedDesc = item.description;
+      let matched = false;
+      let indexVal = null;
+
+      if (parsedVideos && parsedVideos.length > 0) {
+        const fileName = item.file.name.toLowerCase().replace(/\.[^/.]+$/, "");
+        const cleanFileName = fileName.replace(/[\_\-\.]/g, " ").replace(/\s+/g, " ").trim();
+
+        if (parsedVideos.length === 1) {
+          const match = parsedVideos[0];
+          matchedTitle = match.title;
+          matchedDesc = match.description;
+          matched = true;
+          indexVal = match.index;
+        } else {
+          const numberMatch = cleanFileName.match(/(?:^|\D)(\d+)(?:\D|$)/);
+          if (numberMatch) {
+            const fileIndex = parseInt(numberMatch[1], 10);
+            const matchByIndex = parsedVideos.find(v => v.index === fileIndex);
+            if (matchByIndex) {
+              matchedTitle = matchByIndex.title;
+              matchedDesc = matchByIndex.description;
+              matched = true;
+              indexVal = matchByIndex.index;
+            }
+          }
+
+          if (!matched) {
+            let bestMatch = null;
+            let maxMatches = 0;
+
+            for (const video of parsedVideos) {
+              let score = 0;
+              if (video.programName) {
+                const cleanProgram = video.programName.toLowerCase().replace(/[\_\-\.]/g, " ").replace(/\s+/g, " ").trim();
+                if (cleanFileName.includes(cleanProgram)) {
+                  score += 10;
+                }
+              }
+
+              const videoWords = video.title.toLowerCase().replace(/[^a-z0-9]/g, " ").split(/\s+/).filter(w => w.length > 3 && w !== "video" && w !== "programa");
+              const fileWords = cleanFileName.split(/\s+/).filter(w => w.length > 3 && w !== "video" && w !== "programa");
+
+              let matchingWordsCount = 0;
+              for (const w of fileWords) {
+                if (videoWords.includes(w)) {
+                  matchingWordsCount++;
+                }
+              }
+
+              score += matchingWordsCount * 2;
+
+              if (score > maxMatches) {
+                maxMatches = score;
+                bestMatch = video;
+              }
+            }
+
+            if (bestMatch && maxMatches >= 2) {
+              matchedTitle = bestMatch.title;
+              matchedDesc = bestMatch.description;
+              matched = true;
+              indexVal = bestMatch.index;
+            }
+          }
+        }
+      }
+
+      if (matched) {
+        setTimeout(() => setExtractingIndex(-1), 0);
+        return prev.map((it, i) => 
+          i === idx ? { 
+            ...it, 
+            rawFrameBase64: base64,
+            title: matchedTitle, 
+            description: matchedDesc, 
+            status: 'ready',
+            hasMatched: true,
+            index: indexVal
+          } : it
+        );
+      } else if (parsedVideos && parsedVideos.length > 1) {
+        // Disparar emparejamiento visual asíncrono sin bloquear la cola
+        triggerVisualMatchForBatchItem(item.id, base64, parsedVideos);
+        
+        // Rellenar por defecto temporalmente con el primer video
+        const firstVideo = parsedVideos[0];
+        setTimeout(() => setExtractingIndex(-1), 0);
+        return prev.map((it, i) => 
+          i === idx ? { 
+            ...it, 
+            rawFrameBase64: base64,
+            title: firstVideo.title, 
+            description: firstVideo.description, 
+            status: 'ready',
+            hasMatched: false,
+            index: firstVideo.index
+          } : it
+        );
+      } else {
+        setTimeout(() => setExtractingIndex(-1), 0);
+        return prev.map((it, i) => 
+          i === idx ? { ...it, rawFrameBase64: base64, status: 'ready' } : it
+        );
+      }
+    });
+  };
+
+  // Emparejamiento visual asíncrono para un item en lote
+  const triggerVisualMatchForBatchItem = async (itemId, frameBase64, videosList) => {
     try {
-      const file = simpleVideoFile;
-
-      // Fase 1: Obtener URL de sesión resumible de YouTube a través de nuestro servidor
-      const initRes = await fetch("/api/upload", {
+      const res = await fetch("/api/youtube/match-frame", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: simpleTitle,
-          description: simpleDescription,
-          fileName: file.name,
-          fileSize: file.size,
-          fileType: file.type || "video/mp4",
-          rawFrameBase64: localExtractedFrame
+          frameBase64,
+          videos: videosList
         })
       });
 
-      if (!initRes.ok) {
-        const errData = await initRes.json();
-        throw new Error(errData.error || "Error al iniciar la sesión de subida en YouTube.");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.matchedIndex !== null) {
+          const match = videosList.find(v => v.index === data.matchedIndex);
+          if (match) {
+            setBatchFiles(prev => prev.map(it => 
+              it.id === itemId ? { 
+                ...it, 
+                title: match.title, 
+                description: match.description, 
+                hasMatched: true, 
+                index: match.index 
+              } : it
+            ));
+            console.log(`[Visual-Match Batch Async] Coincidencia visual encontrada (Índice ${data.matchedIndex}) para item ${itemId}`);
+          }
+        }
       }
+    } catch (err) {
+      console.warn("[Visual-Match Batch Async] Fallo en visual match:", err.message);
+    }
+  };
 
-      const { uploadUrl, videoId } = await initRes.json();
-      setSimpleUploadStatus("Subiendo vídeo directamente a YouTube...");
-      setScheduledUpdates(prev => [
-        {
-          id: videoId,
-          title: simpleTitle,
-          description: simpleDescription,
-          status: "UPLOADING",
-          uploadProgress: 0,
-          filePath: "YOUTUBE_UPLOAD"
-        },
-        ...prev.filter(item => item.id !== videoId)
-      ]);
+  // Efecto para procesar secuencialmente la extracción de portadas de la cola
+  useEffect(() => {
+    if (extractingIndex !== -1) return;
 
-      // Fase 2: Subir el archivo directamente a YouTube en chunks
-      // El archivo va del navegador a YouTube — no pasa por Vercel, sin límite de tamaño
-      const CHUNK_SIZE = 5 * 1024 * 1024; // 5 MB por chunk directo a YouTube
-      let offset = 0;
-      let youtubeVideoId = null;
-      let lastPersistedProgress = -1;
-      let lastPersistedAt = 0;
-      const persistUploadProgress = (percent, force = false) => {
-        const progress = Math.max(0, Math.min(100, Math.round(percent)));
-        setScheduledUpdates(prev => prev.map(item =>
-          item.id === videoId ? { ...item, status: "UPLOADING", uploadProgress: progress } : item
+    const pendingIdx = batchFiles.findIndex(item => item.status === 'pending');
+    if (pendingIdx !== -1) {
+      setExtractingIndex(pendingIdx);
+      
+      setBatchFiles(prev => prev.map((item, idx) => 
+        idx === pendingIdx ? { ...item, status: 'extracting' } : item
+      ));
+
+      const file = batchFiles[pendingIdx].file;
+      try {
+        const url = URL.createObjectURL(file);
+        setVideoObjectURL(url);
+        if (hiddenVideoRef.current) {
+          hiddenVideoRef.current.src = url;
+          hiddenVideoRef.current.load();
+        }
+      } catch (err) {
+        console.error("Error al cargar vídeo para extraer en cola:", err);
+        setBatchFiles(prev => prev.map((item, idx) => 
+          idx === pendingIdx ? { ...item, status: 'failed' } : item
         ));
-
-        const now = Date.now();
-        if (!force && progress < 100 && progress - lastPersistedProgress < 5 && now - lastPersistedAt < 1000) {
-          return;
-        }
-        lastPersistedProgress = progress;
-        lastPersistedAt = now;
-        fetch(`/api/videos?id=${videoId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ uploadProgress: progress })
-        }).catch(progressErr => {
-          console.warn("[Subidor Upload] Failed to persist upload progress:", progressErr);
-        });
-      };
-
-      while (offset < file.size) {
-        const chunkEnd = Math.min(offset + CHUNK_SIZE, file.size);
-        const chunk = file.slice(offset, chunkEnd);
-
-        const chunkRes = await fetch(uploadUrl, {
-          method: "PUT",
-          headers: {
-            "Content-Range": `bytes ${offset}-${chunkEnd - 1}/${file.size}`,
-            "Content-Type": file.type || "video/mp4"
-          },
-          body: chunk
-        });
-
-        if (chunkRes.status === 200 || chunkRes.status === 201) {
-          // Subida completada: YouTube devuelve el objeto del vídeo creado
-          const data = await chunkRes.json();
-          youtubeVideoId = data.id;
-          setSimpleUploadProgress(100);
-          persistUploadProgress(100, true);
-          break;
-        } else if (chunkRes.status === 308) {
-          // 308 Resume Incomplete: YouTube confirma el chunk y espera el siguiente
-          const rangeHeader = chunkRes.headers.get("Range");
-          offset = rangeHeader ? parseInt(rangeHeader.split("-")[1]) + 1 : chunkEnd;
-          const progress = Math.round((offset / file.size) * 100);
-          setSimpleUploadProgress(progress);
-          setSimpleUploadStatus(`Subiendo a YouTube: ${progress}%`);
-          persistUploadProgress(progress);
-        } else {
-          const errText = await chunkRes.text();
-          throw new Error(`Error en la subida a YouTube (${chunkRes.status}): ${errText.substring(0, 200)}`);
-        }
+        setExtractingIndex(-1);
       }
+    }
+  }, [batchFiles, extractingIndex]);
 
-      if (!youtubeVideoId) {
-        throw new Error("No se recibió el ID de YouTube al finalizar la subida.");
+  // Optimizar campos con IA en la cola
+  const handleOptimizeBatchFieldWithAI = async (id, text, field) => {
+    if (!text || !text.trim()) {
+      alert("Introduce algún texto primero para optimizar.");
+      return;
+    }
+
+    let suffix = "";
+    let textToOptimize = text;
+    if (field === 'title') {
+      const pipeIndex = text.lastIndexOf(" | ");
+      if (pipeIndex !== -1) {
+        suffix = text.substring(pipeIndex);
+        textToOptimize = text.substring(0, pipeIndex).trim();
       }
+    }
 
-      // Fase 3: Notificar al servidor que la subida completó correctamente
-      setSimpleUploadStatus("Registrando vídeo en el sistema...");
-      await fetch(`/api/upload?action=complete`, {
+    const cacheKey = `${id}_${field}`;
+    setOptimizingBatchFields(prev => ({ ...prev, [cacheKey]: true }));
+
+    try {
+      const res = await fetch("/api/youtube/optimize-seo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ videoId, youtubeId: youtubeVideoId })
+        body: JSON.stringify({ text: textToOptimize, field })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.optimizedText) {
+          handleUpdateBatchField(id, field, data.optimizedText + suffix);
+        }
+      } else {
+        const data = await res.json();
+        alert(`Fallo al optimizar: ${data.error || "error desconocido"}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error de red al conectar con Gemini.");
+    } finally {
+      setOptimizingBatchFields(prev => ({ ...prev, [cacheKey]: false }));
+    }
+  };
+
+  // Subir un único vídeo de la cola usando chunks
+  const uploadSingleBatchVideo = async (item) => {
+    const file = item.file;
+
+    // Fase 1: Obtener URL de sesión resumible
+    const initRes = await fetch("/api/upload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: item.title,
+        description: item.description,
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type || "video/mp4",
+        rawFrameBase64: item.rawFrameBase64
+      })
+    });
+
+    if (!initRes.ok) {
+      const errData = await initRes.json();
+      throw new Error(errData.error || "Error al iniciar la sesión de subida en YouTube.");
+    }
+
+    const { uploadUrl, videoId } = await initRes.json();
+
+    setScheduledUpdates(prev => [
+      {
+        id: videoId,
+        title: item.title,
+        description: item.description,
+        status: "UPLOADING",
+        uploadProgress: 0,
+        filePath: "YOUTUBE_UPLOAD"
+      },
+      ...prev.filter(it => it.id !== videoId)
+    ]);
+
+    // Fase 2: Subir chunked
+    const CHUNK_SIZE = 5 * 1024 * 1024;
+    let offset = 0;
+    let youtubeVideoId = null;
+    let lastPersistedProgress = -1;
+    let lastPersistedAt = 0;
+
+    const persistUploadProgress = (percent, force = false) => {
+      const progress = Math.max(0, Math.min(100, Math.round(percent)));
+      
+      setBatchFiles(prev => prev.map(it => 
+        it.id === item.id ? { ...it, progress } : it
+      ));
+
+      setScheduledUpdates(prev => prev.map(it =>
+        it.id === videoId ? { ...it, status: "UPLOADING", uploadProgress: progress } : it
+      ));
+
+      const now = Date.now();
+      if (!force && progress < 100 && progress - lastPersistedProgress < 5 && now - lastPersistedAt < 1000) {
+        return;
+      }
+      lastPersistedProgress = progress;
+      lastPersistedAt = now;
+      fetch(`/api/videos?id=${videoId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uploadProgress: progress })
+      }).catch(progressErr => {
+        console.warn("[Batch Upload Progress] Failed to persist progress:", progressErr);
+      });
+    };
+
+    while (offset < file.size) {
+      const chunkEnd = Math.min(offset + CHUNK_SIZE, file.size);
+      const chunk = file.slice(offset, chunkEnd);
+
+      const chunkRes = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: {
+          "Content-Range": `bytes ${offset}-${chunkEnd - 1}/${file.size}`,
+          "Content-Type": file.type || "video/mp4"
+        },
+        body: chunk
       });
 
-      setSimpleUploadStatus("¡Vídeo subido a YouTube correctamente!");
-      alert("Vídeo subido a YouTube como borrador. El editor puede procesarlo y publicarlo.");
-
-      // Limpiar formulario
-      setSimpleVideoFile(null);
-      setLocalExtractedFrame(null);
-      setSimpleTitle("");
-      setSimpleDescription("");
-      if (simpleVideoInputRef.current) simpleVideoInputRef.current.value = "";
-
-      // Refrescar listas
-      fetchPrivateVideos();
-      fetchScheduledUpdates();
-
-    } catch (err) {
-      console.error("Error en la subida a YouTube:", err);
-      setSimpleUploadStatus(`Error: ${err.message}`);
-      alert(`Error en la subida: ${err.message}`);
-    } finally {
-      setIsSimpleUploading(false);
-      setSimpleUploadProgress(0);
+      if (chunkRes.status === 200 || chunkRes.status === 201) {
+        const data = await chunkRes.json();
+        youtubeVideoId = data.id;
+        persistUploadProgress(100, true);
+        break;
+      } else if (chunkRes.status === 308) {
+        const rangeHeader = chunkRes.headers.get("Range");
+        offset = rangeHeader ? parseInt(rangeHeader.split("-")[1]) + 1 : chunkEnd;
+        const progress = Math.round((offset / file.size) * 100);
+        persistUploadProgress(progress);
+      } else {
+        const errText = await chunkRes.text();
+        throw new Error(`Error en la subida a YouTube (${chunkRes.status}): ${errText.substring(0, 200)}`);
+      }
     }
+
+    if (!youtubeVideoId) {
+      throw new Error("No se recibió el ID de YouTube al finalizar la subida.");
+    }
+
+    // Fase 3: Completar registro
+    await fetch(`/api/upload?action=complete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ videoId, youtubeId: youtubeVideoId })
+    });
+  };
+
+  // Iniciar la subida de todos los vídeos listos secuencialmente
+  const handleStartBatchUpload = async () => {
+    if (isBatchUploading) return;
+    
+    const readyItems = batchFiles.filter(item => item.status === 'ready' || item.status === 'failed');
+    if (readyItems.length === 0) {
+      alert("No hay vídeos listos para subir en la cola.");
+      return;
+    }
+
+    setIsBatchUploading(true);
+
+    for (const item of readyItems) {
+      let exists = false;
+      await new Promise(resolve => {
+        setBatchFiles(prev => {
+          const fresh = prev.find(it => it.id === item.id);
+          exists = fresh && (fresh.status === 'ready' || fresh.status === 'failed');
+          resolve();
+          return prev;
+        });
+      });
+      if (!exists) continue;
+
+      try {
+        setBatchFiles(prev => prev.map(it => 
+          it.id === item.id ? { ...it, status: 'uploading', progress: 0 } : it
+        ));
+
+        await uploadSingleBatchVideo(item);
+
+        setBatchFiles(prev => prev.map(it => 
+          it.id === item.id ? { ...it, status: 'completed', progress: 100 } : it
+        ));
+      } catch (err) {
+        console.error(`Error al subir ${item.file.name}:`, err);
+        setBatchFiles(prev => prev.map(it => 
+          it.id === item.id ? { ...it, status: 'failed' } : it
+        ));
+      }
+    }
+
+    setIsBatchUploading(false);
+    fetchPrivateVideos();
+    fetchScheduledUpdates();
   };
 
   const handleAnalyzeFile = async (e) => {
@@ -614,9 +886,96 @@ export default function SubidorPage() {
       setParsedVideos(videosList);
       setAnalyzeProgress("COMPLETED");
 
-      // Auto-emparejar si ya tenemos un archivo de vídeo seleccionado
-      if (simpleVideoFile && videosList.length > 0) {
-        autoMatchAndFillVideo(simpleVideoFile, videosList);
+      // Auto-emparejar los vídeos de la cola si el usuario acaba de subir la escaleta
+      if (videosList.length > 0) {
+        setBatchFiles(prev => {
+          return prev.map(item => {
+            if (item.hasMatched) return item;
+            
+            const fileName = item.file.name.toLowerCase().replace(/\.[^/.]+$/, "");
+            const cleanFileName = fileName.replace(/[\_\-\.]/g, " ").replace(/\s+/g, " ").trim();
+
+            let matchedTitle = item.title;
+            let matchedDesc = item.description;
+            let matched = false;
+            let indexVal = null;
+
+            if (videosList.length === 1) {
+              const match = videosList[0];
+              matchedTitle = match.title;
+              matchedDesc = match.description;
+              matched = true;
+              indexVal = match.index;
+            } else {
+              const numberMatch = cleanFileName.match(/(?:^|\D)(\d+)(?:\D|$)/);
+              if (numberMatch) {
+                const fileIndex = parseInt(numberMatch[1], 10);
+                const matchByIndex = videosList.find(v => v.index === fileIndex);
+                if (matchByIndex) {
+                  matchedTitle = matchByIndex.title;
+                  matchedDesc = matchByIndex.description;
+                  matched = true;
+                  indexVal = matchByIndex.index;
+                }
+              }
+
+              if (!matched) {
+                let bestMatch = null;
+                let maxMatches = 0;
+
+                for (const video of videosList) {
+                  let score = 0;
+                  if (video.programName) {
+                    const cleanProgram = video.programName.toLowerCase().replace(/[\_\-\.]/g, " ").replace(/\s+/g, " ").trim();
+                    if (cleanFileName.includes(cleanProgram)) {
+                      score += 10;
+                    }
+                  }
+
+                  const videoWords = video.title.toLowerCase().replace(/[^a-z0-9]/g, " ").split(/\s+/).filter(w => w.length > 3 && w !== "video" && w !== "programa");
+                  const fileWords = cleanFileName.split(/\s+/).filter(w => w.length > 3 && w !== "video" && w !== "programa");
+
+                  let matchingWordsCount = 0;
+                  for (const w of fileWords) {
+                    if (videoWords.includes(w)) {
+                      matchingWordsCount++;
+                    }
+                  }
+
+                  score += matchingWordsCount * 2;
+
+                  if (score > maxMatches) {
+                    maxMatches = score;
+                    bestMatch = video;
+                  }
+                }
+
+                if (bestMatch && maxMatches >= 2) {
+                  matchedTitle = bestMatch.title;
+                  matchedDesc = bestMatch.description;
+                  matched = true;
+                  indexVal = bestMatch.index;
+                }
+              }
+            }
+
+            if (matched) {
+              return {
+                ...item,
+                title: matchedTitle,
+                description: matchedDesc,
+                hasMatched: true,
+                index: indexVal
+              };
+            }
+
+            if (item.rawFrameBase64 && videosList.length > 1) {
+              triggerVisualMatchForBatchItem(item.id, item.rawFrameBase64, videosList);
+            }
+
+            return item;
+          });
+        });
       }
     } catch (err) {
       console.error(err);
@@ -630,131 +989,16 @@ export default function SubidorPage() {
     }
   };
 
-  // Función para emparejar automáticamente el archivo de vídeo seleccionado con la lista de la escaleta
-  const autoMatchAndFillVideo = (videoFile, videosList) => {
-    if (!videoFile || !videosList || videosList.length === 0) return;
-
-    // Normalizar el nombre del archivo de vídeo
-    // Ej: "expediente_oculto_programa_22.mp4" -> "expediente oculto programa 22"
-    const fileName = videoFile.name.toLowerCase().replace(/\.[^/.]+$/, "");
-    const cleanFileName = fileName.replace(/[\_\-\.]/g, " ").replace(/\s+/g, " ").trim();
-
-    // 1. Si sólo hay un vídeo en la lista, lo seleccionamos directamente
-    if (videosList.length === 1) {
-      const match = videosList[0];
-      handleRellenarFormulario(match.title, match.description);
-      hasMatchedRef.current = true;
-      console.log(`[Auto-Match] Solamente hay 1 video en la escaleta. Auto-rellenado con: "${match.title}"`);
-      return;
-    }
-
-    // 2. Intentar buscar coincidencia por número de orden en el nombre de archivo (ej: "1.mp4", "bloque 2")
-    const numberMatch = cleanFileName.match(/(?:^|\D)(\d+)(?:\D|$)/);
-    if (numberMatch) {
-      const fileIndex = parseInt(numberMatch[1], 10);
-      const matchByIndex = videosList.find(v => v.index === fileIndex);
-      if (matchByIndex) {
-        handleRellenarFormulario(matchByIndex.title, matchByIndex.description);
-        hasMatchedRef.current = true;
-        console.log(`[Auto-Match] Coincidencia por número de índice (${fileIndex}). Auto-rellenado con: "${matchByIndex.title}"`);
-        return;
-      }
-    }
-
-    // 3. Intentar buscar coincidencia difusa del programa o título
-    let bestMatch = null;
-    let maxMatches = 0;
-
-    for (const video of videosList) {
-      let score = 0;
-      
-      // Buscar si el programa está en el nombre del archivo
-      if (video.programName) {
-        const cleanProgram = video.programName.toLowerCase().replace(/[\_\-\.]/g, " ").replace(/\s+/g, " ").trim();
-        if (cleanFileName.includes(cleanProgram)) {
-          score += 10;
-        }
-      }
-
-      // Buscar coincidencia de palabras individuales significativas
-      const videoWords = video.title.toLowerCase().replace(/[^a-z0-9]/g, " ").split(/\s+/).filter(w => w.length > 3 && w !== "video" && w !== "programa");
-      const fileWords = cleanFileName.split(/\s+/).filter(w => w.length > 3 && w !== "video" && w !== "programa");
-
-      let matchingWordsCount = 0;
-      for (const w of fileWords) {
-        if (videoWords.includes(w)) {
-          matchingWordsCount++;
-        }
-      }
-
-      score += matchingWordsCount * 2;
-
-      if (score > maxMatches) {
-        maxMatches = score;
-        bestMatch = video;
-      }
-    }
-
-    // Si encontramos una coincidencia con un puntaje mínimo
-    if (bestMatch && maxMatches >= 2) {
-      handleRellenarFormulario(bestMatch.title, bestMatch.description);
-      hasMatchedRef.current = true;
-      console.log(`[Auto-Match] Coincidencia encontrada (${maxMatches} pts). Auto-rellenado con: "${bestMatch.title}"`);
-    } else {
-      // Si no hay coincidencia pero hay elementos, por defecto auto-rellenamos con el primero de la lista para ahorrar clics,
-      // pero dejamos hasMatchedRef.current = false para permitir que el análisis visual actúe si es posible
-      const firstVideo = videosList[0];
-      handleRellenarFormulario(firstVideo.title, firstVideo.description);
-      hasMatchedRef.current = false;
-      console.log(`[Auto-Match] Sin coincidencia clara. Auto-rellenado por defecto con el primer video: "${firstVideo.title}"`);
-    }
-  };
-
-  // Función para emparejar visualmente el fotograma capturado usando Gemini Vision
-  const triggerVisualMatch = async (frameBase64, videosList, videoFile) => {
-    if (hasMatchedRef.current) return; // Ya emparejado por nombre de archivo o índice
-    if (!frameBase64 || !videosList || videosList.length <= 1 || !videoFile) return;
-
-    console.log("[Visual-Match] Nombre de archivo genérico. Iniciando emparejamiento visual con Gemini...");
-    setSimpleUploadStatus("Analizando visualmente el contenido del vídeo con Gemini...");
-
-    try {
-      const res = await fetch("/api/youtube/match-frame", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          frameBase64,
-          videos: videosList
-        })
-      });
-
-      if (!res.ok) {
-        throw new Error("Error en API de emparejamiento visual");
-      }
-
-      const data = await res.json();
-      if (data.success && data.matchedIndex !== null) {
-        const match = videosList.find(v => v.index === data.matchedIndex);
-        if (match) {
-          handleRellenarFormulario(match.title, match.description);
-          hasMatchedRef.current = true;
-          setSimpleUploadStatus("Portada capturada y vídeo emparejado visualmente con éxito.");
-          console.log(`[Visual-Match] Coincidencia visual encontrada (Índice ${data.matchedIndex}). Auto-rellenado con: "${match.title}"`);
-          return;
-        }
-      }
-      
-      setSimpleUploadStatus("Portada capturada. Sin coincidencia visual clara (puedes elegirlo a mano abajo).");
-      console.log("[Visual-Match] Gemini no pudo identificar coincidencia visual con alta confianza.");
-    } catch (err) {
-      console.warn("[Visual-Match] Fallo en el análisis visual:", err.message);
-      setSimpleUploadStatus("Portada capturada. Falló el análisis visual (puedes elegirlo a mano abajo).");
-    }
-  };
-
   const handleRellenarFormulario = (title, description) => {
-    setSimpleTitle(title);
-    setSimpleDescription(description);
+    setBatchFiles(prev => {
+      const idx = prev.findIndex(item => item.status !== 'completed' && item.status !== 'uploading');
+      if (idx !== -1) {
+        return prev.map((item, i) => 
+          i === idx ? { ...item, title, description, hasMatched: true } : item
+        );
+      }
+      return prev;
+    });
   };
 
   const handleExecuteScheduler = async () => {
@@ -1288,140 +1532,342 @@ export default function SubidorPage() {
             )}
           </div>
 
-          {/* Columna Derecha: Formulario de Subida */}
+          {/* Columna Derecha: Cola de Subida por Lotes */}
           <div className={styles.card} style={{ display: "flex", flexDirection: "column", height: "100%", justifyContent: "flex-start" }}>
             <h3 style={{ fontSize: "1.25rem", fontWeight: "800", marginBottom: "1.25rem", background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-              📤 Subida de Vídeo
+              📤 Cola de Subida por Lotes
             </h3>
-            <form onSubmit={handleSimpleVideoUpload} style={{ display: "flex", flexDirection: "column", gap: "1.25rem", flex: 1 }}>
-              
-              <div className={styles.inputGroup}>
-                <label>Archivo de vídeo (.mp4, .mov, etc.)</label>
-                <input
-                  type="file"
-                  ref={simpleVideoInputRef}
-                  accept="video/*"
-                  onChange={handleFileChange}
-                  required
-                />
+
+            {/* Zona de Selección de Archivos Múltiple */}
+            <div style={{
+              border: "2px dashed rgba(168, 85, 247, 0.4)",
+              borderRadius: "14px",
+              padding: "1.5rem",
+              textAlign: "center",
+              cursor: "pointer",
+              background: "rgba(168, 85, 247, 0.02)",
+              transition: "all 0.2s",
+              marginBottom: "1.5rem"
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.borderColor = "#a855f7"}
+            onMouseLeave={(e) => e.currentTarget.style.borderColor = "rgba(168, 85, 247, 0.4)"}
+            onClick={() => simpleVideoInputRef.current && simpleVideoInputRef.current.click()}
+            >
+              <span style={{ fontSize: "2rem", display: "block", marginBottom: "0.5rem" }}>📁</span>
+              <span style={{ fontSize: "0.85rem", fontWeight: "700", color: "#f8fafc" }}>Seleccionar vídeos para subir en lote</span>
+              <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", display: "block", marginTop: "0.25rem" }}>Puedes seleccionar varios archivos .mp4, .mov, etc. a la vez</span>
+              <input
+                type="file"
+                ref={simpleVideoInputRef}
+                accept="video/*"
+                multiple
+                onChange={handleFileChange}
+                style={{ display: "none" }}
+              />
+            </div>
+
+            {batchFiles.length === 0 ? (
+              <div style={{
+                flex: 1,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "3rem 1rem",
+                color: "var(--text-muted)",
+                fontSize: "0.85rem",
+                border: "1px dashed var(--border-color)",
+                borderRadius: "14px"
+              }}>
+                No hay vídeos en la cola. Añade archivos arriba para empezar.
               </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
+                <div style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontSize: "0.75rem",
+                  color: "var(--text-muted)",
+                  marginBottom: "0.75rem"
+                }}>
+                  <span>Vídeos en la cola: {batchFiles.length}</span>
+                  <span style={{ color: "#a855f7" }}>
+                    {batchFiles.filter(f => f.status === 'completed').length} de {batchFiles.length} subidos
+                  </span>
+                </div>
 
-              <div className={styles.inputGroup}>
-                <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span>Título en YouTube</span>
-                  <button
-                    type="button"
-                    disabled={isOptimizingSimpleTitle}
-                    onClick={() => handleOptimizeFieldWithAI(simpleTitle, 'title', setSimpleTitle, setIsOptimizingSimpleTitle)}
-                    className={styles.btnSubmit}
-                    style={{
-                      width: "auto",
-                      fontSize: "0.7rem",
-                      padding: "2px 8px",
-                      margin: 0,
-                      background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
-                      border: "none",
-                      borderRadius: "4px",
-                      cursor: "pointer",
-                      color: "#fff"
-                    }}
-                  >
-                    {isOptimizingSimpleTitle ? "Optimizando..." : "🪄 Optimizar con IA"}
-                  </button>
-                </label>
-                <input
-                  type="text"
-                  placeholder="Escribe un título descriptivo..."
-                  value={simpleTitle}
-                  onChange={(e) => setSimpleTitle(e.target.value)}
-                  onPaste={(e) => handleCleanPaste(e, setSimpleTitle)}
-                  required
-                />
-                {isOptimizingSimpleTitle && (
-                  <div style={{
-                    marginTop: "0.4rem",
-                    height: "3px",
-                    width: "100%",
-                    backgroundColor: "rgba(255,255,255,0.05)",
-                    borderRadius: "1.5px",
-                    overflow: "hidden",
-                    position: "relative"
-                  }}>
-                    <div className={styles.pulseProgressBar} />
-                  </div>
-                )}
-              </div>
+                <div style={{
+                  maxHeight: "500px",
+                  overflowY: "auto",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "1rem",
+                  paddingRight: "0.25rem"
+                }}>
+                  {batchFiles.map((item, idx) => {
+                    const fileSizeMB = (item.file.size / (1024 * 1024)).toFixed(1);
+                    return (
+                      <div key={item.id} style={{
+                        background: "rgba(255, 255, 255, 0.02)",
+                        border: "1px solid rgba(255,255,255,0.08)",
+                        borderRadius: "12px",
+                        padding: "1rem",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "0.75rem",
+                        position: "relative"
+                      }}>
+                        {/* Cabecera del Item */}
+                        <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start" }}>
+                          {/* Miniatura */}
+                          <div style={{
+                            width: "120px",
+                            height: "68px",
+                            borderRadius: "8px",
+                            overflow: "hidden",
+                            background: "#090d1f",
+                            border: "1px solid rgba(255,255,255,0.1)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            position: "relative",
+                            flexShrink: 0
+                          }}>
+                            {item.rawFrameBase64 ? (
+                              <img src={item.rawFrameBase64} alt="Frame" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            ) : item.status === 'extracting' ? (
+                              <div style={{
+                                width: "20px",
+                                height: "20px",
+                                border: "2px solid rgba(168, 85, 247, 0.1)",
+                                borderTop: "2px solid #a855f7",
+                                borderRadius: "50%",
+                                animation: "spin 1s linear infinite"
+                              }} />
+                            ) : (
+                              <span style={{ fontSize: "1.5rem" }}>🎬</span>
+                            )}
+                          </div>
 
-              <div className={styles.inputGroup}>
-                <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span>Descripción del vídeo</span>
-                  <button
-                    type="button"
-                    disabled={isOptimizingSimpleDesc}
-                    onClick={() => handleOptimizeFieldWithAI(simpleDescription, 'description', setSimpleDescription, setIsOptimizingSimpleDesc)}
-                    className={styles.btnSubmit}
-                    style={{
-                      width: "auto",
-                      fontSize: "0.7rem",
-                      padding: "2px 8px",
-                      margin: 0,
-                      background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
-                      border: "none",
-                      borderRadius: "4px",
-                      cursor: "pointer",
-                      color: "#fff"
-                    }}
-                  >
-                    {isOptimizingSimpleDesc ? "Optimizando..." : "🪄 Optimizar con IA"}
-                  </button>
-                </label>
-                <textarea
-                  rows="6"
-                  placeholder="Escribe la descripción del vídeo..."
-                  value={simpleDescription}
-                  onChange={(e) => setSimpleDescription(e.target.value)}
-                  onPaste={(e) => handleCleanPaste(e, setSimpleDescription)}
-                  style={{ fontSize: "0.85rem", lineHeight: "1.4" }}
-                />
-                {isOptimizingSimpleDesc && (
-                  <div style={{
-                    marginTop: "0.4rem",
-                    height: "3px",
-                    width: "100%",
-                    backgroundColor: "rgba(255,255,255,0.05)",
-                    borderRadius: "1.5px",
-                    overflow: "hidden",
-                    position: "relative"
-                  }}>
-                    <div className={styles.pulseProgressBar} />
-                  </div>
-                )}
-              </div>
+                          {/* Info y Estado */}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{
+                              fontSize: "0.85rem",
+                              fontWeight: "700",
+                              color: "#f8fafc",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap"
+                            }}>
+                              {item.file.name}
+                            </div>
+                            <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "0.2rem" }}>
+                              Tamaño: {fileSizeMB} MB
+                            </div>
 
-              {isSimpleUploading && (
-                <div style={{ marginTop: "0.5rem" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.80rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>
-                    <span>{simpleUploadStatus}</span>
-                    <span>{simpleUploadProgress}%</span>
-                  </div>
-                  <div className={styles.batchSyncProgressOuter} style={{ marginTop: 0 }}>
-                    <div
-                      className={styles.batchSyncProgressInner}
-                      style={{
-                        width: `${simpleUploadProgress}%`,
-                        background: "linear-gradient(90deg, #a855f7 0%, #ec4899 100%)",
-                        boxShadow: "0 0 8px rgba(168, 85, 247, 0.4)"
-                      }}
-                    />
-                  </div>
+                            {/* Badge del Estado */}
+                            <div style={{ marginTop: "0.4rem" }}>
+                              {item.status === 'pending' && (
+                                <span style={{ fontSize: "0.68rem", fontWeight: "700", color: "#94a3b8", background: "rgba(148, 163, 184, 0.12)", border: "1px solid rgba(148,163,184,0.25)", padding: "2px 8px", borderRadius: "6px" }}>
+                                  ⏳ En cola
+                                </span>
+                              )}
+                              {item.status === 'extracting' && (
+                                <span style={{ fontSize: "0.68rem", fontWeight: "700", color: "#f59e0b", background: "rgba(245, 158, 11, 0.12)", border: "1px solid rgba(245,158,11,0.25)", padding: "2px 8px", borderRadius: "6px" }}>
+                                  🔄 Extrayendo portada...
+                                </span>
+                              )}
+                              {item.status === 'ready' && (
+                                <span style={{ fontSize: "0.68rem", fontWeight: "700", color: "#10b981", background: "rgba(16, 185, 129, 0.12)", border: "1px solid rgba(16,185,129,0.25)", padding: "2px 8px", borderRadius: "6px" }}>
+                                  ✅ Listo para subir
+                                </span>
+                              )}
+                              {item.status === 'uploading' && (
+                                <span style={{ fontSize: "0.68rem", fontWeight: "700", color: "#38bdf8", background: "rgba(56, 189, 248, 0.12)", border: "1px solid rgba(56,189,248,0.25)", padding: "2px 8px", borderRadius: "6px" }}>
+                                  📤 Subiendo... {item.progress}%
+                                </span>
+                              )}
+                              {item.status === 'completed' && (
+                                <span style={{ fontSize: "0.68rem", fontWeight: "700", color: "#10b981", background: "rgba(16, 185, 129, 0.2)", border: "1px solid #10b981", padding: "2px 8px", borderRadius: "6px" }}>
+                                  🎉 ¡Subido con éxito!
+                                </span>
+                              )}
+                              {item.status === 'failed' && (
+                                <span style={{ fontSize: "0.68rem", fontWeight: "700", color: "#ef4444", background: "rgba(239, 68, 68, 0.12)", border: "1px solid rgba(239,68,68,0.25)", padding: "2px 8px", borderRadius: "6px" }}>
+                                  ❌ Error al subir
+                                </span>
+                              )}
+                            </div>
+                          </div>
 
-                  {/* ⚠️ Aviso: no cerrar la página durante la subida */}
-                  <style>{`
-                    @keyframes warningPulse {
-                      0%, 100% { border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.08); }
-                      50% { border-color: rgba(239, 68, 68, 0.8); background: rgba(239, 68, 68, 0.18); }
-                    }
-                  `}</style>
+                          {/* Botón de Eliminar */}
+                          {!isBatchUploading && item.status !== 'completed' && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveBatchFile(item.id)}
+                              style={{
+                                background: "rgba(239, 68, 68, 0.12)",
+                                border: "1px solid rgba(239, 68, 68, 0.25)",
+                                color: "#f87171",
+                                borderRadius: "50%",
+                                width: "24px",
+                                height: "24px",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                cursor: "pointer",
+                                transition: "all 0.2s"
+                              }}
+                              onMouseEnter={(e) => e.currentTarget.style.background = "rgba(239, 68, 68, 0.2)"}
+                              onMouseLeave={(e) => e.currentTarget.style.background = "rgba(239, 68, 68, 0.12)"}
+                            >✕</button>
+                          )}
+                        </div>
+
+                        {/* Campos de Edición si el vídeo no está subido */}
+                        {item.status !== 'completed' && (
+                          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "0.75rem" }}>
+                            {/* Input de Título */}
+                            <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                <span style={{ fontSize: "0.75rem", fontWeight: "600", color: "var(--text-secondary)" }}>Título</span>
+                                <button
+                                  type="button"
+                                  disabled={isBatchUploading || optimizingBatchFields[`${item.id}_title`]}
+                                  onClick={() => handleOptimizeBatchFieldWithAI(item.id, item.title, 'title')}
+                                  style={{
+                                    fontSize: "0.65rem",
+                                    padding: "1px 6px",
+                                    background: "rgba(168, 85, 247, 0.15)",
+                                    border: "1px solid rgba(168, 85, 247, 0.3)",
+                                    borderRadius: "4px",
+                                    color: "#c084fc",
+                                    cursor: "pointer"
+                                  }}
+                                >
+                                  {optimizingBatchFields[`${item.id}_title`] ? "Optimizando..." : "🪄 Optimizar Título con IA"}
+                                </button>
+                              </div>
+                              <input
+                                type="text"
+                                value={item.title}
+                                disabled={isBatchUploading}
+                                onChange={(e) => handleUpdateBatchField(item.id, 'title', e.target.value)}
+                                style={{
+                                  background: "rgba(0,0,0,0.15)",
+                                  border: "1px solid var(--border-color)",
+                                  borderRadius: "8px",
+                                  padding: "0.4rem 0.6rem",
+                                  fontSize: "0.8rem",
+                                  color: "#f8fafc",
+                                  width: "100%"
+                                }}
+                              />
+                            </div>
+
+                            {/* Textarea de Descripción */}
+                            <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                <span style={{ fontSize: "0.75rem", fontWeight: "600", color: "var(--text-secondary)" }}>Descripción</span>
+                                <button
+                                  type="button"
+                                  disabled={isBatchUploading || optimizingBatchFields[`${item.id}_description`]}
+                                  onClick={() => handleOptimizeBatchFieldWithAI(item.id, item.description, 'description')}
+                                  style={{
+                                    fontSize: "0.65rem",
+                                    padding: "1px 6px",
+                                    background: "rgba(168, 85, 247, 0.15)",
+                                    border: "1px solid rgba(168, 85, 247, 0.3)",
+                                    borderRadius: "4px",
+                                    color: "#c084fc",
+                                    cursor: "pointer"
+                                  }}
+                                >
+                                  {optimizingBatchFields[`${item.id}_description`] ? "Optimizando..." : "🪄 Optimizar Desc. con IA"}
+                                </button>
+                              </div>
+                              <textarea
+                                rows="3"
+                                value={item.description}
+                                disabled={isBatchUploading}
+                                onChange={(e) => handleUpdateBatchField(item.id, 'description', e.target.value)}
+                                style={{
+                                  background: "rgba(0,0,0,0.15)",
+                                  border: "1px solid var(--border-color)",
+                                  borderRadius: "8px",
+                                  padding: "0.4rem 0.6rem",
+                                  fontSize: "0.8rem",
+                                  color: "#f8fafc",
+                                  width: "100%",
+                                  resize: "vertical"
+                                }}
+                              />
+                            </div>
+
+                            {/* Badge de emparejamiento */}
+                            {item.hasMatched && (
+                              <div style={{ display: "flex", alignItems: "center", gap: "0.25rem", marginTop: "0.25rem" }}>
+                                <span style={{
+                                  fontSize: "0.68rem",
+                                  fontWeight: "700",
+                                  color: "#10b981",
+                                  background: "rgba(16, 185, 129, 0.08)",
+                                  padding: "1px 6px",
+                                  borderRadius: "4px"
+                                }}>
+                                  🤖 Auto-emparejado
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Barra de Progreso de Subida Individual */}
+                        {(item.status === 'uploading' || item.status === 'completed') && (
+                          <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "0.75rem", marginTop: "0.25rem" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>
+                              <span>Progreso de subida directa a YouTube:</span>
+                              <span>{item.progress}%</span>
+                            </div>
+                            <div style={{
+                              width: "100%",
+                              height: "6px",
+                              backgroundColor: "rgba(255, 255, 255, 0.05)",
+                              borderRadius: "3px",
+                              overflow: "hidden"
+                            }}>
+                              <div style={{
+                                width: `${item.progress}%`,
+                                height: "100%",
+                                background: "linear-gradient(90deg, #a855f7 0%, #ec4899 100%)",
+                                transition: "width 0.3s ease",
+                                boxShadow: "0 0 8px rgba(168, 85, 247, 0.4)"
+                              }} />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Botón de Subida Global */}
+                <button
+                  type="button"
+                  disabled={isBatchUploading || batchFiles.filter(item => item.status === 'ready' || item.status === 'failed').length === 0}
+                  onClick={handleStartBatchUpload}
+                  className={styles.btnSubmit}
+                  style={{
+                    marginTop: "1.5rem",
+                    background: isBatchUploading ? "#4b5563" : "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
+                    cursor: (isBatchUploading || batchFiles.filter(item => item.status === 'ready' || item.status === 'failed').length === 0) ? "not-allowed" : "pointer"
+                  }}
+                >
+                  {isBatchUploading ? "⚡ Subiendo cola de vídeos..." : `⚡ Iniciar subida de la cola (${batchFiles.filter(item => item.status === 'ready' || item.status === 'failed').length} vídeos)`}
+                </button>
+
+                {/* Aviso de no cerrar la pestaña */}
+                {isBatchUploading && (
                   <div style={{
                     marginTop: "0.75rem",
                     padding: "0.75rem 1rem",
@@ -1436,25 +1882,34 @@ export default function SubidorPage() {
                     <span style={{ fontSize: "1.2rem", flexShrink: 0 }}>⚠️</span>
                     <span style={{ fontSize: "0.82rem", color: "#fca5a5", fontWeight: "600", lineHeight: "1.4" }}>
                       <strong style={{ color: "#f87171" }}>¡No cierres esta pestaña!</strong><br />
-                      La subida se cancelará si sales o cambias de página. Espera a que llegue al 100%.
+                      La subida en lote se pausará o cancelará si sales de esta página.
                     </span>
                   </div>
-                </div>
-              )}
+                )}
 
-              <button
-                type="submit"
-                disabled={isSimpleUploading}
-                className={styles.btnSubmit}
-                style={{
-                  marginTop: "0.5rem",
-                  background: isSimpleUploading ? "#4b5563" : "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
-                  cursor: isSimpleUploading ? "not-allowed" : "pointer"
-                }}
-              >
-                {isSimpleUploading ? "Subiendo vídeo..." : "Subir vídeo a la cola"}
-              </button>
-            </form>
+                {/* Limpiar completados */}
+                {batchFiles.some(item => item.status === 'completed') && !isBatchUploading && (
+                  <button
+                    type="button"
+                    onClick={() => setBatchFiles(prev => prev.filter(item => item.status !== 'completed'))}
+                    style={{
+                      marginTop: "0.75rem",
+                      width: "100%",
+                      padding: "0.5rem",
+                      background: "rgba(255, 255, 255, 0.05)",
+                      border: "1px solid rgba(255, 255, 255, 0.1)",
+                      borderRadius: "10px",
+                      color: "#94a3b8",
+                      fontSize: "0.8rem",
+                      cursor: "pointer",
+                      fontWeight: "600"
+                    }}
+                  >
+                    🧹 Limpiar vídeos completados de la cola
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
