@@ -177,9 +177,10 @@ export async function POST(request) {
       console.warn("[Analyze PDF] Error reading program logos catalog from DB:", dbErr.message);
     }
 
-    // Detectar programa para vídeos de YouTube
+    // Detectar programa para vídeos de YouTube (con lógica local rápida y análisis visual con retardo de seguridad para evitar 429)
     let annotatedYoutubeVideos = [];
     let quotaExceeded = false;
+    let visualCallsCount = 0;
 
     if (youtubeVideos && youtubeVideos.length > 0) {
       console.log(`[Analyze PDF] Processing ${youtubeVideos.length} YouTube videos for program detection...`);
@@ -188,7 +189,14 @@ export async function POST(request) {
         
         // Si no se puede detectar por texto localmente, analizar visualmente su miniatura (si la cuota no se ha excedido)
         if (!programLogoName && video.id && !quotaExceeded) {
+          // Si ya hemos hecho alguna llamada visual en esta petición, esperar 4 segundos antes de hacer la siguiente para no saturar el RPM
+          if (visualCallsCount > 0) {
+            console.log(`[Analyze PDF] Spacing visual API calls to prevent 429. Waiting 4000ms...`);
+            await new Promise(resolve => setTimeout(resolve, 4000));
+          }
+
           console.log(`[Analyze PDF] Video ${video.id} has generic text metadata. Attempting visual analysis of default thumbnail...`);
+          visualCallsCount++;
           try {
             const thumbnailUrl = `https://i.ytimg.com/vi/${video.id}/hqdefault.jpg`;
             const imageResponse = await fetch(thumbnailUrl);
@@ -211,7 +219,6 @@ Response format:
   "detectedProgram": "PROGRAM_NAME_OR_NONE"
 }
 `;
-              // Llamada directa sin reintentos largos para prevenir timeouts de pasarela en Vercel
               const visionResponse = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
                 contents: [
@@ -250,7 +257,6 @@ Response format:
             }
           } catch (visionErr) {
             console.warn(`[Analyze PDF] Visual program detection failed for video ${video.id}:`, visionErr.message);
-            // Si el fallo es de cuota/rate limit (429), activamos la bandera para omitir las siguientes miniaturas
             const isQuotaErr = visionErr.message && (
               visionErr.message.includes('429') ||
               visionErr.message.includes('RESOURCE_EXHAUSTED') ||

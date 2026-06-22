@@ -598,6 +598,34 @@ export default function SubidorPage() {
     }
   };
 
+  // Emparejamiento visual para subida simple (individual)
+  const triggerVisualMatch = async (frameBase64, videosList, file) => {
+    try {
+      const res = await fetch("/api/youtube/match-frame", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          frameBase64,
+          videos: videosList
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.matchedIndex !== null) {
+          const match = videosList.find(v => v.index === data.matchedIndex);
+          if (match) {
+            setSimpleTitle(match.title);
+            setSimpleDescription(match.description);
+            console.log(`[Visual-Match Simple] Coincidencia visual encontrada (Índice ${data.matchedIndex})`);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("[Visual-Match Simple] Fallo en visual match:", err.message);
+    }
+  };
+
   // Efecto para procesar secuencialmente la extracción de portadas de la cola
   useEffect(() => {
     if (extractingIndex !== -1) return;

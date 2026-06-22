@@ -3,6 +3,33 @@ import { getConfig } from '@/lib/config';
 import { GoogleGenAI } from '@google/genai';
 import { verifyAppAuth } from '@/lib/auth';
 
+// Función helper con reintentos y backoff exponencial para llamadas a Gemini
+async function callGeminiWithRetry(fn, maxRetries = 3, delayMs = 3000) {
+  let attempt = 0;
+  while (attempt < maxRetries) {
+    try {
+      return await fn();
+    } catch (err) {
+      attempt++;
+      const isTransient = err.message && (
+        err.message.includes('503') || 
+        err.message.includes('UNAVAILABLE') || 
+        err.message.includes('high demand') || 
+        err.message.includes('429') ||
+        err.message.includes('RESOURCE_EXHAUSTED') ||
+        err.message.includes('overloaded') ||
+        err.message.includes('Rate limit')
+      );
+      if (attempt >= maxRetries || !isTransient) {
+        throw err;
+      }
+      console.warn(`[Gemini Match Frame] Falló la llamada a Gemini (Intento ${attempt}/${maxRetries}): ${err.message}. Reintentando en ${delayMs}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+      delayMs *= 2; // Backoff exponencial
+    }
+  }
+}
+
 export async function POST(request) {
   try {
     if (!(await verifyAppAuth(request))) {
@@ -53,26 +80,56 @@ Response format:
     // Limpiar el base64 si contiene el prefijo "data:image/jpeg;base64,"
     const cleanBase64 = frameBase64.replace(/^data:image\/[a-z]+;base64,/, "");
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            {
-              inlineData: {
-                data: cleanBase64,
-                mimeType: 'image/jpeg'
-              }
-            },
-            { text: prompt }
-          ]
+    let response;
+    try {
+      response = await callGeminiWithRetry(() => ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                inlineData: {
+                  data: cleanBase64,
+                  mimeType: 'image/jpeg'
+                }
+              },
+              { text: prompt }
+            ]
+          }
+        ],
+        config: {
+          responseMimeType: 'application/json',
         }
-      ],
-      config: {
-        responseMimeType: 'application/json',
+      }));
+    } catch (err) {
+      console.warn(`[Gemini Match Frame] Falló gemini-2.5-flash: ${err.message}. Intentando con gemini-1.5-flash como fallback...`);
+      try {
+        response = await callGeminiWithRetry(() => ai.models.generateContent({
+          model: 'gemini-1.5-flash',
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                {
+                  inlineData: {
+                    data: cleanBase64,
+                    mimeType: 'image/jpeg'
+                  }
+                },
+                { text: prompt }
+              ]
+            }
+          ],
+          config: {
+            responseMimeType: 'application/json',
+          }
+        }));
+      } catch (fallbackErr) {
+        console.error('[Gemini Match Frame] Falló también el modelo de fallback gemini-1.5-flash:', fallbackErr.message);
+        throw err;
       }
-    });
+    }
 
     let result;
     try {

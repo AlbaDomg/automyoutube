@@ -3322,19 +3322,6 @@ export default function Dashboard() {
             </button>
           )}
 
-          <button
-            onClick={() => {
-              setConfigInput({ GEMINI_API_KEY: "", YOUTUBE_CLIENT_ID: "", YOUTUBE_CLIENT_SECRET: "" });
-              setShowSettings(true);
-            }}
-            className={styles.btnSettingsToggle}
-            title="Credenciales"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-            </svg>
-          </button>
 
           {loadingChannel ? (
             <div className={styles.channelCard}>Cargando canal...</div>
@@ -4933,104 +4920,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Modal de Configuración */}
-      {showSettings && (
-        <div className={styles.settingsOverlay}>
-          <form onSubmit={handleSaveConfig} className={styles.settingsModal}>
-            <div className={styles.settingsHeader}>
-              <h2>Configurar Credenciales de Empresa</h2>
-              <button type="button" onClick={() => setShowSettings(false)} className={styles.closeBtn}>✕</button>
-            </div>
 
-            <div className={styles.inputGroup}>
-              <label>Gemini API Key</label>
-              <input
-                type="password"
-                value={configInput.GEMINI_API_KEY}
-                onChange={(e) => setConfigInput({ ...configInput, GEMINI_API_KEY: e.target.value })}
-                placeholder={config.GEMINI_API_KEY ? "(Configurada)" : "Pega tu API Key de Gemini"}
-              />
-            </div>
-
-            <div className={styles.inputGroup}>
-              <label>Google OAuth Client ID</label>
-              <input
-                type="text"
-                value={configInput.YOUTUBE_CLIENT_ID}
-                onChange={(e) => setConfigInput({ ...configInput, YOUTUBE_CLIENT_ID: e.target.value })}
-                placeholder={config.YOUTUBE_CLIENT_ID ? "(Configurado)" : "Client ID"}
-              />
-            </div>
-
-            <div className={styles.inputGroup}>
-              <label>Google OAuth Client Secret</label>
-              <input
-                type="password"
-                value={configInput.YOUTUBE_CLIENT_SECRET}
-                onChange={(e) => setConfigInput({ ...configInput, YOUTUBE_CLIENT_SECRET: e.target.value })}
-                placeholder={config.YOUTUBE_CLIENT_SECRET ? "(Configurado)" : "Client Secret"}
-              />
-            </div>
-
-            {isAuthRequired && (
-              <div style={{
-                marginTop: "1.5rem",
-                paddingTop: "1.5rem",
-                borderTop: "1px solid var(--border-color, #334155)",
-                display: "flex",
-                flexDirection: "column",
-                gap: "0.75rem"
-              }}>
-                <label style={{ fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: "600" }}>
-                  Sesión de la Aplicación
-                </label>
-                <div style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  padding: "0.75rem 1rem",
-                  background: "rgba(255,255,255,0.02)",
-                  border: "1px solid var(--border-color, #334155)",
-                  borderRadius: "8px"
-                }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                    <span style={{ fontSize: "1.2rem" }}>👤</span>
-                    <span style={{ fontSize: "0.85rem", color: "#f8fafc", fontWeight: "500" }}>
-                      {currentUserEmail}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      window.location.href = "/api/auth/logout";
-                    }}
-                    className={styles.disconnectBtn}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "0.25rem",
-                      padding: "0.5rem 0.8rem",
-                      fontSize: "0.8rem",
-                      width: "auto",
-                      margin: 0
-                    }}
-                    title="Cerrar sesión"
-                  >
-                    🔒 Bloquear / Saír
-                  </button>
-                </div>
-              </div>
-            )}
-
-            <div className={styles.settingsActions}>
-              <button type="button" onClick={() => setShowSettings(false)} className={styles.btnCancel}>Cancelar</button>
-              <button type="submit" disabled={savingConfig} className={styles.btnSubmit} style={{ width: "auto" }}>
-                {savingConfig ? "Guardando..." : "Guardar Cambios"}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
 
       {/* Modal de Catálogo de Logotipos */}
       {showLogosManager && (
