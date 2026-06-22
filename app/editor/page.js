@@ -2721,64 +2721,96 @@ export default function Dashboard() {
         alert("¡El vídeo ha sido subido a YouTube y configurado correctamente!");
       } else {
         // Vídeo que ya está en YouTube: usar endpoint existente
-        const ytId = selectedYoutubeVideo.youtubeId || selectedYoutubeVideo.id;
-        const res = await fetch("/api/youtube/update", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            youtubeVideoId: ytId,
-            title: updateForm.title,
-            description: updateForm.description,
-            tags: updateForm.tags,
-            thumbnail: newThumbnailBase64,
-            scheduledAt: updateForm.isScheduled ? toUTCISOString(updateForm.scheduledAt) : null,
-            playlistId: updateForm.playlistId || null,
-            privacyStatus: privacyStatus
-          }),
-        });
+        setSimpleUploadProgress(5);
+        setSimpleUploadStatus("Preparando datos de sincronización...");
 
-        if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.error || "Fallo al guardar los cambios en YouTube");
-        }
+        let progressInterval;
+        let t1, t2, t3;
 
-        const responseData = await res.json();
+        try {
+          progressInterval = setInterval(() => {
+            setSimpleUploadProgress(prev => {
+              if (prev < 90) {
+                return prev + Math.floor(Math.random() * 5) + 2; // Incrementos entre 2 y 6%
+              }
+              if (prev < 98) {
+                return prev + 1;
+              }
+              return prev;
+            });
+          }, 300);
 
-        // Si viene de la cola local de pendientes o está registrado en la base de datos local
-        if (selectedYoutubeVideo.youtubeId || selectedYoutubeVideo.dbId) {
-          const isScheduled = updateForm.isScheduled;
-          const newStatus = isScheduled ? 'SCHEDULED' : 'COMPLETED';
-          const videoDbId = selectedYoutubeVideo.dbId || selectedYoutubeVideo.id;
+          t1 = setTimeout(() => setSimpleUploadStatus("Sincronizando metadatos (título, descripción, etiquetas)..."), 800);
+          t2 = setTimeout(() => setSimpleUploadStatus("Subiendo miniatura con diseño de portada..."), 2200);
+          t3 = setTimeout(() => setSimpleUploadStatus("Aplicando cambios en YouTube Studio..."), 4500);
 
-          const dbRes = await fetch(`/api/videos?id=${videoDbId}`, {
-            method: "PATCH",
+          const ytId = selectedYoutubeVideo.youtubeId || selectedYoutubeVideo.id;
+          const res = await fetch("/api/youtube/update", {
+            method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
+              youtubeVideoId: ytId,
               title: updateForm.title,
               description: updateForm.description,
               tags: updateForm.tags,
+              thumbnail: newThumbnailBase64,
+              scheduledAt: updateForm.isScheduled ? toUTCISOString(updateForm.scheduledAt) : null,
               playlistId: updateForm.playlistId || null,
-              thumbnailBase64: newThumbnailBase64 || null,
-              rawFrameBase64: (customBgBase64 && customBgBase64.startsWith("data:")) ? customBgBase64 : undefined,
-              status: newStatus,
-              privacyStatus: privacyStatus || 'private', // ← guardar estado real
-              scheduledAt: isScheduled ? toUTCISOString(updateForm.scheduledAt) : null
-            })
+              privacyStatus: privacyStatus
+            }),
           });
 
-          if (!dbRes.ok) {
-            console.warn("[Editor] Failed to update local database video status.");
+          if (!res.ok) {
+            const data = await res.json();
+            throw new Error(data.error || "Fallo al guardar los cambios en YouTube");
           }
-        }
 
-        if (responseData.scheduled) {
-          alert("¡Sincronización programada con éxito!");
-        } else {
-          if (responseData.thumbnailError) {
-            alert(`¡Video actualizado en YouTube con éxito, pero la miniatura no se pudo subir!\n\nDetalle: ${responseData.thumbnailError}`);
-          } else {
-            alert("¡Video sincronizado y actualizado en YouTube con éxito!");
+          const responseData = await res.json();
+
+          // Si viene de la cola local de pendientes o está registrado en la base de datos local
+          if (selectedYoutubeVideo.youtubeId || selectedYoutubeVideo.dbId) {
+            const isScheduled = updateForm.isScheduled;
+            const newStatus = isScheduled ? 'SCHEDULED' : 'COMPLETED';
+            const videoDbId = selectedYoutubeVideo.dbId || selectedYoutubeVideo.id;
+
+            const dbRes = await fetch(`/api/videos?id=${videoDbId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                title: updateForm.title,
+                description: updateForm.description,
+                tags: updateForm.tags,
+                playlistId: updateForm.playlistId || null,
+                thumbnailBase64: newThumbnailBase64 || null,
+                rawFrameBase64: (customBgBase64 && customBgBase64.startsWith("data:")) ? customBgBase64 : undefined,
+                status: newStatus,
+                privacyStatus: privacyStatus || 'private', // ← guardar estado real
+                scheduledAt: isScheduled ? toUTCISOString(updateForm.scheduledAt) : null
+              })
+            });
+
+            if (!dbRes.ok) {
+              console.warn("[Editor] Failed to update local database video status.");
+            }
           }
+
+          setSimpleUploadProgress(100);
+          setSimpleUploadStatus("¡Sincronización completada con éxito!");
+
+          if (responseData.scheduled) {
+            alert("¡Sincronización programada con éxito!");
+          } else {
+            if (responseData.thumbnailError) {
+              alert(`¡Video actualizado en YouTube con éxito, pero la miniatura no se pudo subir!\n\nDetalle: ${responseData.thumbnailError}`);
+            } else {
+              alert("¡Video sincronizado y actualizado en YouTube con éxito!");
+            }
+          }
+        } finally {
+          clearInterval(progressInterval);
+          clearTimeout(t1);
+          clearTimeout(t2);
+          clearTimeout(t3);
         }
       }
 
