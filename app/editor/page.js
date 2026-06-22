@@ -4649,7 +4649,7 @@ export default function Dashboard() {
           {scheduledUpdates.length > 0 && (
             <div className={styles.card} style={{ marginTop: "1.5rem" }}>
               <div className={styles.cardTitle} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span>Videos Pendientes de Sincronización(Programados)</span>
+                <span>En Proceso de Subida</span>
                 <button
                   type="button"
                   onClick={handleExecuteScheduler}
