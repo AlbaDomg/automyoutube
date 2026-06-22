@@ -382,6 +382,11 @@ export default function SubidorPage() {
         hiddenVideoRef.current.src = url;
         hiddenVideoRef.current.load();
       }
+
+      // Auto-emparejar si ya tenemos la lista de vídeos parseada de la escaleta
+      if (parsedVideos && parsedVideos.length > 0) {
+        autoMatchAndFillVideo(file, parsedVideos);
+      }
     } catch (err) {
       console.error("Error al iniciar carga de vídeo:", err);
       setSimpleUploadStatus("No se pudo iniciar la carga del vídeo para la captura.");
@@ -598,8 +603,14 @@ export default function SubidorPage() {
       // Esperar brevemente para mostrar el 100%
       await new Promise((resolve) => setTimeout(resolve, 500));
 
-      setParsedVideos(data.videos || []);
+      const videosList = data.videos || [];
+      setParsedVideos(videosList);
       setAnalyzeProgress("COMPLETED");
+
+      // Auto-emparejar si ya tenemos un archivo de vídeo seleccionado
+      if (simpleVideoFile && videosList.length > 0) {
+        autoMatchAndFillVideo(simpleVideoFile, videosList);
+      }
     } catch (err) {
       console.error(err);
       setAnalyzeError(err.message);
@@ -609,6 +620,69 @@ export default function SubidorPage() {
       clearTimeout(t1);
       clearTimeout(t2);
       clearTimeout(t3);
+    }
+  };
+
+  // Función para emparejar automáticamente el archivo de vídeo seleccionado con la lista de la escaleta
+  const autoMatchAndFillVideo = (videoFile, videosList) => {
+    if (!videoFile || !videosList || videosList.length === 0) return;
+
+    // Normalizar el nombre del archivo de vídeo
+    // Ej: "expediente_oculto_programa_22.mp4" -> "expediente oculto programa 22"
+    const fileName = videoFile.name.toLowerCase().replace(/\.[^/.]+$/, "");
+    const cleanFileName = fileName.replace(/[\_\-\.]/g, " ").replace(/\s+/g, " ").trim();
+
+    // 1. Si sólo hay un vídeo en la lista, lo seleccionamos directamente
+    if (videosList.length === 1) {
+      const match = videosList[0];
+      handleRellenarFormulario(match.title, match.description);
+      console.log(`[Auto-Match] Solamente hay 1 video en la escaleta. Auto-rellenado con: "${match.title}"`);
+      return;
+    }
+
+    // 2. Intentar buscar coincidencia difusa del programa o título
+    let bestMatch = null;
+    let maxMatches = 0;
+
+    for (const video of videosList) {
+      let score = 0;
+      
+      // Buscar si el programa está en el nombre del archivo
+      if (video.programName) {
+        const cleanProgram = video.programName.toLowerCase().replace(/[\_\-\.]/g, " ").replace(/\s+/g, " ").trim();
+        if (cleanFileName.includes(cleanProgram)) {
+          score += 10;
+        }
+      }
+
+      // Buscar coincidencia de palabras individuales significativas
+      const videoWords = video.title.toLowerCase().replace(/[^a-z0-9]/g, " ").split(/\s+/).filter(w => w.length > 3 && w !== "video" && w !== "programa");
+      const fileWords = cleanFileName.split(/\s+/).filter(w => w.length > 3 && w !== "video" && w !== "programa");
+
+      let matchingWordsCount = 0;
+      for (const w of fileWords) {
+        if (videoWords.includes(w)) {
+          matchingWordsCount++;
+        }
+      }
+
+      score += matchingWordsCount * 2;
+
+      if (score > maxMatches) {
+        maxMatches = score;
+        bestMatch = video;
+      }
+    }
+
+    // Si encontramos una coincidencia con un puntaje mínimo
+    if (bestMatch && maxMatches >= 2) {
+      handleRellenarFormulario(bestMatch.title, bestMatch.description);
+      console.log(`[Auto-Match] Coincidencia encontrada (${maxMatches} pts). Auto-rellenado con: "${bestMatch.title}"`);
+    } else {
+      // Si no hay coincidencia pero hay elementos, por defecto auto-rellenamos con el primero de la lista
+      const firstVideo = videosList[0];
+      handleRellenarFormulario(firstVideo.title, firstVideo.description);
+      console.log(`[Auto-Match] Sin coincidencia clara. Auto-rellenado con el primer video: "${firstVideo.title}"`);
     }
   };
 
