@@ -66,6 +66,8 @@ export default function SubidorPage() {
   const [documentFile, setDocumentFile] = useState(null);
   const [parsedVideos, setParsedVideos] = useState([]);
   const [analyzeProgress, setAnalyzeProgress] = useState("IDLE"); // IDLE, ANALYZING, COMPLETED, FAILED
+  const [analyzePercent, setAnalyzePercent] = useState(0);
+  const [analyzeStatusText, setAnalyzeStatusText] = useState("");
   const [analyzeError, setAnalyzeError] = useState("");
   const documentInputRef = useRef(null);
 
@@ -544,10 +546,34 @@ export default function SubidorPage() {
     }
 
     setAnalyzeProgress("ANALYZING");
+    setAnalyzePercent(5);
+    setAnalyzeStatusText("Cargando archivo de escaleta...");
     setAnalyzeError("");
     setParsedVideos([]);
 
+    let progressInterval;
+    let t1, t2, t3;
+
     try {
+      progressInterval = setInterval(() => {
+        setAnalyzePercent((prev) => {
+          if (prev < 60) {
+            return prev + Math.floor(Math.random() * 5) + 3; // Incrementos entre 3 y 7%
+          }
+          if (prev < 90) {
+            return prev + Math.floor(Math.random() * 3) + 1; // Incrementos entre 1 y 3%
+          }
+          if (prev < 97) {
+            return prev + 1;
+          }
+          return prev;
+        });
+      }, 400);
+
+      t1 = setTimeout(() => setAnalyzeStatusText("Extrayendo contenido con IA de Gemini..."), 1200);
+      t2 = setTimeout(() => setAnalyzeStatusText("Analizando estructura de programas y vídeos..."), 5000);
+      t3 = setTimeout(() => setAnalyzeStatusText("Generando borradores de metadatos..."), 10000);
+
       const formData = new FormData();
       formData.append("file", documentFile);
       formData.append("youtubeVideos", JSON.stringify([]));
@@ -562,12 +588,27 @@ export default function SubidorPage() {
         throw new Error(data.error || "Fallo al procesar el documento.");
       }
 
+      clearInterval(progressInterval);
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      setAnalyzePercent(100);
+      setAnalyzeStatusText("¡Análisis completado con éxito!");
+
+      // Esperar brevemente para mostrar el 100%
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
       setParsedVideos(data.videos || []);
       setAnalyzeProgress("COMPLETED");
     } catch (err) {
       console.error(err);
       setAnalyzeError(err.message);
       setAnalyzeProgress("FAILED");
+    } finally {
+      clearInterval(progressInterval);
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
     }
   };
 
@@ -961,18 +1002,49 @@ export default function SubidorPage() {
               </button>
             </form>
 
-            {/* Resultados del análisis */}
             {analyzeProgress === "ANALYZING" && (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "2rem", gap: "1rem" }}>
+              <div style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "2rem",
+                gap: "1rem",
+                background: "rgba(255, 255, 255, 0.02)",
+                border: "1px solid var(--border-color, rgba(255, 255, 255, 0.08))",
+                borderRadius: "16px",
+                marginTop: "1.5rem"
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+                  <div style={{
+                    width: "24px",
+                    height: "24px",
+                    border: "3px solid rgba(168, 85, 247, 0.1)",
+                    borderTop: "3px solid #a855f7",
+                    borderRadius: "50%",
+                    animation: "spin 1s linear infinite"
+                  }} />
+                  <span style={{ fontSize: "1.1rem", fontWeight: "700", color: "#a855f7" }}>
+                    {analyzePercent}%
+                  </span>
+                </div>
+                <span style={{ fontSize: "0.82rem", color: "var(--text-muted)", fontWeight: "500" }}>
+                  {analyzeStatusText}
+                </span>
                 <div style={{
-                  width: "30px",
-                  height: "30px",
-                  border: "3px solid rgba(168, 85, 247, 0.1)",
-                  borderTop: "3px solid #a855f7",
-                  borderRadius: "50%",
-                  animation: "spin 1s linear infinite"
-                }} />
-                <span style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>Extrayendo contenido con IA de Gemini...</span>
+                  width: "100%",
+                  height: "6px",
+                  backgroundColor: "rgba(255, 255, 255, 0.05)",
+                  borderRadius: "3px",
+                  overflow: "hidden"
+                }}>
+                  <div style={{
+                    width: `${analyzePercent}%`,
+                    height: "100%",
+                    background: "linear-gradient(90deg, #a855f7 0%, #ec4899 100%)",
+                    transition: "width 0.3s ease"
+                  }} />
+                </div>
               </div>
             )}
 
