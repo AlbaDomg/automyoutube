@@ -87,6 +87,7 @@ export default function SubidorPage() {
   const simpleVideoInputRef = useRef(null);
   const hiddenVideoRef = useRef(null);
   const autoSchedulerRunningRef = useRef(false);
+  const hasMatchedRef = useRef(false);
   const [videoDuration, setVideoDuration] = useState(0);
   const [frameTime, setFrameTime] = useState(15);
   const [videoObjectURL, setVideoObjectURL] = useState("");
@@ -123,6 +124,11 @@ export default function SubidorPage() {
           const base64 = canvas.toDataURL("image/jpeg", 0.85);
           setLocalExtractedFrame(base64);
           setSimpleUploadStatus("Portada del vídeo capturada correctamente.");
+
+          // Disparar emparejamiento visual si no hemos encontrado coincidencia por texto y hay candidatos
+          if (parsedVideos && parsedVideos.length > 0) {
+            triggerVisualMatch(base64, parsedVideos, simpleVideoFile);
+          }
         }
       } catch (err) {
         console.error("Error al extraer fotograma en seeked:", err);
@@ -364,6 +370,7 @@ export default function SubidorPage() {
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     setSimpleVideoFile(file);
+    hasMatchedRef.current = false; // Resetear indicador de emparejamiento para el nuevo archivo
     if (!file) {
       setLocalExtractedFrame(null);
       setVideoDuration(0);
@@ -636,11 +643,25 @@ export default function SubidorPage() {
     if (videosList.length === 1) {
       const match = videosList[0];
       handleRellenarFormulario(match.title, match.description);
+      hasMatchedRef.current = true;
       console.log(`[Auto-Match] Solamente hay 1 video en la escaleta. Auto-rellenado con: "${match.title}"`);
       return;
     }
 
-    // 2. Intentar buscar coincidencia difusa del programa o título
+    // 2. Intentar buscar coincidencia por número de orden en el nombre de archivo (ej: "1.mp4", "bloque 2")
+    const numberMatch = cleanFileName.match(/(?:^|\D)(\d+)(?:\D|$)/);
+    if (numberMatch) {
+      const fileIndex = parseInt(numberMatch[1], 10);
+      const matchByIndex = videosList.find(v => v.index === fileIndex);
+      if (matchByIndex) {
+        handleRellenarFormulario(matchByIndex.title, matchByIndex.description);
+        hasMatchedRef.current = true;
+        console.log(`[Auto-Match] Coincidencia por número de índice (${fileIndex}). Auto-rellenado con: "${matchByIndex.title}"`);
+        return;
+      }
+    }
+
+    // 3. Intentar buscar coincidencia difusa del programa o título
     let bestMatch = null;
     let maxMatches = 0;
 
@@ -677,12 +698,57 @@ export default function SubidorPage() {
     // Si encontramos una coincidencia con un puntaje mínimo
     if (bestMatch && maxMatches >= 2) {
       handleRellenarFormulario(bestMatch.title, bestMatch.description);
+      hasMatchedRef.current = true;
       console.log(`[Auto-Match] Coincidencia encontrada (${maxMatches} pts). Auto-rellenado con: "${bestMatch.title}"`);
     } else {
-      // Si no hay coincidencia pero hay elementos, por defecto auto-rellenamos con el primero de la lista
+      // Si no hay coincidencia pero hay elementos, por defecto auto-rellenamos con el primero de la lista para ahorrar clics,
+      // pero dejamos hasMatchedRef.current = false para permitir que el análisis visual actúe si es posible
       const firstVideo = videosList[0];
       handleRellenarFormulario(firstVideo.title, firstVideo.description);
-      console.log(`[Auto-Match] Sin coincidencia clara. Auto-rellenado con el primer video: "${firstVideo.title}"`);
+      hasMatchedRef.current = false;
+      console.log(`[Auto-Match] Sin coincidencia clara. Auto-rellenado por defecto con el primer video: "${firstVideo.title}"`);
+    }
+  };
+
+  // Función para emparejar visualmente el fotograma capturado usando Gemini Vision
+  const triggerVisualMatch = async (frameBase64, videosList, videoFile) => {
+    if (hasMatchedRef.current) return; // Ya emparejado por nombre de archivo o índice
+    if (!frameBase64 || !videosList || videosList.length <= 1 || !videoFile) return;
+
+    console.log("[Visual-Match] Nombre de archivo genérico. Iniciando emparejamiento visual con Gemini...");
+    setSimpleUploadStatus("Analizando visualmente el contenido del vídeo con Gemini...");
+
+    try {
+      const res = await fetch("/api/youtube/match-frame", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          frameBase64,
+          videos: videosList
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error("Error en API de emparejamiento visual");
+      }
+
+      const data = await res.json();
+      if (data.success && data.matchedIndex !== null) {
+        const match = videosList.find(v => v.index === data.matchedIndex);
+        if (match) {
+          handleRellenarFormulario(match.title, match.description);
+          hasMatchedRef.current = true;
+          setSimpleUploadStatus("Portada capturada y vídeo emparejado visualmente con éxito.");
+          console.log(`[Visual-Match] Coincidencia visual encontrada (Índice ${data.matchedIndex}). Auto-rellenado con: "${match.title}"`);
+          return;
+        }
+      }
+      
+      setSimpleUploadStatus("Portada capturada. Sin coincidencia visual clara (puedes elegirlo a mano abajo).");
+      console.log("[Visual-Match] Gemini no pudo identificar coincidencia visual con alta confianza.");
+    } catch (err) {
+      console.warn("[Visual-Match] Fallo en el análisis visual:", err.message);
+      setSimpleUploadStatus("Portada capturada. Falló el análisis visual (puedes elegirlo a mano abajo).");
     }
   };
 
