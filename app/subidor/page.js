@@ -1479,26 +1479,63 @@ export default function SubidorPage() {
                       <span style={{ fontSize: "0.85rem", fontWeight: "600", color: "#f8fafc", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {video.title}
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => handleRellenarFormulario(video.title, video.description)}
-                        style={{
-                          background: "rgba(168, 85, 247, 0.15)",
-                          border: "1px solid rgba(168, 85, 247, 0.3)",
-                          color: "#c084fc",
-                          padding: "2px 8px",
-                          borderRadius: "6px",
-                          fontSize: "0.75rem",
-                          fontWeight: "600",
-                          cursor: "pointer",
-                          transition: "0.2s",
-                          flexShrink: 0
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = "rgba(168, 85, 247, 0.25)"}
-                        onMouseLeave={(e) => e.currentTarget.style.background = "rgba(168, 85, 247, 0.15)"}
-                      >
-                        📋 Rellenar
-                      </button>
+                      {batchFiles && batchFiles.length > 0 ? (
+                        <div style={{ position: "relative", flexShrink: 0 }}>
+                          <select
+                            onChange={(e) => {
+                              const targetId = e.target.value;
+                              if (targetId) {
+                                setBatchFiles(prev => prev.map(item => 
+                                  item.id === targetId ? {
+                                    ...item,
+                                    title: video.title,
+                                    description: video.description,
+                                    index: video.index,
+                                    hasMatched: true
+                                  } : item
+                                ));
+                              }
+                              e.target.value = ""; // Reset
+                            }}
+                            style={{
+                              background: "rgba(168, 85, 247, 0.15)",
+                              border: "1px solid rgba(168, 85, 247, 0.3)",
+                              color: "#c084fc",
+                              padding: "4px 8px",
+                              borderRadius: "6px",
+                              fontSize: "0.75rem",
+                              fontWeight: "600",
+                              cursor: "pointer",
+                              outline: "none"
+                            }}
+                          >
+                            <option value="">📋 Rellenar en...</option>
+                            {batchFiles.map((bf) => (
+                              <option key={bf.id} value={bf.id} style={{ background: "#0c0f24", color: "#f8fafc" }}>
+                                {bf.file.name.length > 25 ? `${bf.file.name.substring(0, 22)}...` : bf.file.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled
+                          style={{
+                            background: "rgba(255, 255, 255, 0.05)",
+                            border: "1px solid rgba(255, 255, 255, 0.1)",
+                            color: "var(--text-muted)",
+                            padding: "2px 8px",
+                            borderRadius: "6px",
+                            fontSize: "0.75rem",
+                            fontWeight: "600",
+                            cursor: "not-allowed",
+                            flexShrink: 0
+                          }}
+                        >
+                          📋 Rellenar
+                        </button>
+                      )}
                     </div>
                     {video.programName && (
                       <span style={{
