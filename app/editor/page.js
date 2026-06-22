@@ -2929,7 +2929,21 @@ export default function Dashboard() {
       ...tasks.filter(t => t.status === "COMPLETED" || t.status === "SCHEDULED").map(t => t.youtubeId)
     ].filter(Boolean));
 
-    const mergedList = [...privateVideos];
+    // Obtener los títulos de los vídeos que se están subiendo actualmente
+    const uploadingTitles = new Set(
+      dbVideos
+        .filter(v => v.status === "UPLOADING" && v.title)
+        .map(v => v.title.toLowerCase().trim())
+    );
+
+    // Filtrar privateVideos para excluir borradores de YouTube cuyo título coincida con un vídeo subiéndose
+    const filteredPrivateVideos = privateVideos.filter(video => {
+      const vTitle = video.snippet?.title || video.title;
+      if (!vTitle) return true;
+      return !uploadingTitles.has(vTitle.toLowerCase().trim());
+    });
+
+    const mergedList = [...filteredPrivateVideos];
     localDrafts.forEach(ld => {
       if (!mergedList.some(v => (v.id?.videoId || v.id) === ld.id)) {
         mergedList.push(ld);
@@ -2946,7 +2960,7 @@ export default function Dashboard() {
         const dateB = new Date(b.publishedAt || b.createdAt || 0);
         return dateB - dateA;
       });
-  }, [privateVideos, localDrafts, completedLocalVideos, scheduledUpdates, tasks]);
+  }, [privateVideos, localDrafts, completedLocalVideos, scheduledUpdates, tasks, dbVideos]);
 
   const mergedCompletedItems = useMemo(() => {
     const taskItems = tasks
