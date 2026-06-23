@@ -1455,7 +1455,7 @@ export default function SubidorPage() {
       {isAuthenticated && <Navbar userEmail={currentUserEmail} userRole={currentUserRole} />}
       <div className={styles.container}>
         {/* Encabezado */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem", flexWrap: "wrap", gap: "1.5rem" }}>
           <div>
             <h1 style={{ fontSize: "1.75rem", fontWeight: "900", background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
               📤 Flujo de Subidor
@@ -1464,31 +1464,73 @@ export default function SubidorPage() {
               Sube archivos locales y optimiza metadatos básicos
             </p>
           </div>
-          <a href="/" style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "0.5rem",
-            padding: "0.5rem 1rem",
-            background: "rgba(255,255,255,0.05)",
-            border: "1px solid var(--border-color)",
-            borderRadius: "10px",
-            fontSize: "0.8rem",
-            fontWeight: "600",
-            color: "#f8fafc",
-            textDecoration: "none",
-            transition: "all 0.2s"
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = "rgba(255,255,255,0.08)";
-            e.currentTarget.style.borderColor = "#a855f7";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "rgba(255,255,255,0.05)";
-            e.currentTarget.style.borderColor = "var(--border-color)";
-          }}
-          >
-            <span>🏠 Portal Principal</span>
-          </a>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+            {/* Card del Canal de YouTube */}
+            {loadingChannel ? (
+              <div className={styles.channelCard} style={{ margin: 0, padding: "0.5rem 1rem", fontSize: "0.85rem" }}>
+                Cargando canal...
+              </div>
+            ) : channel.connected && channel.channel ? (
+              <div className={styles.channelCard} style={{ margin: 0, padding: "0.5rem 1rem" }}>
+                {channel.channel.thumbnail && (
+                  <img src={channel.channel.thumbnail} alt={channel.channel.title} className={styles.channelAvatar} style={{ width: "32px", height: "32px" }} />
+                )}
+                <div className={styles.channelInfo}>
+                  <span className={styles.channelName} style={{ fontSize: "0.85rem" }}>{channel.channel.title}</span>
+                  <span className={styles.channelStatus} style={{ fontSize: "0.75rem" }}>Conectado</span>
+                </div>
+                <a
+                  href={`https://studio.youtube.com/channel/${channel.channel.id}/videos`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={styles.connectBtn}
+                  style={{
+                    width: "auto",
+                    padding: "0.35rem 0.7rem",
+                    fontSize: "0.75rem",
+                    background: "var(--bg-card)",
+                    border: "1px solid var(--border-color)",
+                    textDecoration: "none",
+                    color: "var(--text-primary)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.25rem",
+                    borderRadius: "8px"
+                  }}
+                >
+                  🎥 Ver Studio
+                </a>
+              </div>
+            ) : null}
+
+            <a href="/" style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              padding: "0.6rem 1.1rem",
+              background: "rgba(255,255,255,0.05)",
+              border: "1px solid var(--border-color)",
+              borderRadius: "10px",
+              fontSize: "0.8rem",
+              fontWeight: "600",
+              color: "#f8fafc",
+              textDecoration: "none",
+              transition: "all 0.2s",
+              height: "fit-content"
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "rgba(255,255,255,0.08)";
+              e.currentTarget.style.borderColor = "#a855f7";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "rgba(255,255,255,0.05)";
+              e.currentTarget.style.borderColor = "var(--border-color)";
+            }}
+            >
+              <span>🏠 Portal Principal</span>
+            </a>
+          </div>
         </div>
 
         {/* Layout en Dos Columnas */}
