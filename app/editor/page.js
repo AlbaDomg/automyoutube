@@ -1662,8 +1662,6 @@ export default function Dashboard() {
 
   // Seleccionar video e inicializar formulario
   const handleSelectVideo = async (video) => {
-    setPdfSearchQuery("");
-    setShowPdfSearchDropdown(false);
     setYoutubeId(video.id);
 
     // Buscar si hay un registro correspondiente en nuestra base de datos local
@@ -1787,8 +1785,6 @@ export default function Dashboard() {
 
   // Seleccionar video local e inicializar formulario con autocompletados
   const handleSelectLocalVideo = async (video) => {
-    setPdfSearchQuery("");
-    setShowPdfSearchDropdown(false);
     setSelectedYoutubeVideo({
       id: video.id,
       youtubeId: video.youtubeId || null, // Guardar el ID de YouTube si ya se subió
