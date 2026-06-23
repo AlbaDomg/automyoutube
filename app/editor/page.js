@@ -1259,13 +1259,13 @@ export default function Dashboard() {
         const line1Y = line2Y - 95;
 
         if (line1) {
-          ctx.fillStyle = "#f97316";
+          ctx.fillStyle = "#ffffff";
           ctx.strokeText(line1, textX, line1Y);
           ctx.fillText(line1, textX, line1Y);
         }
 
         if (line2) {
-          ctx.fillStyle = "#ffffff";
+          ctx.fillStyle = "#f97316";
           ctx.strokeText(line2, textX, line2Y);
           ctx.fillText(line2, textX, line2Y);
         }
