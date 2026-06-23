@@ -232,6 +232,8 @@ export default function Dashboard() {
   const [isSimpleUploading, setIsSimpleUploading] = useState(false);
   const [isOptimizingSimpleTitle, setIsOptimizingSimpleTitle] = useState(false);
   const [isOptimizingSimpleDesc, setIsOptimizingSimpleDesc] = useState(false);
+  const [isOptimizingTitle, setIsOptimizingTitle] = useState(false);
+  const [isOptimizingDesc, setIsOptimizingDesc] = useState(false);
   const [localVideosQueue, setLocalVideosQueue] = useState([]);
   const [completedLocalVideos, setCompletedLocalVideos] = useState([]);
   const [dbVideos, setDbVideos] = useState([]);
@@ -1814,6 +1816,31 @@ export default function Dashboard() {
       if (pipeIndex !== -1) {
         suffix = text.substring(pipeIndex); // Ej.: " | Canal Galego"
         textToOptimize = text.substring(0, pipeIndex).trim();
+      }
+    } else if (field === 'description') {
+      // Intentar encontrar el bloque de redes sociales para extraerlo
+      const socialIndex = text.indexOf("Podes ver o programa completo");
+      if (socialIndex !== -1) {
+        suffix = "\n\n" + text.substring(socialIndex).trim();
+        textToOptimize = text.substring(0, socialIndex).trim();
+      } else {
+        const tvgIndex = text.indexOf("tvg.gal/");
+        if (tvgIndex !== -1) {
+          const paragraphStart = text.lastIndexOf("\n\n", tvgIndex);
+          if (paragraphStart !== -1) {
+            suffix = text.substring(paragraphStart);
+            textToOptimize = text.substring(0, paragraphStart).trim();
+          } else {
+            const lineStart = text.lastIndexOf("\n", tvgIndex);
+            if (lineStart !== -1) {
+              suffix = text.substring(lineStart);
+              textToOptimize = text.substring(0, lineStart).trim();
+            } else {
+              suffix = "\n\n" + text.substring(tvgIndex).trim();
+              textToOptimize = text.substring(0, tvgIndex).trim();
+            }
+          }
+        }
       }
     }
 
@@ -4355,11 +4382,37 @@ export default function Dashboard() {
                 {/* Columna Derecha: Campos e Miniatura */}
                 <div className={styles.inlineEditColRight}>
                   <div className={styles.inputGroup}>
-                    <label style={{ display: "flex", justifyContent: "space-between" }}>
+                    <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <span>Título en YouTube (Copiar/Pegar literal)</span>
-                      <span style={{ fontSize: "0.75rem", color: updateForm.title.length >= 90 ? "#ef4444" : "var(--text-muted)" }}>
-                        {updateForm.title.length}/100
-                      </span>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <button
+                          type="button"
+                          disabled={isOptimizingTitle}
+                          onClick={() => handleOptimizeFieldWithAI(
+                            updateForm.title,
+                            'title',
+                            (val) => setUpdateForm(prev => ({ ...prev, title: val })),
+                            setIsOptimizingTitle
+                          )}
+                          className={styles.btnSubmit}
+                          style={{
+                            width: "auto",
+                            fontSize: "0.7rem",
+                            padding: "2px 8px",
+                            margin: 0,
+                            background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
+                            border: "none",
+                            borderRadius: "4px",
+                            cursor: "pointer",
+                            color: "#fff"
+                          }}
+                        >
+                          {isOptimizingTitle ? "Generando..." : "🪄 Generar con IA"}
+                        </button>
+                        <span style={{ fontSize: "0.75rem", color: updateForm.title.length >= 90 ? "#ef4444" : "var(--text-muted)" }}>
+                          {updateForm.title.length}/100
+                        </span>
+                      </div>
                     </label>
                     <textarea
                       rows="2"
@@ -4370,10 +4423,49 @@ export default function Dashboard() {
                       onPaste={(e) => handleCleanPaste(e, (val) => setUpdateForm(prev => ({ ...prev, title: val })))}
                       style={{ resize: "none" }}
                     />
+                    {isOptimizingTitle && (
+                      <div style={{
+                        marginTop: "0.4rem",
+                        height: "3px",
+                        width: "100%",
+                        backgroundColor: "rgba(255,255,255,0.05)",
+                        borderRadius: "1.5px",
+                        overflow: "hidden",
+                        position: "relative"
+                      }}>
+                        <div className={styles.pulseProgressBar} />
+                      </div>
+                    )}
                   </div>
 
                   <div className={styles.inputGroup}>
-                    <label>Descripción (Copiar/Pegar literal)</label>
+                    <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span>Descripción (Copiar/Pegar literal)</span>
+                      <button
+                        type="button"
+                        disabled={isOptimizingDesc}
+                        onClick={() => handleOptimizeFieldWithAI(
+                          updateForm.description,
+                          'description',
+                          (val) => setUpdateForm(prev => ({ ...prev, description: val })),
+                          setIsOptimizingDesc
+                        )}
+                        className={styles.btnSubmit}
+                        style={{
+                          width: "auto",
+                          fontSize: "0.7rem",
+                          padding: "2px 8px",
+                          margin: 0,
+                          background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
+                          border: "none",
+                          borderRadius: "4px",
+                          cursor: "pointer",
+                          color: "#fff"
+                        }}
+                      >
+                        {isOptimizingDesc ? "Generando..." : "🪄 Generar con IA"}
+                      </button>
+                    </label>
                     <textarea
                       rows="8"
                       required
@@ -4381,8 +4473,19 @@ export default function Dashboard() {
                       onChange={(e) => setUpdateForm({ ...updateForm, description: e.target.value })}
                       onPaste={(e) => handleCleanPaste(e, (val) => setUpdateForm(prev => ({ ...prev, description: val })))}
                     />
-
-
+                    {isOptimizingDesc && (
+                      <div style={{
+                        marginTop: "0.4rem",
+                        height: "3px",
+                        width: "100%",
+                        backgroundColor: "rgba(255,255,255,0.05)",
+                        borderRadius: "1.5px",
+                        overflow: "hidden",
+                        position: "relative"
+                      }}>
+                        <div className={styles.pulseProgressBar} />
+                      </div>
+                    )}
                   </div>
 
 
@@ -4548,38 +4651,6 @@ export default function Dashboard() {
                           }}
                         >
                           {updatingYoutubeVideo ? "Programando..." : "⏰ Programar Público"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => handleSaveVideo(e, 'private')}
-                          disabled={updatingYoutubeVideo}
-                          className={styles.btnSubmit}
-                          style={{
-                            flex: 1.5,
-                            minWidth: "180px",
-                            padding: "0.75rem 1.25rem",
-                            borderRadius: "12px",
-                            fontSize: "0.8rem",
-                            fontWeight: "700",
-                            letterSpacing: "0.03em",
-                            textTransform: "uppercase",
-                            color: "#fff",
-                            background: "linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)",
-                            border: "1px solid rgba(59, 130, 246, 0.2)",
-                            boxShadow: "0 4px 15px rgba(59, 130, 246, 0.25)",
-                            cursor: "pointer",
-                            transition: "all 0.2s"
-                          }}
-                          onMouseEnter={e => {
-                            e.currentTarget.style.transform = "translateY(-1px)";
-                            e.currentTarget.style.boxShadow = "0 6px 20px rgba(59, 130, 246, 0.4)";
-                          }}
-                          onMouseLeave={e => {
-                            e.currentTarget.style.transform = "none";
-                            e.currentTarget.style.boxShadow = "0 4px 15px rgba(59, 130, 246, 0.25)";
-                          }}
-                        >
-                          {updatingYoutubeVideo ? "Programando..." : "⏰ Programar Privado"}
                         </button>
                       </>
                     ) : (
