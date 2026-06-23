@@ -1638,18 +1638,26 @@ export default function Dashboard() {
     const scheduledUpdate = scheduledUpdates.find(u => u.youtubeId === video.id);
 
     // Auto-detectar programa y playlist utilizando nuestro nuevo helper
-    const detected = detectProgramAndPlaylist(video.title, video.description, video.fileName || video.filename || dbVideo?.filename || "");
-    const detectedPlaylistId = detected.playlistId;
+    const initialTitle = dbVideo?.title || video.title || "";
+    const initialDesc = dbVideo?.description || video.description || "";
+    const initialPlaylistId = dbVideo?.playlistId || "";
+
+    const detected = detectProgramAndPlaylist(
+      initialTitle,
+      initialDesc,
+      video.fileName || video.filename || dbVideo?.filename || ""
+    );
+    const detectedPlaylistId = initialPlaylistId || detected.playlistId;
     const detectedLogo = detected.logoName;
 
     // Generar el título y descripción iniciales
-    const updatedTitle = updateTitleSuffix(video.title || "", detectedLogo);
-    const updatedDesc = updateDescriptionUrl(video.description || "", detectedLogo);
+    const updatedTitle = dbVideo?.title ? dbVideo.title : updateTitleSuffix(initialTitle, detectedLogo);
+    const updatedDesc = dbVideo?.description ? dbVideo.description : updateDescriptionUrl(initialDesc, detectedLogo);
 
     setUpdateForm({
       title: updatedTitle,
       description: updatedDesc,
-      tags: video.tags || "",
+      tags: dbVideo?.tags || video.tags || "",
       isScheduled: !!scheduledUpdate,
       scheduledAt: scheduledUpdate && scheduledUpdate.scheduledAt
         ? toLocalDateTimeString(scheduledUpdate.scheduledAt)
@@ -4061,9 +4069,10 @@ export default function Dashboard() {
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", maxHeight: "320px", overflowY: "auto", paddingRight: "0.25rem" }}>
                     {pendingPrivateVideos.map(video => {
-                      const vTitle = video.snippet?.title || video.title || "Sin título";
-                      const vDate = video.snippet?.publishedAt || video.createdAt;
                       const vId = video.id?.videoId || video.id;
+                      const dbVid = dbVideos.find(v => v.youtubeId === vId || v.id === vId);
+                      const vTitle = dbVid?.title || video.snippet?.title || video.title || "Sin título";
+                      const vDate = video.snippet?.publishedAt || video.createdAt;
                       return (
                         <div key={vId} style={{
                           display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -4283,13 +4292,13 @@ export default function Dashboard() {
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", maxHeight: "350px", overflowY: "auto", paddingRight: "0.25rem" }}>
                     {pendingPrivateVideos.map(video => {
-                      const vTitle = video.snippet?.title || video.title || "Sin título";
+                      const ytId = video.id?.videoId || video.id;
+                      const dbVid = dbVideos.find(v => v.youtubeId === ytId || v.id === ytId);
+                      const vTitle = dbVid?.title || video.snippet?.title || video.title || "Sin título";
                       const vDate = video.snippet?.publishedAt || video.createdAt;
                       const vId = video.id?.videoId || video.id;
                       const vThumb = video.snippet?.thumbnails?.medium?.url || video.thumbnail;
 
-                      const ytId = video.id?.videoId || video.id;
-                      const dbVid = dbVideos.find(v => v.youtubeId === ytId || v.id === ytId);
                       const isUploading = dbVid?.status === "UPLOADING" || video.status === "UPLOADING";
                       const uploadPercent = dbVid?.uploadProgress || video.uploadProgress || 0;
 
