@@ -406,7 +406,7 @@ export async function POST(request) {
 
     const email = await getCurrentUserEmail(request);
     const body = await request.json();
-    const { title, description, filename, filePath, playlistId, rawFrameBase64 } = body;
+    const { title, description, filename, filePath, playlistId, rawFrameBase64, scheduledAt } = body;
 
     const video = await prisma.video.create({
       data: {
@@ -417,7 +417,8 @@ export async function POST(request) {
         status: 'READY',
         playlistId: playlistId || null,
         rawFrameBase64: rawFrameBase64 || null,
-        userEmail: email
+        userEmail: email,
+        scheduledAt: scheduledAt ? new Date(scheduledAt) : null
       }
     });
 

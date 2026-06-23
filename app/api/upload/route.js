@@ -29,7 +29,7 @@ export async function POST(request) {
 // Fase 1: Iniciar sesión de subida resumible con la API de YouTube
 async function handleInitiateUpload(request) {
   const body = await request.json();
-  const { title, description, fileName, fileSize, fileType, rawFrameBase64, playlistId } = body;
+  const { title, description, fileName, fileSize, fileType, rawFrameBase64, playlistId, scheduledAt } = body;
 
   if (!fileName || !fileSize) {
     return NextResponse.json({ error: 'Missing fileName or fileSize' }, { status: 400 });
@@ -133,7 +133,8 @@ async function handleInitiateUpload(request) {
         status: 'UPLOADING',
         title: title || undefined,
         description: description || undefined,
-        playlistId: playlistId || undefined
+        playlistId: playlistId || undefined,
+        scheduledAt: scheduledAt ? new Date(scheduledAt) : undefined
       }
     });
   } else {
@@ -151,7 +152,8 @@ async function handleInitiateUpload(request) {
         rawFrameBase64: rawFrameBase64 || null,
         playlistId: playlistId || null,
         userEmail: email,
-        channelId: channel.id
+        channelId: channel.id,
+        scheduledAt: scheduledAt ? new Date(scheduledAt) : null
       }
     });
   }

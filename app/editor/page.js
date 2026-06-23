@@ -263,6 +263,7 @@ export default function Dashboard() {
 
   // Selección de Video, Carga de PDF, Archivos e Interfaz por Lotes
   const [youtubeId, setYoutubeId] = useState("");
+  const [suggestedScheduledAt, setSuggestedScheduledAt] = useState(null);
   const [documentFile, setDocumentFile] = useState(null);
   const [isAnalyzingFile, setIsAnalyzingFile] = useState(false);
   const [logoUploadProgress, setLogoUploadProgress] = useState(null);
@@ -310,6 +311,8 @@ export default function Dashboard() {
   // Estado de la cola de actualizaciones programadas locales
   const [scheduledUpdates, setScheduledUpdates] = useState([]);
   const [executingScheduler, setExecutingScheduler] = useState(false);
+  const [isSimpleScheduled, setIsSimpleScheduled] = useState(false);
+  const [simpleScheduledAt, setSimpleScheduledAt] = useState("");
 
   // Listado de tareas (VideoTask)
   const [tasks, setTasks] = useState([]);
@@ -533,6 +536,7 @@ export default function Dashboard() {
     }
     setSelectedYoutubeVideo(null);
     setYoutubeId("");
+    setSuggestedScheduledAt(null);
     handleResetThumbnailStates();
   };
 
@@ -1698,6 +1702,7 @@ export default function Dashboard() {
     };
 
     setSelectedYoutubeVideo(combinedVideo);
+    setSuggestedScheduledAt(dbVideo?.scheduledAt || null);
 
     // Buscar si ya hay una actualización programada para este video
     const scheduledUpdate = scheduledUpdates.find(u => u.youtubeId === video.id);
@@ -2121,7 +2126,8 @@ export default function Dashboard() {
           title: simpleTitle,
           description: simpleDescription,
           rawFrameBase64: localExtractedFrame,
-          playlistId: ""
+          playlistId: "",
+          scheduledAt: isSimpleScheduled && simpleScheduledAt ? toUTCISOString(simpleScheduledAt) : null
         })
       });
 
@@ -2138,6 +2144,8 @@ export default function Dashboard() {
       setLocalExtractedFrame(null);
       setSimpleTitle("");
       setSimpleDescription("");
+      setIsSimpleScheduled(false);
+      setSimpleScheduledAt("");
       if (simpleVideoInputRef.current) {
         simpleVideoInputRef.current.value = "";
       }
@@ -4025,6 +4033,30 @@ export default function Dashboard() {
                     )}
                   </div>
 
+                  {/* Programación sugerida de publicación */}
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "1rem", marginBottom: "0.5rem" }}>
+                    <input
+                      type="checkbox"
+                      id="simpleSchedToggle"
+                      checked={isSimpleScheduled}
+                      disabled={isSimpleUploading}
+                      onChange={(e) => setIsSimpleScheduled(e.target.checked)}
+                    />
+                    <label htmlFor="simpleSchedToggle" style={{ cursor: "pointer", fontSize: "0.85rem", fontWeight: "600", color: "var(--text-secondary)" }}>
+                      Sugerir fecha/hora de publicación:
+                    </label>
+                  </div>
+
+                  {isSimpleScheduled && (
+                    <div className={styles.inputGroup} style={{ marginBottom: "1rem" }}>
+                      <DateTimePicker
+                        required={isSimpleScheduled}
+                        value={simpleScheduledAt}
+                        onChange={(e) => setSimpleScheduledAt(e.target.value)}
+                      />
+                    </div>
+                  )}
+
                   {isSimpleUploading && (
                     <div style={{ marginTop: "0.5rem" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.80rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>
@@ -4993,6 +5025,51 @@ export default function Dashboard() {
                       </div>
                     )}
                   </div>
+
+                  {/* Sugerencia de fecha del subidor */}
+                  {suggestedScheduledAt && (
+                    <div style={{
+                      background: "rgba(168, 85, 247, 0.08)",
+                      border: "1px solid rgba(168, 85, 247, 0.25)",
+                      borderRadius: "8px",
+                      padding: "0.75rem 1rem",
+                      marginTop: "1.5rem",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.5rem"
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.8rem", fontWeight: "600", color: "#c084fc" }}>
+                        <span>📅 Fecha sugerida por el subidor:</span>
+                        <span style={{ color: "#fff", fontWeight: "700" }}>{formatDate(suggestedScheduledAt)}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUpdateForm(prev => ({
+                            ...prev,
+                            isScheduled: true,
+                            scheduledAt: toLocalDateTimeString(suggestedScheduledAt)
+                          }));
+                        }}
+                        style={{
+                          alignSelf: "flex-start",
+                          background: "linear-gradient(135deg, #a855f7 0%, #818cf8 100%)",
+                          border: "none",
+                          borderRadius: "6px",
+                          color: "#fff",
+                          fontSize: "0.7rem",
+                          fontWeight: "700",
+                          padding: "0.35rem 0.75rem",
+                          cursor: "pointer",
+                          transition: "all 0.2s"
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.filter = "brightness(1.1)"}
+                        onMouseLeave={(e) => e.currentTarget.style.filter = "none"}
+                      >
+                        ✓ Usar sugerencia
+                      </button>
+                    </div>
+                  )}
 
                   {/* Programación futura */}
                   <div className={styles.inputGroup} style={{ flexDirection: "row", alignItems: "center", gap: "0.5rem", marginTop: "1rem" }}>

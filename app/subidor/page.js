@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import styles from "../page.module.css";
 import Navbar from "../components/Navbar";
+import DateTimePicker from "@/components/DateTimePicker";
 
 // Helper para generar UUIDs en contextos de red no seguros
 function generateUUID() {
@@ -41,6 +42,11 @@ const handleCleanPaste = (e, setValFn) => {
   setTimeout(() => {
     target.selectionStart = target.selectionEnd = start + cleanedText.length;
   }, 0);
+};
+
+const toUTCISOString = (localDateTimeStr) => {
+  if (!localDateTimeStr) return null;
+  return new Date(localDateTimeStr).toISOString();
 };
 
 export default function SubidorPage() {
@@ -406,7 +412,9 @@ export default function SubidorPage() {
       progress: 0,
       rawFrameBase64: null,
       hasMatched: false,
-      index: null
+      index: null,
+      isScheduled: false,
+      scheduledAt: ""
     }));
 
     setBatchFiles(prev => [...prev, ...newBatchItems]);
@@ -507,7 +515,8 @@ export default function SubidorPage() {
         fileName: file.name,
         fileSize: file.size,
         fileType: file.type || "video/mp4",
-        rawFrameBase64: item.rawFrameBase64
+        rawFrameBase64: item.rawFrameBase64,
+        scheduledAt: item.isScheduled && item.scheduledAt ? toUTCISOString(item.scheduledAt) : null
       })
     });
 
@@ -1371,6 +1380,30 @@ export default function SubidorPage() {
                                 }}
                               />
                             </div>
+
+                            {/* Programación sugerida de publicación */}
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.5rem" }}>
+                              <input
+                                type="checkbox"
+                                id={`sched-${item.id}`}
+                                checked={item.isScheduled || false}
+                                disabled={isBatchUploading}
+                                onChange={(e) => handleUpdateBatchField(item.id, 'isScheduled', e.target.checked)}
+                              />
+                              <label htmlFor={`sched-${item.id}`} style={{ cursor: "pointer", fontSize: "0.75rem", fontWeight: "600", color: "var(--text-secondary)" }}>
+                                Sugerir fecha/hora de publicación:
+                              </label>
+                            </div>
+
+                            {item.isScheduled && (
+                              <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", marginTop: "0.25rem" }}>
+                                <DateTimePicker
+                                  required={item.isScheduled}
+                                  value={item.scheduledAt || ""}
+                                  onChange={(e) => handleUpdateBatchField(item.id, 'scheduledAt', e.target.value)}
+                                />
+                              </div>
+                            )}
 
                             {/* Badge de emparejamiento */}
                             {item.hasMatched && (
