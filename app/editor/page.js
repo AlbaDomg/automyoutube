@@ -4881,24 +4881,48 @@ export default function Dashboard() {
                           title="Eliminar del historial"
                           onClick={async () => {
                             if (!confirm(`¿Eliminar "${item.title || "este vídeo"}" del historial?`)) return;
+                            
+                            // 1. Actualización optimista: eliminar el elemento del estado local de inmediato
+                            const originalTasks = [...tasks];
+                            const originalCompletedVideos = [...completedLocalVideos];
+                            
+                            if (item.taskId) {
+                              setTasks(prev => prev.filter(t => t.id !== item.taskId));
+                            }
+                            if (item.videoId) {
+                              setCompletedLocalVideos(prev => prev.filter(v => v.id !== item.videoId));
+                            }
+                            
                             try {
-                              let success = true;
+                              // 2. Ejecutar las peticiones de borrado en paralelo
+                              const deletePromises = [];
                               if (item.taskId) {
-                                const res = await fetch(`/api/tasks?id=${item.taskId}`, { method: 'DELETE' });
-                                if (!res.ok) success = false;
+                                deletePromises.push(fetch(`/api/tasks?id=${item.taskId}`, { method: 'DELETE' }));
                               }
                               if (item.videoId) {
-                                const res = await fetch(`/api/videos?id=${item.videoId}`, { method: 'DELETE' });
-                                if (!res.ok) success = false;
+                                deletePromises.push(fetch(`/api/videos?id=${item.videoId}`, { method: 'DELETE' }));
                               }
-                              if (success) {
-                                fetchScheduledUpdates();
-                                fetchTasks();
+                              
+                              const responses = await Promise.all(deletePromises);
+                              const allOk = responses.every(res => res.ok);
+                              
+                              if (allOk) {
+                                // 3. Refrescar silenciosamente en segundo plano sin mostrar estado de carga ("tic")
+                                await Promise.all([
+                                  fetchScheduledUpdates(),
+                                  fetchTasks(true) // silent = true
+                                ]);
                               } else {
+                                // Revertir si falla
+                                setTasks(originalTasks);
+                                setCompletedLocalVideos(originalCompletedVideos);
                                 alert("Error al eliminar del historial.");
                               }
                             } catch (err) {
                               console.error(err);
+                              // Revertir en caso de excepción
+                              setTasks(originalTasks);
+                              setCompletedLocalVideos(originalCompletedVideos);
                               alert("Error de red al eliminar del historial.");
                             }
                           }}
