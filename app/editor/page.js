@@ -277,8 +277,6 @@ export default function Dashboard() {
   const [autoIncrement, setAutoIncrement] = useState(true);
   const [batchScheduleEnabled, setBatchScheduleEnabled] = useState(false);
   const [batchScheduleDate, setBatchScheduleDate] = useState("");
-  const [pdfSearchQuery, setPdfSearchQuery] = useState("");
-  const [showPdfSearchDropdown, setShowPdfSearchDropdown] = useState(false);
 
   // Estados para vinculación manual de borradores de YouTube
   const [ytDraftSearchQuery, setYtDraftSearchQuery] = useState("");
@@ -1910,66 +1908,6 @@ export default function Dashboard() {
         }
       }
     }
-  };
-
-  const handleApplyPdfVideoToCurrent = (pdfVideo) => {
-    if (!selectedYoutubeVideo || !pdfVideo) return;
-
-    // 1. Detectar programa y lista de reproducción
-    const detected = detectProgramAndPlaylist(
-      pdfVideo.title || "", 
-      pdfVideo.description || "", 
-      selectedYoutubeVideo.fileName || selectedYoutubeVideo.filename || "",
-      pdfVideo.programName || ""
-    );
-
-    // 2. Formatear título y descripción
-    let finalTitle = (pdfVideo.title || "").trim();
-    if (detected.logoName && detected.logoName !== "none") {
-      const progClean = detected.logoName.replace(/\.[^/.]+$/, "").replace(/_/g, " ").toUpperCase().trim();
-      const suffix = `| ${progClean}`;
-      if (!finalTitle.toUpperCase().endsWith(suffix.toUpperCase())) {
-        finalTitle = `${finalTitle} | ${progClean}`;
-      }
-    }
-
-    const finalDesc = updateDescriptionUrl(pdfVideo.description || "", detected.logoName);
-
-    // 3. Formatear frase SEO de la miniatura
-    let finalThumbnailText = pdfVideo.thumbnailText || "";
-    if (finalThumbnailText) {
-      finalThumbnailText = ensureThreeToFiveWords(finalThumbnailText, finalTitle);
-    }
-
-    // 4. Actualizar formulario
-    setUpdateForm(prev => ({
-      ...prev,
-      title: finalTitle,
-      description: finalDesc,
-      playlistId: detected.playlistId || prev.playlistId
-    }));
-
-    // 5. Establecer logotipo y frase SEO para la miniatura
-    setSelectedProgramLogo(detected.logoName);
-    if (detected.logoName !== "none") {
-      setIsAutoThumbnailEnabled(true);
-      setThumbnailText(finalThumbnailText);
-      
-      // Auto-generar miniatura
-      generateSingleAutoThumbnail(
-        finalThumbnailText,
-        selectedYoutubeVideo,
-        customBgBase64,
-        detected.logoName
-      ).then(thumbBase64 => {
-        if (thumbBase64) {
-          setNewThumbnailBase64(thumbBase64);
-        }
-      });
-    }
-
-    setPdfSearchQuery("");
-    setShowPdfSearchDropdown(false);
   };
 
   // Auto-seleccionar video para editar si viene un editId en la URL
@@ -4397,127 +4335,6 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* Buscador / Selector del Documento PDF para vinculación manual */}
-              {parsedVideos.length > 0 && (
-                <div style={{
-                  border: "1px solid var(--border-color, #334155)",
-                  borderRadius: "8px",
-                  padding: "0.75rem 1rem",
-                  marginBottom: "1rem",
-                  background: "rgba(255, 255, 255, 0.01)",
-                  position: "relative"
-                }}>
-                  <label style={{
-                    fontSize: "0.75rem",
-                    fontWeight: "600",
-                    color: "var(--text-secondary, #94a3b8)",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.3rem",
-                    marginBottom: "0.4rem"
-                  }}>
-                    <span>📋 Copiar datos desde el Documento PDF (Asociar Manualmente)</span>
-                  </label>
-                  <div style={{ display: "flex", gap: "0.5rem", position: "relative" }}>
-                    <input
-                      type="text"
-                      placeholder="Buscar por título o programa en el PDF..."
-                      value={pdfSearchQuery}
-                      onChange={(e) => {
-                        setPdfSearchQuery(e.target.value);
-                        setShowPdfSearchDropdown(true);
-                      }}
-                      onFocus={() => setShowPdfSearchDropdown(true)}
-                      style={{
-                        flex: 1,
-                        padding: "0.4rem 0.6rem",
-                        fontSize: "0.75rem",
-                        background: "var(--bg-surface-solid, #1e293b)",
-                        color: "var(--text-primary, #f8fafc)",
-                        border: "1px solid var(--border-color, #334155)",
-                        borderRadius: "6px"
-                      }}
-                    />
-                    {pdfSearchQuery && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPdfSearchQuery("");
-                          setShowPdfSearchDropdown(false);
-                        }}
-                        style={{
-                          background: "transparent",
-                          border: "none",
-                          color: "var(--text-muted, #94a3b8)",
-                          cursor: "pointer",
-                          fontSize: "0.8rem",
-                          padding: "0 0.4rem"
-                        }}
-                      >✕</button>
-                    )}
-                  </div>
-
-                  {showPdfSearchDropdown && (
-                    <div style={{
-                      position: "absolute",
-                      top: "100%",
-                      left: 0,
-                      right: 0,
-                      marginTop: "0.25rem",
-                      background: "var(--bg-surface, #0f172a)",
-                      border: "1px solid var(--border-color, #334155)",
-                      borderRadius: "8px",
-                      boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.5)",
-                      maxHeight: "180px",
-                      overflowY: "auto",
-                      zIndex: 100,
-                      padding: "0.4rem"
-                    }}>
-                      {parsedVideos.filter(v => {
-                        const q = pdfSearchQuery.toLowerCase();
-                        return (v.title || "").toLowerCase().includes(q) || (v.programName || "").toLowerCase().includes(q);
-                      }).length === 0 ? (
-                        <div style={{ padding: "0.5rem", fontSize: "0.75rem", color: "var(--text-muted)", textAlign: "center" }}>
-                          No se encontraron coincidencias en el PDF.
-                        </div>
-                      ) : (
-                        parsedVideos.filter(v => {
-                          const q = pdfSearchQuery.toLowerCase();
-                          return (v.title || "").toLowerCase().includes(q) || (v.programName || "").toLowerCase().includes(q);
-                        }).map((v) => (
-                          <div
-                            key={v.index}
-                            onClick={() => handleApplyPdfVideoToCurrent(v)}
-                            style={{
-                              padding: "0.5rem",
-                              borderRadius: "4px",
-                              cursor: "pointer",
-                              fontSize: "0.75rem",
-                              borderBottom: "1px solid rgba(255,255,255,0.02)",
-                              display: "flex",
-                              flexDirection: "column",
-                              gap: "0.15rem",
-                              transition: "background 0.2s"
-                            }}
-                            onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
-                            onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
-                          >
-                            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "600", color: "#f8fafc" }}>
-                              <span>Video {v.index}: {v.title}</span>
-                              <span style={{ color: "#a855f7", fontSize: "0.7rem", textTransform: "uppercase" }}>{v.programName || "SIN PROGRAMA"}</span>
-                            </div>
-                            {v.description && (
-                              <div style={{ color: "var(--text-muted, #94a3b8)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: "0.1rem" }}>
-                                {v.description}
-                              </div>
-                            )}
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
 
               {/* Vincular con Borrador de YouTube (Selección Manual) */}
               <div style={{
