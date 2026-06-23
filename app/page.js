@@ -152,7 +152,11 @@ export default function LandingPortalPage() {
       if (!res.ok) {
         throw new Error(data.error || "Error al invitar al usuario.");
       }
-      setInviteSuccess(`Usuario ${newEmail} invitado con éxito.`);
+      if (data.emailSent) {
+        setInviteSuccess(`Usuario ${newEmail} invitado y correo de aviso enviado con éxito.`);
+      } else {
+        setInviteSuccess(`Usuario ${newEmail} invitado con éxito, pero falló el envío del correo: ${data.emailError || "error desconocido (verifica configuración SMTP)"}`);
+      }
       setNewEmail("");
       fetchUsers();
     } catch (err) {

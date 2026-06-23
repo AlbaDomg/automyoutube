@@ -67,12 +67,23 @@ export async function POST(request) {
       }
     });
 
-    // Enviar correo de notificación asíncronamente
-    sendInviteEmail(cleanEmail, role, auth.email).catch(err => {
-      console.error('[API Users POST] Failed to send notification email:', err);
-    });
+    // Enviar correo de notificación
+    let emailSent = false;
+    let emailError = null;
+    try {
+      const emailResult = await sendInviteEmail(cleanEmail, role, auth.email);
+      if (emailResult.success) {
+        emailSent = true;
+      } else {
+        emailError = emailResult.error;
+        console.error('[API Users POST] Failed to send email:', emailResult.error);
+      }
+    } catch (err) {
+      emailError = err.message;
+      console.error('[API Users POST] Exception sending email:', err);
+    }
 
-    return NextResponse.json({ success: true, user });
+    return NextResponse.json({ success: true, user, emailSent, emailError });
   } catch (error) {
     console.error('[API Users POST] Error:', error);
     return NextResponse.json({ error: 'Error al guardar/invitar usuario' }, { status: 500 });
