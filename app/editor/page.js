@@ -3268,33 +3268,7 @@ export default function Dashboard() {
         </div>
 
         <div className={styles.headerActions}>
-          {/* Botón de regreso al Portal */}
-          <a href="/" style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "0.5rem",
-            padding: "0.4rem 0.8rem",
-            background: "rgba(255,255,255,0.05)",
-            border: "1px solid var(--border-color)",
-            borderRadius: "10px",
-            fontSize: "0.75rem",
-            fontWeight: "600",
-            color: "#f8fafc",
-            textDecoration: "none",
-            marginRight: "0.5rem",
-            transition: "all 0.2s"
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = "rgba(255,255,255,0.08)";
-            e.currentTarget.style.borderColor = "#a855f7";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "rgba(255,255,255,0.05)";
-            e.currentTarget.style.borderColor = "var(--border-color)";
-          }}
-          >
-            <span>🏠 Portal Principal</span>
-          </a>
+
 
           {channel.connected && (
             <button

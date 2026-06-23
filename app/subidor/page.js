@@ -1533,32 +1533,7 @@ export default function SubidorPage() {
               </div>
             ) : null}
 
-            <a href="/" style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "0.5rem",
-              padding: "0.6rem 1.1rem",
-              background: "rgba(255,255,255,0.05)",
-              border: "1px solid var(--border-color)",
-              borderRadius: "10px",
-              fontSize: "0.8rem",
-              fontWeight: "600",
-              color: "#f8fafc",
-              textDecoration: "none",
-              transition: "all 0.2s",
-              height: "fit-content"
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = "rgba(255,255,255,0.08)";
-              e.currentTarget.style.borderColor = "#a855f7";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "rgba(255,255,255,0.05)";
-              e.currentTarget.style.borderColor = "var(--border-color)";
-            }}
-            >
-              <span>🏠 Portal Principal</span>
-            </a>
+
           </div>
         </div>
 
