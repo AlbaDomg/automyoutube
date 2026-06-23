@@ -263,8 +263,6 @@ export default function Dashboard() {
 
   // Selección de Video, Carga de PDF, Archivos e Interfaz por Lotes
   const [youtubeId, setYoutubeId] = useState("");
-  const [searchTitle, setSearchTitle] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
   const [documentFile, setDocumentFile] = useState(null);
   const [isAnalyzingFile, setIsAnalyzingFile] = useState(false);
   const [logoUploadProgress, setLogoUploadProgress] = useState(null);
@@ -281,6 +279,12 @@ export default function Dashboard() {
   const [batchScheduleDate, setBatchScheduleDate] = useState("");
   const [pdfSearchQuery, setPdfSearchQuery] = useState("");
   const [showPdfSearchDropdown, setShowPdfSearchDropdown] = useState(false);
+
+  // Estados para vinculación manual de borradores de YouTube
+  const [ytDraftSearchQuery, setYtDraftSearchQuery] = useState("");
+  const [showYtDraftSearchDropdown, setShowYtDraftSearchDropdown] = useState(false);
+  const [ytDraftSearchResults, setYtDraftSearchResults] = useState([]);
+  const [loadingYtDrafts, setLoadingYtDrafts] = useState(false);
 
   // Estados para búsqueda de videos en lote y filtrado de playlists
   const [batchVideoSearch, setBatchVideoSearch] = useState({}); // { [index]: { query, results, loading } }
@@ -299,7 +303,6 @@ export default function Dashboard() {
     playlistId: ""
   });
   const [updatingYoutubeVideo, setUpdatingYoutubeVideo] = useState(false);
-  const [loadingYoutubeVideo, setLoadingYoutubeVideo] = useState(false);
 
   // Sugerencias de la IA (Títulos/Miniatura)
   const [optimizationSuggestions, setOptimizationSuggestions] = useState(null);
@@ -1529,28 +1532,94 @@ export default function Dashboard() {
     }
   };
 
-  // Buscar videos en YouTube por título (o ID/URL como fallback)
-  const fetchYoutubeVideosByTitle = async (qVal) => {
-    if (!qVal || !qVal.trim()) return;
-    setLoadingYoutubeVideo(true);
-    setSearchResults([]);
+  // Buscar borradores de YouTube para la vinculación manual en el selector
+  const fetchYtDraftsForSelector = async (query = "") => {
+    setLoadingYtDrafts(true);
     try {
-      const res = await fetch(`/api/youtube/videos?q=${encodeURIComponent(qVal)}`);
+      const url = query.trim() 
+        ? `/api/youtube/videos?q=${encodeURIComponent(query)}` 
+        : `/api/youtube/videos`;
+      const res = await fetch(url, { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
-        setSearchResults(data);
-        if (data.length === 0) {
-          alert("No se encontraron videos privados u ocultos con ese término de búsqueda.");
-        }
-      } else {
-        const errData = await res.json();
-        alert("Fallo al buscar videos: " + (errData.error || "error desconocido"));
+        setYtDraftSearchResults(data);
       }
     } catch (err) {
-      console.error("Error al buscar videos:", err);
-      alert("Error de red al consultar los videos.");
+      console.error("Error al buscar borradores de YouTube:", err);
     } finally {
-      setLoadingYoutubeVideo(false);
+      setLoadingYtDrafts(false);
+    }
+  };
+
+  // Efecto para buscar borradores de YouTube con debounce en el selector manual
+  useEffect(() => {
+    if (showYtDraftSearchDropdown && selectedYoutubeVideo) {
+      const delayDebounce = setTimeout(() => {
+        fetchYtDraftsForSelector(ytDraftSearchQuery);
+      }, 300);
+      return () => clearTimeout(delayDebounce);
+    }
+  }, [ytDraftSearchQuery, showYtDraftSearchDropdown, selectedYoutubeVideo]);
+
+  // Vincular un borrador de YouTube seleccionado manualmente al vídeo en edición
+  const handleLinkYoutubeDraft = async (draft) => {
+    if (!selectedYoutubeVideo || !draft) return;
+
+    if (!confirm(`¿Deseas vincular el borrador de YouTube "${draft.title}" a este contenido?`)) {
+      return;
+    }
+
+    try {
+      const targetId = selectedYoutubeVideo.dbId || selectedYoutubeVideo.id;
+      
+      const res = await fetch(`/api/videos?id=${targetId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          youtubeId: draft.id
+        })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Fallo al vincular el borrador en la base de datos");
+      }
+
+      // Actualizar el estado local selectedYoutubeVideo
+      const updatedVideo = {
+        ...selectedYoutubeVideo,
+        youtubeId: draft.id,
+        thumbnail: selectedYoutubeVideo.thumbnail || draft.thumbnail
+      };
+      setSelectedYoutubeVideo(updatedVideo);
+
+      // Usar miniatura como preview de fondo
+      if (draft.thumbnail) {
+        const proxiedUrl = `/api/youtube/thumbnail-proxy?url=${encodeURIComponent(draft.thumbnail)}`;
+        setCustomBgBase64(proxiedUrl);
+      }
+
+      // Actualizar estados locales de listas de videos
+      setDbVideos(prev => prev.map(v => v.id === targetId ? { ...v, youtubeId: draft.id } : v));
+      setLocalVideosQueue(prev => prev.map(v => v.id === targetId ? { ...v, youtubeId: draft.id } : v));
+
+      // Actualizar parsedVideos
+      setParsedVideos(prev => prev.map(v => {
+        if (v.index === selectedYoutubeVideo.index || v.matchedVideoId === targetId) {
+          return { ...v, matchedVideoId: draft.id };
+        }
+        return v;
+      }));
+
+      await fetchScheduledUpdates();
+      await fetchPrivateVideos();
+
+      alert("¡Borrador de YouTube vinculado con éxito!");
+      setYtDraftSearchQuery("");
+      setShowYtDraftSearchDropdown(false);
+    } catch (err) {
+      console.error(err);
+      alert("Error al vincular el borrador: " + err.message);
     }
   };
 
@@ -4177,103 +4246,6 @@ export default function Dashboard() {
                 )}
               </div>
 
-              {/* Buscador Manual por Título */}
-              <div className={styles.card}>
-                <h3 style={{ fontSize: "1.25rem", fontWeight: "800", marginBottom: "1.25rem", background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-                  🔍 Buscar Vídeos en YouTube
-                </h3>
-
-                <div className={styles.inputGroup}>
-                  <div style={{ display: "flex", gap: "0.5rem" }}>
-                    <input
-                      type="text"
-                      placeholder="Escribe palabras clave del título del video..."
-                      value={searchTitle}
-                      onChange={(e) => setSearchTitle(e.target.value)}
-                      style={{ flex: 1 }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          fetchYoutubeVideosByTitle(searchTitle);
-                        }
-                      }}
-                    />
-                    <button
-                      onClick={() => fetchYoutubeVideosByTitle(searchTitle)}
-                      disabled={loadingYoutubeVideo || !searchTitle.trim()}
-                      className={styles.btnSubmit}
-                      style={{ width: "auto", whiteSpace: "nowrap" }}
-                    >
-                      {loadingYoutubeVideo ? "Buscando..." : "Buscar Video"}
-                    </button>
-                  </div>
-                </div>
-
-                {searchResults.length > 0 && (
-                  <div style={{
-                    marginTop: "1rem",
-                    background: "var(--bg-card, #0f172a)",
-                    border: "1px solid var(--border-color, #334155)",
-                    borderRadius: "12px",
-                    maxHeight: "250px",
-                    overflowY: "auto",
-                    padding: "0.5rem"
-                  }}>
-                    {searchResults.map(video => (
-                      <div key={video.id} style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "0.75rem",
-                        padding: "0.5rem",
-                        borderBottom: "1px solid rgba(255,255,255,0.05)",
-                        justifyContent: "space-between"
-                      }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flex: 1, minWidth: 0 }}>
-                          <img src={video.thumbnail} alt="" style={{ width: "64px", aspectRatio: "16/9", objectFit: "cover", borderRadius: "4px" }} />
-                          <div style={{ minWidth: 0, flex: 1 }}>
-                            <div style={{ fontSize: "0.8rem", fontWeight: "600", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
-                              {video.title}
-                            </div>
-                            <span style={{
-                              fontSize: "0.7rem",
-                              color: video.privacyStatus === 'private' ? "#f59e0b" : "#38bdf8",
-                              background: video.privacyStatus === 'private' ? "rgba(245, 158, 11, 0.15)" : "rgba(56, 189, 248, 0.15)",
-                              padding: "1px 6px",
-                              borderRadius: "10px"
-                            }}>
-                              {video.privacyStatus === 'private' ? "Borrador" : "Oculto"}
-                            </span>
-                          </div>
-                        </div>
-                        {(() => {
-                          const dbVid = dbVideos.find(v => v.youtubeId === video.id || (v.status === "UPLOADING" && v.title === video.title));
-                          const isUploading = dbVid?.status === "UPLOADING" || video.status === "UPLOADING";
-
-                          return (
-                            <button
-                              onClick={() => {
-                                if (isUploading) return;
-                                handleSelectVideo(video);
-                                setSearchResults([]);
-                              }}
-                              disabled={isUploading}
-                              className={styles.btnSubmit}
-                              style={{
-                                width: "auto",
-                                fontSize: "0.75rem",
-                                padding: "0.3rem 0.6rem",
-                                background: isUploading ? "#4b5563" : undefined,
-                                cursor: isUploading ? "not-allowed" : "pointer"
-                              }}
-                            >
-                              {isUploading ? "Subiendo..." : "Editar"}
-                            </button>
-                          );
-                        })()}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
 
               {/* Cola 1 – Editor: Borradores en YouTube listos para editar */}
               <div className={styles.card}>
@@ -4546,6 +4518,144 @@ export default function Dashboard() {
                   )}
                 </div>
               )}
+
+              {/* Vincular con Borrador de YouTube (Selección Manual) */}
+              <div style={{
+                border: "1px solid var(--border-color, #334155)",
+                borderRadius: "8px",
+                padding: "0.75rem 1rem",
+                marginBottom: "1rem",
+                background: "rgba(255, 255, 255, 0.01)",
+                position: "relative"
+              }}>
+                <label style={{
+                  fontSize: "0.75rem",
+                  fontWeight: "600",
+                  color: "var(--text-secondary, #94a3b8)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.3rem",
+                  marginBottom: "0.4rem"
+                }}>
+                  <span>🔗 Vincular con Borrador de YouTube (Selección Manual)</span>
+                </label>
+                <div style={{ display: "flex", gap: "0.5rem", position: "relative" }}>
+                  <input
+                    type="text"
+                    placeholder="Buscar borrador por título o pegar URL/ID en YouTube..."
+                    value={ytDraftSearchQuery}
+                    onChange={(e) => {
+                      setYtDraftSearchQuery(e.target.value);
+                      setShowYtDraftSearchDropdown(true);
+                    }}
+                    onFocus={() => {
+                      setShowYtDraftSearchDropdown(true);
+                      fetchYtDraftsForSelector(ytDraftSearchQuery);
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: "0.4rem 0.6rem",
+                      fontSize: "0.75rem",
+                      background: "var(--bg-surface-solid, #1e293b)",
+                      color: "var(--text-primary, #f8fafc)",
+                      border: "1px solid var(--border-color, #334155)",
+                      borderRadius: "6px"
+                    }}
+                  />
+                  {ytDraftSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setYtDraftSearchQuery("");
+                        fetchYtDraftsForSelector("");
+                      }}
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        color: "var(--text-muted, #94a3b8)",
+                        cursor: "pointer",
+                        fontSize: "0.8rem",
+                        padding: "0 0.4rem"
+                      }}
+                    >✕</button>
+                  )}
+                  {showYtDraftSearchDropdown && (
+                    <button
+                      type="button"
+                      onClick={() => setShowYtDraftSearchDropdown(false)}
+                      style={{
+                        background: "rgba(255, 255, 255, 0.05)",
+                        border: "1px solid var(--border-color, #334155)",
+                        color: "var(--text-primary, #f8fafc)",
+                        borderRadius: "6px",
+                        cursor: "pointer",
+                        fontSize: "0.75rem",
+                        padding: "0.4rem 0.6rem"
+                      }}
+                    >Cerrar</button>
+                  )}
+                </div>
+
+                {showYtDraftSearchDropdown && (
+                  <div style={{
+                    position: "absolute",
+                    top: "100%",
+                    left: 0,
+                    right: 0,
+                    marginTop: "0.25rem",
+                    background: "var(--bg-surface, #0f172a)",
+                    border: "1px solid var(--border-color, #334155)",
+                    borderRadius: "8px",
+                    boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.5)",
+                    maxHeight: "180px",
+                    overflowY: "auto",
+                    zIndex: 110,
+                    padding: "0.4rem"
+                  }}>
+                    {loadingYtDrafts ? (
+                      <div style={{ padding: "0.5rem", fontSize: "0.75rem", color: "var(--text-muted)", textAlign: "center" }}>
+                        Buscando borradores de YouTube...
+                      </div>
+                    ) : ytDraftSearchResults.length === 0 ? (
+                      <div style={{ padding: "0.5rem", fontSize: "0.75rem", color: "var(--text-muted)", textAlign: "center" }}>
+                        No se encontraron videos privados o de borrador en el canal.
+                      </div>
+                    ) : (
+                      ytDraftSearchResults.map((draft) => (
+                        <div
+                          key={draft.id}
+                          onClick={() => handleLinkYoutubeDraft(draft)}
+                          style={{
+                            padding: "0.5rem",
+                            borderRadius: "4px",
+                            cursor: "pointer",
+                            fontSize: "0.75rem",
+                            borderBottom: "1px solid rgba(255,255,255,0.02)",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "0.5rem",
+                            transition: "background 0.2s"
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
+                          onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                        >
+                          {draft.thumbnail && (
+                            <img src={draft.thumbnail} alt="" style={{ width: "40px", aspectRatio: "16/9", objectFit: "cover", borderRadius: "3px" }} />
+                          )}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: "600", color: "#f8fafc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {draft.title}
+                            </div>
+                            <div style={{ color: "var(--text-muted, #94a3b8)", fontSize: "0.7rem" }}>
+                              ID: {draft.id} | Estado: {draft.privacyStatus === 'private' ? 'Borrador Privado' : 'Oculto'}
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
 
               <div className={styles.inlineEditContent}>
                 {/* Columna Izquierda: Sugerencias e Información */}

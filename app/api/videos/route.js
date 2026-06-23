@@ -340,7 +340,7 @@ export async function PATCH(request) {
     }
 
     const body = await request.json();
-    const { title, description, tags, scheduledAt, status, thumbnailBase64, rawFrameBase64, playlistId, privacyStatus, uploadProgress } = body;
+    const { title, description, tags, scheduledAt, status, thumbnailBase64, rawFrameBase64, playlistId, privacyStatus, uploadProgress, youtubeId } = body;
 
     const updateData = {};
     if (title !== undefined) updateData.title = title;
@@ -352,6 +352,7 @@ export async function PATCH(request) {
     if (playlistId !== undefined) updateData.playlistId = playlistId;
     if (rawFrameBase64 !== undefined) updateData.rawFrameBase64 = rawFrameBase64;
     if (privacyStatus !== undefined) updateData.privacyStatus = privacyStatus;
+    if (youtubeId !== undefined) updateData.youtubeId = youtubeId;
     if (uploadProgress !== undefined) {
       const progress = Number(uploadProgress);
       if (Number.isFinite(progress)) {

@@ -85,10 +85,25 @@ export async function GET(request) {
       if (targetVideoId) {
         videoIds = [targetVideoId];
         isSearchById = true;
+      } else {
+        // Si no es un ID de video directo, realizar búsqueda general por palabra clave en el canal
+        try {
+          const searchRes = await youtube.search.list({
+            part: 'id',
+            forMine: true,
+            type: 'video',
+            q: q,
+            maxResults: 50
+          });
+          videoIds = (searchRes.data.items || []).map(item => item.id.videoId).filter(Boolean);
+        } catch (searchErr) {
+          console.warn('[YouTube Videos GET] Fallo en la búsqueda directa de YouTube por q:', searchErr.message);
+          // Si falla (por ejemplo por cuota), intentaremos usar la lista de reproducción uploads como fallback
+        }
       }
     }
 
-    if (!isSearchById) {
+    if (!isSearchById && videoIds.length === 0) {
       // Obtener la lista de reproducción de subidas del canal
       const channelRes = await youtube.channels.list({
         part: 'contentDetails',
@@ -101,14 +116,24 @@ export async function GET(request) {
 
       const uploadsPlaylistId = channelRes.data.items[0].contentDetails.relatedPlaylists.uploads;
 
-      // Obtener los elementos de la lista de reproducción de subidas (hasta 50 videos)
-      const playlistRes = await youtube.playlistItems.list({
-        part: 'snippet',
-        playlistId: uploadsPlaylistId,
-        maxResults: 50
-      });
-
-      videoIds = (playlistRes.data.items || []).map(item => item.snippet.resourceId.videoId).filter(Boolean);
+      // Obtener hasta 150 vídeos recientes de la lista de reproducción de subidas (3 páginas)
+      let nextPageToken = null;
+      for (let page = 0; page < 3; page++) {
+        const playlistRes = await youtube.playlistItems.list({
+          part: 'snippet',
+          playlistId: uploadsPlaylistId,
+          maxResults: 50,
+          pageToken: nextPageToken || undefined
+        });
+        const items = playlistRes.data.items || [];
+        const pageIds = items.map(item => item.snippet.resourceId.videoId).filter(Boolean);
+        videoIds.push(...pageIds);
+        nextPageToken = playlistRes.data.nextPageToken;
+        if (!nextPageToken || items.length < 50) break;
+      }
+      
+      // Eliminar duplicados si los hubiera
+      videoIds = [...new Set(videoIds)];
     }
 
     // Función auxiliar para parsear la duración ISO 8601 de YouTube (ej. PT1M15S)
@@ -123,13 +148,22 @@ export async function GET(request) {
     };
 
     if (videoIds.length > 0) {
-      // Realizar una única consulta por lotes para traer snippets, detalles de contenido, estado de privacidad y detalles de archivo
-      const videoDetailsRes = await youtube.videos.list({
-        part: 'snippet,contentDetails,status,fileDetails',
-        id: videoIds.join(',')
-      });
+      // YouTube videos.list acepta hasta 50 IDs por llamada, así que fragmentamos la petición
+      const chunkSize = 50;
+      const allVideoItems = [];
+      
+      for (let i = 0; i < videoIds.length; i += chunkSize) {
+        const chunk = videoIds.slice(i, i + chunkSize);
+        const videoDetailsRes = await youtube.videos.list({
+          part: 'snippet,contentDetails,status,fileDetails',
+          id: chunk.join(',')
+        });
+        if (videoDetailsRes.data.items) {
+          allVideoItems.push(...videoDetailsRes.data.items);
+        }
+      }
 
-      videos = (videoDetailsRes.data.items || []).map(item => {
+      videos = allVideoItems.map(item => {
         // Si buscamos por un ID específico (q está presente), verificar que pertenece a este canal
         if (isSearchById && item.snippet?.channelId !== channel.id) {
           return null;
@@ -159,7 +193,7 @@ export async function GET(request) {
         };
       }).filter(Boolean);
 
-      // Si no es búsqueda por ID directo y se especificó consulta 'q', filtrar por título en el servidor
+      // Si no es búsqueda por ID directo y se especificó consulta 'q', realizar un filtrado adicional en memoria por seguridad
       if (q && !isSearchById) {
         const queryClean = q.toLowerCase().trim();
         videos = videos.filter(v => v.title.toLowerCase().includes(queryClean));
@@ -167,11 +201,7 @@ export async function GET(request) {
 
       // Si buscamos por ID y la lista final está vacía (no era privado/oculto o no existe)
       if (isSearchById && videos.length === 0) {
-        if (!videoDetailsRes.data.items || videoDetailsRes.data.items.length === 0) {
-          return NextResponse.json({ error: 'No se encontró ningún video con ese ID en YouTube.' }, { status: 404 });
-        } else {
-          return NextResponse.json({ error: 'El video no cumple los requisitos (debe estar en estado privado u oculto).' }, { status: 400 });
-        }
+        return NextResponse.json({ error: 'El video no se encontró o no cumple los requisitos (debe ser privado u oculto en tu canal).' }, { status: 400 });
       }
     }
 
