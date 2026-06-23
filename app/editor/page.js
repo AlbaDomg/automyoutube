@@ -279,6 +279,8 @@ export default function Dashboard() {
   const [autoIncrement, setAutoIncrement] = useState(true);
   const [batchScheduleEnabled, setBatchScheduleEnabled] = useState(false);
   const [batchScheduleDate, setBatchScheduleDate] = useState("");
+  const [pdfSearchQuery, setPdfSearchQuery] = useState("");
+  const [showPdfSearchDropdown, setShowPdfSearchDropdown] = useState(false);
 
   // Estados para búsqueda de videos en lote y filtrado de playlists
   const [batchVideoSearch, setBatchVideoSearch] = useState({}); // { [index]: { query, results, loading } }
@@ -551,8 +553,21 @@ export default function Dashboard() {
     let logoName = "none";
     let playlistId = "";
 
-    // Si ya hay un logo seleccionado manualmente, lo respetamos y no intentamos detectar.
+    // Si nos pasan un programa detectado por Gemini (currentLogo), intentamos resolverlo
+    // contra el catálogo de logos registrados para obtener su nombre de archivo real y playlist vinculada.
     if (currentLogo && currentLogo !== "none") {
+      const matchedLogo = programLogosCatalog.find(logo => {
+        const lName = typeof logo === "string" ? logo : logo.name;
+        const cleanName = lName.replace(/\.[^/.]+$/, "").replace(/_/g, " ").trim().toUpperCase();
+        const cleanCurrent = currentLogo.replace(/\.[^/.]+$/, "").replace(/_/g, " ").trim().toUpperCase();
+        return cleanName === cleanCurrent || slugify(cleanName) === slugify(cleanCurrent);
+      });
+
+      if (matchedLogo) {
+        logoName = typeof matchedLogo === "string" ? matchedLogo : matchedLogo.name;
+        playlistId = typeof matchedLogo !== "string" ? (matchedLogo.playlistId || "") : "";
+        return { playlistId, logoName };
+      }
       return { playlistId: "", logoName: currentLogo };
     }
 
@@ -1580,6 +1595,8 @@ export default function Dashboard() {
 
   // Seleccionar video e inicializar formulario
   const handleSelectVideo = async (video) => {
+    setPdfSearchQuery("");
+    setShowPdfSearchDropdown(false);
     setYoutubeId(video.id);
 
     // Buscar si hay un registro correspondiente en nuestra base de datos local
@@ -1695,6 +1712,8 @@ export default function Dashboard() {
 
   // Seleccionar video local e inicializar formulario con autocompletados
   const handleSelectLocalVideo = async (video) => {
+    setPdfSearchQuery("");
+    setShowPdfSearchDropdown(false);
     setSelectedYoutubeVideo({
       id: video.id,
       youtubeId: video.youtubeId || null, // Guardar el ID de YouTube si ya se subió
@@ -1814,6 +1833,66 @@ export default function Dashboard() {
         }
       }
     }
+  };
+
+  const handleApplyPdfVideoToCurrent = (pdfVideo) => {
+    if (!selectedYoutubeVideo || !pdfVideo) return;
+
+    // 1. Detectar programa y lista de reproducción
+    const detected = detectProgramAndPlaylist(
+      pdfVideo.title || "", 
+      pdfVideo.description || "", 
+      selectedYoutubeVideo.fileName || selectedYoutubeVideo.filename || "",
+      pdfVideo.programName || ""
+    );
+
+    // 2. Formatear título y descripción
+    let finalTitle = (pdfVideo.title || "").trim();
+    if (detected.logoName && detected.logoName !== "none") {
+      const progClean = detected.logoName.replace(/\.[^/.]+$/, "").replace(/_/g, " ").toUpperCase().trim();
+      const suffix = `| ${progClean}`;
+      if (!finalTitle.toUpperCase().endsWith(suffix.toUpperCase())) {
+        finalTitle = `${finalTitle} | ${progClean}`;
+      }
+    }
+
+    const finalDesc = updateDescriptionUrl(pdfVideo.description || "", detected.logoName);
+
+    // 3. Formatear frase SEO de la miniatura
+    let finalThumbnailText = pdfVideo.thumbnailText || "";
+    if (finalThumbnailText) {
+      finalThumbnailText = ensureThreeToFiveWords(finalThumbnailText, finalTitle);
+    }
+
+    // 4. Actualizar formulario
+    setUpdateForm(prev => ({
+      ...prev,
+      title: finalTitle,
+      description: finalDesc,
+      playlistId: detected.playlistId || prev.playlistId
+    }));
+
+    // 5. Establecer logotipo y frase SEO para la miniatura
+    setSelectedProgramLogo(detected.logoName);
+    if (detected.logoName !== "none") {
+      setIsAutoThumbnailEnabled(true);
+      setThumbnailText(finalThumbnailText);
+      
+      // Auto-generar miniatura
+      generateSingleAutoThumbnail(
+        finalThumbnailText,
+        selectedYoutubeVideo,
+        customBgBase64,
+        detected.logoName
+      ).then(thumbBase64 => {
+        if (thumbBase64) {
+          setNewThumbnailBase64(thumbBase64);
+        }
+      });
+    }
+
+    setPdfSearchQuery("");
+    setShowPdfSearchDropdown(false);
   };
 
   // Auto-seleccionar video para editar si viene un editId en la URL
@@ -2328,100 +2407,186 @@ export default function Dashboard() {
       setSelectedYoutubeVideo(null); // Cerrar editor individual
 
       // 3b. Asignar automáticamente y guardar los metadatos en la base de datos para los borradores locales
-      const matchedResults = [];
-      for (const v of data.videos) {
-        // Encontrar borrador local que coincida por youtubeId, id o nombre de archivo/index
-        let matchedDraft = localVideosQueue.find(ld => ld.youtubeId === v.matchedVideoId || ld.id === v.matchedVideoId);
-        
-        // Match por número de índice en el nombre de archivo
-        if (!matchedDraft && v.index) {
-          matchedDraft = localVideosQueue.find(ld => {
-            const cleanFilename = (ld.filename || ld.fileName || "").toLowerCase();
-            const numberMatch = cleanFilename.match(/(?:^|\D)(\d+)(?:\D|$)/);
-            return numberMatch && parseInt(numberMatch[1], 10) === v.index;
-          });
-        }
+      const matchedDrafts = new Map(); // Mapea draftId -> parsedVideo v
+      const alreadyMatchedDraftIds = new Set();
 
-        // Match por palabras clave en el título y nombre de archivo
-        if (!matchedDraft) {
-          let bestMatch = null;
-          let maxMatches = 0;
+      // Fase 1: Coincidencia directa por ID de Gemini
+      for (const v of data.videos) {
+        if (v.matchedVideoId) {
+          const draft = localVideosQueue.find(ld => (ld.youtubeId === v.matchedVideoId || ld.id === v.matchedVideoId) && !alreadyMatchedDraftIds.has(ld.id));
+          if (draft) {
+            matchedDrafts.set(draft.id, v);
+            alreadyMatchedDraftIds.add(draft.id);
+          }
+        }
+      }
+
+      // Fase 2: Coincidencia por número de índice exacto en el nombre del archivo
+      for (const ld of localVideosQueue) {
+        if (alreadyMatchedDraftIds.has(ld.id)) continue;
+        const cleanFilename = (ld.filename || ld.fileName || "").toLowerCase();
+        const numberMatch = cleanFilename.match(/(?:^|\D)(\d+)(?:\D|$)/);
+        if (numberMatch) {
+          const fileIndex = parseInt(numberMatch[1], 10);
+          const match = data.videos.find(v => v.index === fileIndex);
+          if (match) {
+            matchedDrafts.set(ld.id, match);
+            alreadyMatchedDraftIds.add(ld.id);
+          }
+        }
+      }
+
+      // Fase 3: Coincidencia por siglas y palabras clave (p. ej., "LR" -> "LAND ROBER")
+      for (const ld of localVideosQueue) {
+        if (alreadyMatchedDraftIds.has(ld.id)) continue;
+        const cleanFilename = (ld.filename || ld.fileName || "").toLowerCase();
+        
+        let bestCandidate = null;
+        let bestScore = 0;
+
+        for (const v of data.videos) {
+          const progName = (v.programName || "").toLowerCase().trim();
+          if (!progName) continue;
+          
+          // Siglas del programa (por ejemplo, "land rober" -> "lr")
+          const initials = progName
+            .split(/\s+/)
+            .filter(w => !["de", "o", "a", "e", "os", "as", "do", "da", "dos", "das"].includes(w))
+            .map(w => w[0])
+            .join("");
+
+          const slugProg = slugify(progName);
+          const slugFile = slugify(cleanFilename);
+
+          let score = 0;
+          if (slugFile.includes(slugProg) && slugProg.length > 2) {
+            score = 100;
+          } else if (initials.length >= 2 && new RegExp(`(^|[^a-z0-9])${initials}([^a-z0-9]|$)`, "i").test(cleanFilename)) {
+            score = 80;
+          }
+
+          // Si hay varias partes o palabras clave en el título
           const cleanTitle = (v.title || "").toLowerCase();
           const titleWords = cleanTitle.replace(/[^a-z0-9]/g, " ").split(/\s+/).filter(w => w.length > 3);
-          
-          for (const ld of localVideosQueue) {
-            const cleanFilename = (ld.filename || ld.fileName || "").toLowerCase();
-            const fileWords = cleanFilename.replace(/[^a-z0-9]/g, " ").split(/\s+/).filter(w => w.length > 3);
-            let matchCount = 0;
-            for (const word of fileWords) {
-              if (titleWords.includes(word)) matchCount++;
-            }
-            if (matchCount > maxMatches) {
-              maxMatches = matchCount;
-              bestMatch = ld;
-            }
+          let matchCount = 0;
+          for (const word of titleWords) {
+            if (cleanFilename.includes(word)) matchCount++;
           }
-          if (bestMatch && maxMatches >= 2) {
-            matchedDraft = bestMatch;
+          score += matchCount * 10;
+
+          if (score > bestScore) {
+            bestScore = score;
+            bestCandidate = v;
           }
         }
 
-        if (matchedDraft) {
-          console.log(`[handleAnalyzeFile] Auto-matched parsed video index ${v.index} to local draft ID ${matchedDraft.id}`);
-          
-          const detected = detectProgramAndPlaylist(
-            v.title || "", v.description || "", matchedDraft.filename || matchedDraft.fileName || "", v.programName || ""
-          );
+        if (bestCandidate && bestScore >= 50) {
+          matchedDrafts.set(ld.id, bestCandidate);
+          alreadyMatchedDraftIds.add(ld.id);
+        }
+      }
 
-          let finalTitle = (v.title || "").trim();
-          if (detected.programName) {
-            const suffix = `| ${detected.programName.toUpperCase()}`;
-            if (!finalTitle.toUpperCase().endsWith(suffix.toUpperCase())) {
-              finalTitle = `${finalTitle} | ${detected.programName.toUpperCase()}`;
-            }
-          }
+      // Fase 4: Coincidencia visual por fotograma de Gemini Vision
+      for (const ld of localVideosQueue) {
+        if (alreadyMatchedDraftIds.has(ld.id)) continue;
+        if (!ld.rawFrameBase64) continue;
 
-          const finalDesc = updateDescriptionUrl(v.description || "", detected.logoName);
+        // Candidatos de la escaleta aún no emparejados
+        const unmatchedCandidates = data.videos.filter(v => 
+          !Array.from(matchedDrafts.values()).some(m => m.index === v.index)
+        );
 
-          let finalThumbnailText = v.thumbnailText || "";
-          if (finalThumbnailText) {
-            finalThumbnailText = ensureThreeToFiveWords(finalThumbnailText, finalTitle);
-          }
-
-          let finalThumbnailBase64 = null;
-          if (finalThumbnailText && detected.logoName !== "none") {
-            try {
-              finalThumbnailBase64 = await generateSingleAutoThumbnail(
-                finalThumbnailText,
-                matchedDraft,
-                null,
-                detected.logoName
-              );
-            } catch (thumbErr) {
-              console.error("[handleAnalyzeFile] Error al generar miniatura automática en mapeo:", thumbErr);
-            }
-          }
-
+        if (unmatchedCandidates.length > 0) {
+          console.log(`[handleAnalyzeFile] Intentando emparejamiento visual para el vídeo local ${ld.filename || ld.id} con ${unmatchedCandidates.length} candidatos...`);
           try {
-            const patchRes = await fetch(`/api/videos?id=${matchedDraft.dbId || matchedDraft.id}`, {
-              method: "PATCH",
+            const matchRes = await fetch("/api/youtube/match-frame", {
+              method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                title: finalTitle,
-                description: finalDesc,
-                playlistId: detected.playlistId || null,
-                thumbnailBase64: finalThumbnailBase64 || undefined,
-                status: "EDITING"
+                frameBase64: ld.rawFrameBase64,
+                videos: unmatchedCandidates
               })
             });
-            if (patchRes.ok) {
-              matchedResults.push({ index: v.index, success: true });
-            } else {
-              console.error(`[handleAnalyzeFile] Fallo al actualizar video en BD:`, await patchRes.text());
+
+            if (matchRes.ok) {
+              const matchData = await matchRes.json();
+              if (matchData.success && matchData.matchedIndex !== null) {
+                const bestCandidate = data.videos.find(v => v.index === matchData.matchedIndex);
+                if (bestCandidate) {
+                  console.log(`[handleAnalyzeFile] Coincidencia visual exitosa! Vídeo local ${ld.filename || ld.id} coincide con index ${matchData.matchedIndex} ("${bestCandidate.title}")`);
+                  matchedDrafts.set(ld.id, bestCandidate);
+                  alreadyMatchedDraftIds.add(ld.id);
+                }
+              }
             }
-          } catch (dbErr) {
-            console.error(`[handleAnalyzeFile] Error de red al actualizar base de datos:`, dbErr);
+          } catch (err) {
+            console.warn(`[handleAnalyzeFile] Fallo en análisis visual para ${ld.filename || ld.id}:`, err.message);
           }
+        }
+      }
+
+      // Guardar las actualizaciones en la base de datos para los elementos que han sido emparejados
+      const matchedResults = [];
+      for (const [draftId, v] of matchedDrafts.entries()) {
+        const matchedDraft = localVideosQueue.find(ld => ld.id === draftId);
+        if (!matchedDraft) continue;
+
+        console.log(`[handleAnalyzeFile] Procesando y guardando vídeo emparejado: index ${v.index} a draft ${matchedDraft.id}`);
+
+        const detected = detectProgramAndPlaylist(
+          v.title || "", v.description || "", matchedDraft.filename || matchedDraft.fileName || "", v.programName || ""
+        );
+
+        let finalTitle = (v.title || "").trim();
+        if (detected.logoName && detected.logoName !== "none") {
+          // Obtener nombre del programa limpio
+          const progClean = detected.logoName.replace(/\.[^/.]+$/, "").replace(/_/g, " ").toUpperCase().trim();
+          const suffix = `| ${progClean}`;
+          if (!finalTitle.toUpperCase().endsWith(suffix.toUpperCase())) {
+            finalTitle = `${finalTitle} | ${progClean}`;
+          }
+        }
+
+        const finalDesc = updateDescriptionUrl(v.description || "", detected.logoName);
+
+        let finalThumbnailText = v.thumbnailText || "";
+        if (finalThumbnailText) {
+          finalThumbnailText = ensureThreeToFiveWords(finalThumbnailText, finalTitle);
+        }
+
+        let finalThumbnailBase64 = null;
+        if (finalThumbnailText && detected.logoName !== "none") {
+          try {
+            finalThumbnailBase64 = await generateSingleAutoThumbnail(
+              finalThumbnailText,
+              matchedDraft,
+              null,
+              detected.logoName
+            );
+          } catch (thumbErr) {
+            console.error("[handleAnalyzeFile] Error al generar miniatura automática en mapeo:", thumbErr);
+          }
+        }
+
+        try {
+          const patchRes = await fetch(`/api/videos?id=${matchedDraft.dbId || matchedDraft.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: finalTitle,
+              description: finalDesc,
+              playlistId: detected.playlistId || null,
+              thumbnailBase64: finalThumbnailBase64 || undefined,
+              status: "EDITING"
+            })
+          });
+          if (patchRes.ok) {
+            matchedResults.push({ index: v.index, success: true });
+          } else {
+            console.error(`[handleAnalyzeFile] Fallo al actualizar video en BD:`, await patchRes.text());
+          }
+        } catch (dbErr) {
+          console.error(`[handleAnalyzeFile] Error de red al actualizar base de datos:`, dbErr);
         }
       }
 
@@ -4250,6 +4415,128 @@ export default function Dashboard() {
                   </span>
                 </div>
               </div>
+
+              {/* Buscador / Selector del Documento PDF para vinculación manual */}
+              {parsedVideos.length > 0 && (
+                <div style={{
+                  border: "1px solid var(--border-color, #334155)",
+                  borderRadius: "8px",
+                  padding: "0.75rem 1rem",
+                  marginBottom: "1rem",
+                  background: "rgba(255, 255, 255, 0.01)",
+                  position: "relative"
+                }}>
+                  <label style={{
+                    fontSize: "0.75rem",
+                    fontWeight: "600",
+                    color: "var(--text-secondary, #94a3b8)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.3rem",
+                    marginBottom: "0.4rem"
+                  }}>
+                    <span>📋 Copiar datos desde el Documento PDF (Asociar Manualmente)</span>
+                  </label>
+                  <div style={{ display: "flex", gap: "0.5rem", position: "relative" }}>
+                    <input
+                      type="text"
+                      placeholder="Buscar por título o programa en el PDF..."
+                      value={pdfSearchQuery}
+                      onChange={(e) => {
+                        setPdfSearchQuery(e.target.value);
+                        setShowPdfSearchDropdown(true);
+                      }}
+                      onFocus={() => setShowPdfSearchDropdown(true)}
+                      style={{
+                        flex: 1,
+                        padding: "0.4rem 0.6rem",
+                        fontSize: "0.75rem",
+                        background: "var(--bg-surface-solid, #1e293b)",
+                        color: "var(--text-primary, #f8fafc)",
+                        border: "1px solid var(--border-color, #334155)",
+                        borderRadius: "6px"
+                      }}
+                    />
+                    {pdfSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPdfSearchQuery("");
+                          setShowPdfSearchDropdown(false);
+                        }}
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          color: "var(--text-muted, #94a3b8)",
+                          cursor: "pointer",
+                          fontSize: "0.8rem",
+                          padding: "0 0.4rem"
+                        }}
+                      >✕</button>
+                    )}
+                  </div>
+
+                  {showPdfSearchDropdown && (
+                    <div style={{
+                      position: "absolute",
+                      top: "100%",
+                      left: 0,
+                      right: 0,
+                      marginTop: "0.25rem",
+                      background: "var(--bg-surface, #0f172a)",
+                      border: "1px solid var(--border-color, #334155)",
+                      borderRadius: "8px",
+                      boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.5)",
+                      maxHeight: "180px",
+                      overflowY: "auto",
+                      zIndex: 100,
+                      padding: "0.4rem"
+                    }}>
+                      {parsedVideos.filter(v => {
+                        const q = pdfSearchQuery.toLowerCase();
+                        return (v.title || "").toLowerCase().includes(q) || (v.programName || "").toLowerCase().includes(q);
+                      }).length === 0 ? (
+                        <div style={{ padding: "0.5rem", fontSize: "0.75rem", color: "var(--text-muted)", textAlign: "center" }}>
+                          No se encontraron coincidencias en el PDF.
+                        </div>
+                      ) : (
+                        parsedVideos.filter(v => {
+                          const q = pdfSearchQuery.toLowerCase();
+                          return (v.title || "").toLowerCase().includes(q) || (v.programName || "").toLowerCase().includes(q);
+                        }).map((v) => (
+                          <div
+                            key={v.index}
+                            onClick={() => handleApplyPdfVideoToCurrent(v)}
+                            style={{
+                              padding: "0.5rem",
+                              borderRadius: "4px",
+                              cursor: "pointer",
+                              fontSize: "0.75rem",
+                              borderBottom: "1px solid rgba(255,255,255,0.02)",
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: "0.15rem",
+                              transition: "background 0.2s"
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
+                            onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                          >
+                            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "600", color: "#f8fafc" }}>
+                              <span>Video {v.index}: {v.title}</span>
+                              <span style={{ color: "#a855f7", fontSize: "0.7rem", textTransform: "uppercase" }}>{v.programName || "SIN PROGRAMA"}</span>
+                            </div>
+                            {v.description && (
+                              <div style={{ color: "var(--text-muted, #94a3b8)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: "0.1rem" }}>
+                                {v.description}
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className={styles.inlineEditContent}>
                 {/* Columna Izquierda: Sugerencias e Información */}

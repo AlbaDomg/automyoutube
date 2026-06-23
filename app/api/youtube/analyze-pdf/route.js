@@ -22,9 +22,21 @@ function detectProgramLocally(title, description, fileName, availableLogos) {
     const slugFile = slugify(cleanFileName);
     const fileParts = cleanFileName.split(/[^a-z0-9]/i);
     
-    const abbreviations = {
-      "hg": "horagalega"
-    };
+    // Generar abreviaciones dinámicas a partir de los logotipos disponibles
+    const abbreviations = {};
+    for (const logo of availableLogos) {
+      const cleanLogoName = logo.replace(/\.[^/.]+$/, "").replace(/_/g, " ").trim();
+      const initials = cleanLogoName
+        .split(/\s+/)
+        .filter(w => !["de", "o", "a", "e", "os", "as", "do", "da", "dos", "das"].includes(w.toLowerCase()))
+        .map(w => w[0])
+        .join("")
+        .toLowerCase();
+      
+      if (initials.length >= 2) {
+        abbreviations[initials] = slugify(cleanLogoName);
+      }
+    }
 
     // Buscar coincidencia por abreviación
     for (const part of fileParts) {
