@@ -111,7 +111,7 @@ export async function POST(request) {
           playlistId: playlistId || null,
           userEmail: email,
           channelId: channel.id,
-          privacyStatus: 'private'
+          privacyStatus: privacyStatus || 'private'
         }
       });
 

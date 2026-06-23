@@ -56,19 +56,19 @@ Título: ${title}
 Descripción: ${description || ''}
 
 REGLAS CRÍTICAS DE GENERACIÓN:
-1. La frase debe tener EXACTAMENTE 4 palabras en Gallego. Ni más ni menos.
-2. No debe ser una copia de las primeras palabras del título. Debe tener sentido lógico completo.
-3. ESTRUCTURA: Imagina la frase dividida conceptualmente en un "título de 2 palabras" y un "subtítulo de 2 palabras" que tengan relación y coherencia entre sí (por ejemplo: "ALERTA MOS" + "EVITA PICADURAS", o "CONCURSO TVG" + "PREMIO FINAL", o "MANTER BATEAS" + "CONSELLO PRÁCTICO").
+1. La frase debe tener entre 3 y 5 palabras en Gallego. Ni más de 5 ni menos de 3.
+2. No debe ser una copia de las primeras palabras del título. Debe tener sentido lógico completo y combinar elementos del título y de la descripción.
+3. ESTRUCTURA: Imagina la frase dividida conceptualmente en una primera línea superior de 1, 2 o 3 palabras (en naranja) y una segunda línea inferior de 1, 2 o 3 palabras (en blanco) que tengan relación y coherencia entre sí (por ejemplo: "ALERTA MOS" + "EVITA PICADURAS", "MANTER BATEAS" + "CONSELLO", o "PREMIO FINAL" + "TVG").
 4. Las palabras deben estar muy optimizadas para capturar el interés de la audiencia gallega (SEO / CTR alto).
-5. REGLA DE FORMATO ESTRICTO: La frase debe contener EXCLUSIVAMENTE las 4 palabras en gallego separadas por espacios. NO incluyas barras (/), guiones (-), comillas, ni ningún signo de puntuación en el texto.
+5. REGLA DE FORMATO ESTRICTO: La frase debe contener EXCLUSIVAMENTE entre 3 y 5 palabras en gallego separadas por espacios. NO incluyas barras (/), guiones (-), comillas, ni ningún signo de puntuación en el texto.
 
 Responde exclusivamente en formato JSON con la siguiente estructura exacta:
 {
-  "thumbnailText": "Frase de exactamente cuatro palabras en Gallego"
+  "thumbnailText": "Frase de entre tres y cinco palabras en Gallego"
 }
 `;
 
-    console.log(`[SEO Phrase API] Generating 4-word SEO phrase for title: "${title.substring(0, 50)}"...`);
+    console.log(`[SEO Phrase API] Generating 3-5 word SEO phrase for title: "${title.substring(0, 50)}"...`);
     let response;
     try {
       response = await callGeminiWithRetry(() => ai.models.generateContent({
@@ -108,7 +108,7 @@ Responde exclusivamente en formato JSON con la siguiente estructura exacta:
       throw new Error('Gemini no devolvió una estructura JSON válida');
     }
 
-    const finalThumbnailText = ensureFourWords(result.thumbnailText || '', title);
+    const finalThumbnailText = ensureThreeToFiveWords(result.thumbnailText || '', title);
 
     return NextResponse.json({
       success: true,
@@ -121,8 +121,8 @@ Responde exclusivamente en formato JSON con la siguiente estructura exacta:
   }
 }
 
-// Función helper para garantizar exactamente 4 palabras en el texto de la miniatura
-function ensureFourWords(text, fallbackContext = "") {
+// Función helper para garantizar entre 3 y 5 palabras en el texto de la miniatura
+function ensureThreeToFiveWords(text, fallbackContext = "") {
   if (!text) text = "";
   // Limpiar caracteres especiales
   let cleanText = text.replace(/[\/\-\"\']/g, " ").replace(/\s+/g, " ").trim();
@@ -131,15 +131,15 @@ function ensureFourWords(text, fallbackContext = "") {
   // Filtrar palabras vacías
   words = words.filter(w => w.trim().length > 0);
 
-  if (words.length === 4) {
+  if (words.length >= 3 && words.length <= 5) {
     return words.join(" ");
   }
 
-  if (words.length > 4) {
-    return words.slice(0, 4).join(" ");
+  if (words.length > 5) {
+    return words.slice(0, 5).join(" ");
   }
 
-  // Si tiene menos de 4 palabras, autocompletar usando palabras significativas del contexto (título)
+  // Si tiene menos de 3 palabras, autocompletar usando palabras significativas del contexto (título)
   const contextWords = fallbackContext
     ? fallbackContext.replace(/[^a-zA-Z0-9À-ÿ\s]/g, " ").replace(/\s+/g, " ").trim().split(/\s+/)
     : [];
@@ -150,20 +150,20 @@ function ensureFourWords(text, fallbackContext = "") {
   const defaultPool = ["ALERTA", "AVISO", "INFO", "GALEGO", "HOXE", "NOVA", "TVG"];
 
   for (const word of significantContextWords) {
-    if (words.length >= 4) break;
+    if (words.length >= 3) break;
     words.push(word);
   }
 
   for (const word of defaultPool) {
-    if (words.length >= 4) break;
+    if (words.length >= 3) break;
     if (!words.map(x => x.toLowerCase()).includes(word.toLowerCase())) {
       words.push(word);
     }
   }
 
-  while (words.length < 4) {
+  while (words.length < 3) {
     words.push("HOXE");
   }
 
-  return words.slice(0, 4).join(" ");
+  return words.slice(0, 3).join(" ");
 }

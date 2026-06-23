@@ -557,7 +557,7 @@ export default function LandingPortalPage() {
                 Flujo Editor
               </h2>
               <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", lineHeight: "1.6", marginBottom: "2rem" }}>
-                Accede al panel avanzado de edición. Compón miniaturas estilo TVG con captura automática de fotogramas, procesa escaletas PDF en lote, asigna logotipos del catálogo y programa publicaciones en YouTube.
+                Accede al panel avanzado de edición. Compón miniaturas estilo TVG con captura automática de fotogramas, procesa documentos PDF en lote, asigna logotipos del catálogo y programa publicaciones en YouTube.
               </p>
             </div>
             <a

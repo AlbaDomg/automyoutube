@@ -492,48 +492,6 @@ export default function SubidorPage() {
     }
   }, [batchFiles, extractingIndex]);
 
-  // Optimizar campos con IA en la cola
-  const handleOptimizeBatchFieldWithAI = async (id, text, field) => {
-    if (!text || !text.trim()) {
-      alert("Introduce algún texto primero para optimizar.");
-      return;
-    }
-
-    let suffix = "";
-    let textToOptimize = text;
-    if (field === 'title') {
-      const pipeIndex = text.lastIndexOf(" | ");
-      if (pipeIndex !== -1) {
-        suffix = text.substring(pipeIndex);
-        textToOptimize = text.substring(0, pipeIndex).trim();
-      }
-    }
-
-    const cacheKey = `${id}_${field}`;
-    setOptimizingBatchFields(prev => ({ ...prev, [cacheKey]: true }));
-
-    try {
-      const res = await fetch("/api/youtube/optimize-seo", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: textToOptimize, field })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.optimizedText) {
-          handleUpdateBatchField(id, field, data.optimizedText + suffix);
-        }
-      } else {
-        const data = await res.json();
-        alert(`Fallo al optimizar: ${data.error || "error desconocido"}`);
-      }
-    } catch (err) {
-      console.error(err);
-      alert("Error de red al conectar con Gemini.");
-    } finally {
-      setOptimizingBatchFields(prev => ({ ...prev, [cacheKey]: false }));
-    }
-  };
 
   // Subir un único vídeo de la cola usando chunks
   const uploadSingleBatchVideo = async (item) => {
@@ -1372,22 +1330,6 @@ export default function SubidorPage() {
                             <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
                               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                                 <span style={{ fontSize: "0.75rem", fontWeight: "600", color: "var(--text-secondary)" }}>Título</span>
-                                <button
-                                  type="button"
-                                  disabled={isBatchUploading || optimizingBatchFields[`${item.id}_title`]}
-                                  onClick={() => handleOptimizeBatchFieldWithAI(item.id, item.title, 'title')}
-                                  style={{
-                                    fontSize: "0.65rem",
-                                    padding: "1px 6px",
-                                    background: "rgba(168, 85, 247, 0.15)",
-                                    border: "1px solid rgba(168, 85, 247, 0.3)",
-                                    borderRadius: "4px",
-                                    color: "#c084fc",
-                                    cursor: "pointer"
-                                  }}
-                                >
-                                  {optimizingBatchFields[`${item.id}_title`] ? "Optimizando..." : "🪄 Optimizar Título con IA"}
-                                </button>
                               </div>
                               <input
                                 type="text"
@@ -1410,22 +1352,6 @@ export default function SubidorPage() {
                             <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
                               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                                 <span style={{ fontSize: "0.75rem", fontWeight: "600", color: "var(--text-secondary)" }}>Descripción</span>
-                                <button
-                                  type="button"
-                                  disabled={isBatchUploading || optimizingBatchFields[`${item.id}_description`]}
-                                  onClick={() => handleOptimizeBatchFieldWithAI(item.id, item.description, 'description')}
-                                  style={{
-                                    fontSize: "0.65rem",
-                                    padding: "1px 6px",
-                                    background: "rgba(168, 85, 247, 0.15)",
-                                    border: "1px solid rgba(168, 85, 247, 0.3)",
-                                    borderRadius: "4px",
-                                    color: "#c084fc",
-                                    cursor: "pointer"
-                                  }}
-                                >
-                                  {optimizingBatchFields[`${item.id}_description`] ? "Optimizando..." : "🪄 Optimizar Desc. con IA"}
-                                </button>
                               </div>
                               <textarea
                                 rows="3"

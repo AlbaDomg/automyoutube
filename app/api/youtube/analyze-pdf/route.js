@@ -308,16 +308,20 @@ Además, genera usando IA para cada vídeo:
      d) REGLA DE CONFLICTO: Si hay un conflicto (por ejemplo, el nombre del archivo o la planilla indica claramente el programa "HOLA", pero el vídeo coincidente de YouTube tiene el título con "| LUAR"), prevalece siempre el documento / nombre de archivo (el programa es "HOLA"). No te dejes guiar por sufijos obsoletos de YouTube si el documento indica otra cosa.
      e) Si no se puede identificar ningún programa por ninguna vía, devuelve el campo "programName" como una cadena vacía "". NO inventes un nombre de programa.
    - Devuélvelo en el campo "programName" en MAYÚSCULAS y exactamente como figura en el catálogo de programas válidos si coincide.
-2. Una frase SEO de alto impacto de **EXACTAMENTE 4 (CUATRO) PALABRAS** en Gallego (Galician) para imprimir en la miniatura, basada en el tema de ese video.
-   - REGLA CRÍTICA: NO debes copiar simplemente las primeras 4 palabras del título. Debe ser una frase creada con sentido lógico y coherente.
-   - ESTRUCTURA DE DISEÑO: Imagina la frase dividida conceptualmente en un "título de 2 palabras" y un "subtítulo de 2 palabras" que tengan relación y coherencia entre sí (por ejemplo: "ALERTA MOS" + "EVITA PICADURAS", o "CONCURSO TVG" + "PREMIO FINAL", o "MANTER BATEAS" + "CONSELLO PRÁCTICO").
+2. Una frase SEO de alto impacto de **entre 3 y 5 palabras** en Gallego (Galician) para imprimir en la miniatura, basada en el tema de ese video.
+   - REGLA CRÍTICA: NO debes copiar simplemente las primeras palabras del título. Debe ser una frase creada con sentido lógico y coherente.
+   - ESTRUCTURA DE DISEÑO: Imagina la frase dividida conceptualmente en una primera línea superior de 1, 2 o 3 palabras (en naranja) y una segunda línea inferior de 1, 2 o 3 palabras (en blanco) que tengan relación y coherencia entre sí (por ejemplo:
+     * 3 palabras: "ALERTA MOS" + "PICADURAS" o "NOVO PREMIO" + "FINAL"
+     * 4 palabras: "ALERTA MOS" + "EVITA PICADURAS" o "CONCURSO TVG" + "PREMIO FINAL"
+     * 5 palabras: "ATENCIÓN ALERTA MOS" + "EVITA PICADURAS" o "GRAN CONCURSO TVG" + "PREMIO FINAL"
+     ).
    - Las palabras deben estar muy optimizadas para capturar el interés (SEO / CTR alto).
-   - REGLA DE FORMATO ESTRICTO: La frase debe contener EXCLUSIVAMENTE las 4 palabras en gallego separadas por espacios. NO incluyas barras (/), guiones (-), comillas, ni ningún signo de puntuación en el texto.
+   - REGLA DE FORMATO ESTRICTO: La frase debe contener EXCLUSIVAMENTE entre 3 y 5 palabras en gallego separadas por espacios. NO incluyas barras (/), guiones (-), comillas, ni ningún signo de puntuación en el texto.
 
 ${annotatedYoutubeVideos && annotatedYoutubeVideos.length > 0 
   ? `Se te proporciona la lista de vídeos en estado privado u oculto actualmente subidos al canal de YouTube (cada uno tiene su 'id', 'title', 'description', 'fileName' (nombre original de archivo subido), 'detectedProgramLogo' y 'detectedProgramName'):
 ${JSON.stringify(annotatedYoutubeVideos)}
-
+ 
 Analiza semánticamente el contenido y temática de cada uno de los vídeos que extraigas del documento de la planilla y compáralo con esta lista de YouTube.
 REGLAS DE VINCULACIÓN:
 1. Si encuentras una correspondencia clara por título o descripción, asocia el campo "matchedVideoId" de ese vídeo con el "id" del vídeo de YouTube correspondiente de la lista.
@@ -326,7 +330,7 @@ REGLAS DE VINCULACIÓN:
 4. Si no encuentras ninguna correspondencia lógica, deja "matchedVideoId" como una cadena vacía "".`
   : 'Deja el campo "matchedVideoId" como una cadena vacía "" para todos los vídeos.'
 }
-
+ 
 Responde obligatoriamente en formato JSON con la siguiente estructura exacta:
 {
   "videos": [
@@ -334,7 +338,7 @@ Responde obligatoriamente en formato JSON con la siguiente estructura exacta:
       "index": 1,
       "title": "Título o titular literal extraído",
       "description": "Sinopsis o sinopse literal extraído",
-      "thumbnailText": "Frase de cuatro palabras en Gallego",
+      "thumbnailText": "Frase de entre tres y cinco palabras en Gallego",
       "matchedVideoId": "id_del_video_coincidente_o_vacio",
       "programName": "NOMBRE_DEL_PROGRAMA_EN_MAYUSCULAS"
     }
@@ -423,7 +427,7 @@ Responde obligatoriamente en formato JSON con la siguiente estructura exacta:
         }
       }
 
-      const cleanThumbnailText = ensureFourWords(v.thumbnailText || '', finalTitle);
+      const cleanThumbnailText = ensureThreeToFiveWords(v.thumbnailText || '', finalTitle);
 
       return {
         index: v.index,
@@ -447,8 +451,8 @@ Responde obligatoriamente en formato JSON con la siguiente estructura exacta:
   }
 }
 
-// Función helper para garantizar exactamente 4 palabras en el texto de la miniatura
-function ensureFourWords(text, fallbackContext = "") {
+// Función helper para garantizar entre 3 y 5 palabras en el texto de la miniatura
+function ensureThreeToFiveWords(text, fallbackContext = "") {
   if (!text) text = "";
   // Limpiar caracteres especiales
   let cleanText = text.replace(/[\/\-\"\']/g, " ").replace(/\s+/g, " ").trim();
@@ -457,15 +461,15 @@ function ensureFourWords(text, fallbackContext = "") {
   // Filtrar palabras vacías
   words = words.filter(w => w.trim().length > 0);
 
-  if (words.length === 4) {
+  if (words.length >= 3 && words.length <= 5) {
     return words.join(" ");
   }
 
-  if (words.length > 4) {
-    return words.slice(0, 4).join(" ");
+  if (words.length > 5) {
+    return words.slice(0, 5).join(" ");
   }
 
-  // Si tiene menos de 4 palabras, autocompletar usando palabras del contexto (título)
+  // Si tiene menos de 3 palabras, autocompletar usando palabras significativas del contexto (título)
   const contextWords = fallbackContext
     ? fallbackContext.replace(/[^a-zA-Z0-9À-ÿ\s]/g, " ").replace(/\s+/g, " ").trim().split(/\s+/)
     : [];
@@ -476,20 +480,20 @@ function ensureFourWords(text, fallbackContext = "") {
   const defaultPool = ["ALERTA", "AVISO", "INFO", "GALEGO", "HOXE", "NOVA", "TVG"];
 
   for (const word of significantContextWords) {
-    if (words.length >= 4) break;
+    if (words.length >= 3) break;
     words.push(word);
   }
 
   for (const word of defaultPool) {
-    if (words.length >= 4) break;
+    if (words.length >= 3) break;
     if (!words.map(x => x.toLowerCase()).includes(word.toLowerCase())) {
       words.push(word);
     }
   }
 
-  while (words.length < 4) {
+  while (words.length < 3) {
     words.push("HOXE");
   }
 
-  return words.slice(0, 4).join(" ");
+  return words.slice(0, 3).join(" ");
 }

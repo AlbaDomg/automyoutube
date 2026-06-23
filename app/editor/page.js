@@ -392,6 +392,43 @@ export default function Dashboard() {
     return clean.split(/\s+/).length;
   };
 
+  // Helper para garantizar entre 3 y 5 palabras en el texto de la miniatura
+  const ensureThreeToFiveWords = (text, fallbackContext = "") => {
+    if (!text) text = "";
+    let cleanText = text.replace(/[\/\-\"\']/g, " ").replace(/\s+/g, " ").trim();
+    let words = cleanText ? cleanText.split(/\s+/) : [];
+    words = words.filter(w => w.trim().length > 0);
+
+    if (words.length >= 3 && words.length <= 5) {
+      return words.join(" ");
+    }
+    if (words.length > 5) {
+      return words.slice(0, 5).join(" ");
+    }
+
+    const contextWords = fallbackContext
+      ? fallbackContext.replace(/[^a-zA-Z0-9À-ÿ\s]/g, " ").replace(/\s+/g, " ").trim().split(/\s+/)
+      : [];
+
+    const significantContextWords = contextWords.filter(w => w.length >= 3 && !words.map(x => x.toLowerCase()).includes(w.toLowerCase()));
+    const defaultPool = ["ALERTA", "AVISO", "INFO", "GALEGO", "HOXE", "NOVA", "TVG"];
+
+    for (const word of significantContextWords) {
+      if (words.length >= 3) break;
+      words.push(word);
+    }
+    for (const word of defaultPool) {
+      if (words.length >= 3) break;
+      if (!words.map(x => x.toLowerCase()).includes(word.toLowerCase())) {
+        words.push(word);
+      }
+    }
+    while (words.length < 3) {
+      words.push("HOXE");
+    }
+    return words.slice(0, 3).join(" ");
+  };
+
   // Helper para cargar imágenes de forma asíncrona en canvas
   const loadImage = (src) => {
     return new Promise((resolve, reject) => {
@@ -1199,8 +1236,9 @@ export default function Dashboard() {
       if (thumbnailTextVal) {
         const cleanText = thumbnailTextVal.replace(/[\/\-\"\']/g, " ").replace(/\s+/g, " ").trim();
         const words = cleanText.toUpperCase().split(/\s+/);
-        const line1 = words.slice(0, 2).join(" ");
-        const line2 = words.slice(2).join(" ");
+        const splitIndex = Math.ceil(words.length / 2);
+        const line1 = words.slice(0, splitIndex).join(" ");
+        const line2 = words.slice(splitIndex).join(" ");
 
         ctx.save();
         ctx.font = "bold 86px Impact, Arial Black, sans-serif";
@@ -1221,13 +1259,13 @@ export default function Dashboard() {
         const line1Y = line2Y - 95;
 
         if (line1) {
-          ctx.fillStyle = "#ffffff";
+          ctx.fillStyle = "#f97316";
           ctx.strokeText(line1, textX, line1Y);
           ctx.fillText(line1, textX, line1Y);
         }
 
         if (line2) {
-          ctx.fillStyle = "#f97316";
+          ctx.fillStyle = "#ffffff";
           ctx.strokeText(line2, textX, line2Y);
           ctx.fillText(line2, textX, line2Y);
         }
@@ -2243,14 +2281,12 @@ export default function Dashboard() {
 
       // 3. Crear mapeo inicial usando el emparejamiento inteligente de Gemini
       const mapped = data.videos.map((v, i) => {
-        // Mapear usando el ID sugerido por Gemini
         const matchedVideo = activePrivateVideos.find(pv => pv.id === v.matchedVideoId) || null;
- 
-        // Detección unificada y robusta de programa y playlist
+  
         const detected = detectProgramAndPlaylist(
           v.title || "", v.description || "", matchedVideo?.fileName || "", v.programName || ""
         );
- 
+  
         const item = {
           index: v.index,
           title: v.title || "",
@@ -2269,7 +2305,6 @@ export default function Dashboard() {
           syncError: null
         };
 
-        // Generar miniatura inicial en segundo plano (con o sin video mapeado para evitar bloqueos)
         generateSingleAutoThumbnail(
           item.thumbnailText,
           matchedVideo,
@@ -2292,11 +2327,113 @@ export default function Dashboard() {
       setParsedVideos(mapped);
       setSelectedYoutubeVideo(null); // Cerrar editor individual
 
+      // 3b. Asignar automáticamente y guardar los metadatos en la base de datos para los borradores locales
+      const matchedResults = [];
+      for (const v of data.videos) {
+        // Encontrar borrador local que coincida por youtubeId, id o nombre de archivo/index
+        let matchedDraft = localVideosQueue.find(ld => ld.youtubeId === v.matchedVideoId || ld.id === v.matchedVideoId);
+        
+        // Match por número de índice en el nombre de archivo
+        if (!matchedDraft && v.index) {
+          matchedDraft = localVideosQueue.find(ld => {
+            const cleanFilename = (ld.filename || ld.fileName || "").toLowerCase();
+            const numberMatch = cleanFilename.match(/(?:^|\D)(\d+)(?:\D|$)/);
+            return numberMatch && parseInt(numberMatch[1], 10) === v.index;
+          });
+        }
+
+        // Match por palabras clave en el título y nombre de archivo
+        if (!matchedDraft) {
+          let bestMatch = null;
+          let maxMatches = 0;
+          const cleanTitle = (v.title || "").toLowerCase();
+          const titleWords = cleanTitle.replace(/[^a-z0-9]/g, " ").split(/\s+/).filter(w => w.length > 3);
+          
+          for (const ld of localVideosQueue) {
+            const cleanFilename = (ld.filename || ld.fileName || "").toLowerCase();
+            const fileWords = cleanFilename.replace(/[^a-z0-9]/g, " ").split(/\s+/).filter(w => w.length > 3);
+            let matchCount = 0;
+            for (const word of fileWords) {
+              if (titleWords.includes(word)) matchCount++;
+            }
+            if (matchCount > maxMatches) {
+              maxMatches = matchCount;
+              bestMatch = ld;
+            }
+          }
+          if (bestMatch && maxMatches >= 2) {
+            matchedDraft = bestMatch;
+          }
+        }
+
+        if (matchedDraft) {
+          console.log(`[handleAnalyzeFile] Auto-matched parsed video index ${v.index} to local draft ID ${matchedDraft.id}`);
+          
+          const detected = detectProgramAndPlaylist(
+            v.title || "", v.description || "", matchedDraft.filename || matchedDraft.fileName || "", v.programName || ""
+          );
+
+          let finalTitle = (v.title || "").trim();
+          if (detected.programName) {
+            const suffix = `| ${detected.programName.toUpperCase()}`;
+            if (!finalTitle.toUpperCase().endsWith(suffix.toUpperCase())) {
+              finalTitle = `${finalTitle} | ${detected.programName.toUpperCase()}`;
+            }
+          }
+
+          const finalDesc = updateDescriptionUrl(v.description || "", detected.logoName);
+
+          let finalThumbnailText = v.thumbnailText || "";
+          if (finalThumbnailText) {
+            finalThumbnailText = ensureThreeToFiveWords(finalThumbnailText, finalTitle);
+          }
+
+          let finalThumbnailBase64 = null;
+          if (finalThumbnailText && detected.logoName !== "none") {
+            try {
+              finalThumbnailBase64 = await generateSingleAutoThumbnail(
+                finalThumbnailText,
+                matchedDraft,
+                null,
+                detected.logoName
+              );
+            } catch (thumbErr) {
+              console.error("[handleAnalyzeFile] Error al generar miniatura automática en mapeo:", thumbErr);
+            }
+          }
+
+          try {
+            const patchRes = await fetch(`/api/videos?id=${matchedDraft.dbId || matchedDraft.id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                title: finalTitle,
+                description: finalDesc,
+                playlistId: detected.playlistId || null,
+                thumbnailBase64: finalThumbnailBase64 || undefined,
+                status: "EDITING"
+              })
+            });
+            if (patchRes.ok) {
+              matchedResults.push({ index: v.index, success: true });
+            } else {
+              console.error(`[handleAnalyzeFile] Fallo al actualizar video en BD:`, await patchRes.text());
+            }
+          } catch (dbErr) {
+            console.error(`[handleAnalyzeFile] Error de red al actualizar base de datos:`, dbErr);
+          }
+        }
+      }
+
       clearInterval(progressInterval);
       setAnalyzeProgress(100);
 
+      // Recargar cola de videos locales
+      await fetchScheduledUpdates();
+
       // Esperar brevemente para mostrar el 100%
       await new Promise(r => setTimeout(r, 400));
+      alert(`¡Análisis y mapeo completado! Se detectaron y asignaron automáticamente ${matchedResults.length} de ${data.videos.length} vídeos del documento PDF a los borradores de la cola.`);
     } catch (err) {
       clearInterval(progressInterval);
       alert("Error al procesar el archivo: " + err.message);
@@ -2343,15 +2480,15 @@ export default function Dashboard() {
       return;
     }
 
-    // Validar frase SEO de 4 palabras para miniaturas automáticas en lote
+    // Validar frase SEO de 3 a 5 palabras para miniaturas automáticas en lote
     const invalidItems = matchedItems.filter(item => {
       if (!item.isAutoThumbnailEnabled) return false;
       const count = getWordCount(item.thumbnailText);
-      return count !== 4;
+      return count < 3 || count > 5;
     });
 
     if (invalidItems.length > 0) {
-      alert(`No se puede sincronizar en lote porque los siguientes vídeos tienen una frase SEO que no es de exactamente 4 palabras:\n\n` +
+      alert(`No se puede sincronizar en lote porque los siguientes vídeos tienen una frase SEO que no tiene entre 3 y 5 palabras:\n\n` +
         invalidItems.map(item => `Vídeo ${item.index}: "${item.title}" (${getWordCount(item.thumbnailText)} palabras)`).join("\n") +
         `\n\nPor favor, corrígelos antes de sincronizar.`);
       return;
@@ -2453,15 +2590,15 @@ export default function Dashboard() {
       return;
     }
 
-    // Validar frase SEO de 4 palabras para miniaturas automáticas en lote
+    // Validar frase SEO de 3 a 5 palabras para miniaturas automáticas en lote
     const invalidItems = matchedItems.filter(item => {
       if (!item.isAutoThumbnailEnabled) return false;
       const count = getWordCount(item.thumbnailText);
-      return count !== 4;
+      return count < 3 || count > 5;
     });
 
     if (invalidItems.length > 0) {
-      alert(`No se puede programar en lote porque los siguientes vídeos tienen una frase SEO que no es de exactamente 4 palabras:\n\n` +
+      alert(`No se puede programar en lote porque los siguientes vídeos tienen una frase SEO que no tiene entre 3 y 5 palabras:\n\n` +
         invalidItems.map(item => `Vídeo ${item.index}: "${item.title}" (${getWordCount(item.thumbnailText)} palabras)`).join("\n") +
         `\n\nPor favor, corrígelos antes de programar.`);
       return;
@@ -2553,8 +2690,8 @@ export default function Dashboard() {
     if (isAutoThumbnailEnabled) {
       const cleanText = thumbnailText.replace(/[\/\-\"\']/g, " ").replace(/\s+/g, " ").trim();
       const wordCount = cleanText ? cleanText.split(/\s+/).length : 0;
-      if (wordCount !== 4) {
-        alert(`La frase SEO de la miniatura debe tener exactamente 4 palabras. Actualmente tiene ${wordCount}. Por favor, corrígela.`);
+      if (wordCount < 3 || wordCount > 5) {
+        alert(`La frase SEO de la miniatura debe tener entre 3 y 5 palabras. Actualmente tiene ${wordCount}. Por favor, corrígela.`);
         return;
       }
     }
@@ -3787,6 +3924,85 @@ export default function Dashboard() {
             </>
           ) : (
             <>
+              {/* Procesar Documento PDF (PDF o Word) */}
+              <div className={styles.card}>
+                <h3 style={{ fontSize: "1.25rem", fontWeight: "800", marginBottom: "1.25rem", background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+                  📄 Procesar Documento PDF (PDF o Word)
+                </h3>
+
+                <form onSubmit={handleAnalyzeFile} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                  <div className={styles.inputGroup} style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: "0.85rem", fontWeight: "600", color: "var(--text-secondary)" }}>Documento de Referencia (.pdf, .docx)</label>
+                    <input
+                      type="file"
+                      ref={pdfInputRef}
+                      accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                      onChange={(e) => setDocumentFile(e.target.files[0])}
+                      required
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isAnalyzingFile}
+                    className={styles.btnSubmit}
+                    style={{
+                      background: isAnalyzingFile ? "#4b5563" : "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
+                      cursor: isAnalyzingFile ? "not-allowed" : "pointer",
+                      marginTop: "0.5rem"
+                    }}
+                  >
+                    {isAnalyzingFile ? "Procesando Documento PDF..." : "Analizar Documento"}
+                  </button>
+                </form>
+
+                {isAnalyzingFile && (
+                  <div style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: "2rem",
+                    gap: "1rem",
+                    background: "rgba(255, 255, 255, 0.02)",
+                    border: "1px solid var(--border-color, rgba(255, 255, 255, 0.08))",
+                    borderRadius: "16px",
+                    marginTop: "1.5rem"
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+                      <div style={{
+                        border: "3px solid rgba(168, 85, 247, 0.1)",
+                        borderTop: "3px solid #a855f7",
+                        borderRadius: "50%",
+                        width: "24px",
+                        height: "24px",
+                        animation: "spin 1s linear infinite"
+                      }} />
+                      <span style={{ fontSize: "1.1rem", fontWeight: "700", color: "#a855f7" }}>
+                        {analyzeProgress}%
+                      </span>
+                    </div>
+                    <span style={{ fontSize: "0.82rem", color: "var(--text-muted)", fontWeight: "500" }}>
+                      Analizando estructura de programas y vídeos...
+                    </span>
+                    <div style={{
+                      width: "100%",
+                      height: "6px",
+                      backgroundColor: "rgba(255, 255, 255, 0.05)",
+                      borderRadius: "3px",
+                      overflow: "hidden"
+                    }}>
+                      <div style={{
+                        width: `${analyzeProgress}%`,
+                        height: "100%",
+                        background: "linear-gradient(90deg, #a855f7 0%, #ec4899 100%)",
+                        transition: "width 0.3s ease"
+                      }} />
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Buscador Manual por Título */}
               <div className={styles.card}>
                 <h3 style={{ fontSize: "1.25rem", fontWeight: "800", marginBottom: "1.25rem", background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
@@ -4106,9 +4322,9 @@ export default function Dashboard() {
                               Texto SEO Gallego (
                               <span style={{
                                 fontWeight: "bold",
-                                color: getWordCount(thumbnailText) === 4 ? "#22c55e" : "#f59e0b"
+                                color: (getWordCount(thumbnailText) >= 3 && getWordCount(thumbnailText) <= 5) ? "#22c55e" : "#f59e0b"
                               }}>
-                                {getWordCount(thumbnailText)}/4 palabras
+                                {getWordCount(thumbnailText)} (3-5) palabras
                               </span>
                               )
                             </span>
@@ -4163,9 +4379,9 @@ export default function Dashboard() {
                             onChange={(e) => setThumbnailText(e.target.value)}
                             placeholder="Ej: GRAN CONCURSO HORA GALEGA"
                           />
-                          {thumbnailText && getWordCount(thumbnailText) !== 4 && (
+                          {thumbnailText && (getWordCount(thumbnailText) < 3 || getWordCount(thumbnailText) > 5) && (
                             <span style={{ fontSize: "0.7rem", color: "#f59e0b", marginTop: "0.25rem", display: "block", fontWeight: "500" }}>
-                              ⚠️ La frase debe tener exactamente 4 palabras para encajar bien en el diseño.
+                              ⚠️ La frase debe tener entre 3 y 5 palabras para encajar bien en el diseño.
                             </span>
                           )}
                           {isGeneratingSeoPhrase && (

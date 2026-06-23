@@ -57,7 +57,7 @@ export async function POST(request) {
     // 2. Prompt para el análisis visual
     const prompt = `
 Analyze the provided video frame.
-Your task is to identify which video from the provided list of candidate videos (from a television program escaleta) matches this scene/frame.
+Your task is to identify which video from the provided list of candidate videos (from a television program PDF document) matches this scene/frame.
 
 Here is the list of candidate videos:
 ${JSON.stringify(videos.map(v => ({ index: v.index, title: v.title, description: v.description, programName: v.programName })))}
