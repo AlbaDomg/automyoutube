@@ -67,7 +67,7 @@ export async function POST(request) {
         const existingScheduled = await prisma.video.findMany({
           where: {
             youtubeId: youtubeVideoId,
-            status: 'SCHEDULED',
+            status: { in: ['SCHEDULED', 'FAILED'] },
             filePath: 'YOUTUBE_UPDATE'
           }
         });
@@ -86,7 +86,7 @@ export async function POST(request) {
         await prisma.video.deleteMany({
           where: {
             youtubeId: youtubeVideoId,
-            status: 'SCHEDULED',
+            status: { in: ['SCHEDULED', 'FAILED'] },
             filePath: 'YOUTUBE_UPDATE',
             channelId: channel.id
           }
