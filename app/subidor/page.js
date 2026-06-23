@@ -226,6 +226,24 @@ export default function SubidorPage() {
     }
   };
 
+  const disconnectChannel = async () => {
+    if (window.confirm("¿Estás seguro de que deseas desconectar el canal?")) {
+      try {
+        const res = await fetch("/api/channel", { method: "DELETE" });
+        if (res.ok) {
+          alert("Canal desconectado con éxito.");
+          fetchChannel();
+        } else {
+          const data = await res.json();
+          alert(`Error al desconectar: ${data.error || "error desconocido"}`);
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Error de red al intentar desconectar.");
+      }
+    }
+  };
+
   const fetchScheduledUpdates = async () => {
     try {
       const res = await fetch("/api/videos", { cache: "no-store" });
@@ -1501,6 +1519,17 @@ export default function SubidorPage() {
                 >
                   🎥 Ver Studio
                 </a>
+                <button
+                  onClick={disconnectChannel}
+                  className={styles.disconnectBtn}
+                  style={{
+                    padding: "0.35rem 0.7rem",
+                    fontSize: "0.75rem",
+                    borderRadius: "8px"
+                  }}
+                >
+                  Desconectar
+                </button>
               </div>
             ) : null}
 
