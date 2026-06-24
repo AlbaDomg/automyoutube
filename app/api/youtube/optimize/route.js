@@ -47,15 +47,9 @@ export async function POST(request) {
     }
 
     const email = await getCurrentUserEmail(request);
-    let channel = await prisma.channel.findUnique({
+    const channel = await prisma.channel.findUnique({
       where: { userEmail: email }
     });
-
-    if (!channel) {
-      channel = await prisma.channel.findFirst({
-        orderBy: { updatedAt: 'desc' }
-      });
-    }
 
     if (!channel) {
       return NextResponse.json({ error: 'No YouTube channel connected. Please authenticate first.' }, { status: 400 });

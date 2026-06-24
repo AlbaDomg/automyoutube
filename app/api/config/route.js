@@ -11,15 +11,21 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const email = await getCurrentUserEmail(request);
-    const role = email ? await getUserRole(email) : null;
-    if (role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
     const geminiKey = await getConfig('GEMINI_API_KEY');
     const youtubeClientId = await getConfig('YOUTUBE_CLIENT_ID');
     const youtubeClientSecret = await getConfig('YOUTUBE_CLIENT_SECRET');
+
+    const isConfigured = !!(
+      geminiKey && geminiKey !== 'YOUR_GEMINI_API_KEY' &&
+      youtubeClientId && youtubeClientId !== 'YOUR_YOUTUBE_CLIENT_ID' &&
+      youtubeClientSecret && youtubeClientSecret !== 'YOUR_YOUTUBE_CLIENT_SECRET'
+    );
+
+    const email = await getCurrentUserEmail(request);
+    const role = email ? await getUserRole(email) : null;
+    if (role !== 'ADMIN') {
+      return NextResponse.json({ isConfigured });
+    }
 
     const maskValue = (val) => {
       if (!val || val === 'YOUR_GEMINI_API_KEY' || val === 'YOUR_YOUTUBE_CLIENT_ID' || val === 'YOUR_YOUTUBE_CLIENT_SECRET') {
@@ -28,12 +34,6 @@ export async function GET(request) {
       if (val.length <= 8) return '********';
       return `${val.substring(0, 4)}...${val.substring(val.length - 4)}`;
     };
-
-    const isConfigured = !!(
-      geminiKey && geminiKey !== 'YOUR_GEMINI_API_KEY' &&
-      youtubeClientId && youtubeClientId !== 'YOUR_YOUTUBE_CLIENT_ID' &&
-      youtubeClientSecret && youtubeClientSecret !== 'YOUR_YOUTUBE_CLIENT_SECRET'
-    );
 
     return NextResponse.json({
       GEMINI_API_KEY: maskValue(geminiKey),

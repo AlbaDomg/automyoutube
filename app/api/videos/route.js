@@ -15,15 +15,9 @@ export async function GET(request) {
     }
 
     const email = await getCurrentUserEmail(request);
-    let channel = await prisma.channel.findUnique({
+    const channel = await prisma.channel.findUnique({
       where: { userEmail: email }
     });
-
-    if (!channel) {
-      channel = await prisma.channel.findFirst({
-        orderBy: { updatedAt: 'desc' }
-      });
-    }
 
     if (!channel) {
       return NextResponse.json([]); // Return empty list if no channel connected
@@ -178,15 +172,9 @@ export async function DELETE(request) {
     }
 
     const email = await getCurrentUserEmail(request);
-    let channel = await prisma.channel.findUnique({
+    const channel = await prisma.channel.findUnique({
       where: { userEmail: email }
     });
-
-    if (!channel) {
-      channel = await prisma.channel.findFirst({
-        orderBy: { updatedAt: 'desc' }
-      });
-    }
 
     if (!channel) {
       return NextResponse.json({ error: 'No channel connected' }, { status: 400 });
@@ -310,15 +298,9 @@ export async function PATCH(request) {
     }
 
     const email = await getCurrentUserEmail(request);
-    let channel = await prisma.channel.findUnique({
+    const channel = await prisma.channel.findUnique({
       where: { userEmail: email }
     });
-
-    if (!channel) {
-      channel = await prisma.channel.findFirst({
-        orderBy: { updatedAt: 'desc' }
-      });
-    }
 
     if (!channel) {
       return NextResponse.json({ error: 'No channel connected' }, { status: 400 });

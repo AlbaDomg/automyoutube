@@ -88,15 +88,9 @@ export async function POST(request) {
           }
 
           const email = await getCurrentUserEmail(request);
-          let channel = await prisma.channel.findUnique({
+          const channel = await prisma.channel.findUnique({
             where: { userEmail: email }
           });
-
-          if (!channel) {
-            channel = await prisma.channel.findFirst({
-              orderBy: { updatedAt: 'desc' }
-            });
-          }
 
           const video = await prisma.video.create({
             data: {
