@@ -59,6 +59,7 @@ export default function SubidorPage() {
   const [currentUserRole, setCurrentUserRole] = useState("PRODUCTORA");
   const [channel, setChannel] = useState({ connected: false, channel: null });
   const [loadingChannel, setLoadingChannel] = useState(true);
+  const [config, setConfig] = useState({ isConfigured: false });
 
   // Estados del uploader
   const [simpleVideoFile, setSimpleVideoFile] = useState(null);
@@ -204,6 +205,18 @@ export default function SubidorPage() {
     checkAuthStatus();
   }, []);
 
+  const fetchConfig = async () => {
+    try {
+      const res = await fetch("/api/config", { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        setConfig(data);
+      }
+    } catch (err) {
+      console.error("Error al obtener la configuración:", err);
+    }
+  };
+
   const fetchChannel = async () => {
     setLoadingChannel(true);
     try {
@@ -321,6 +334,7 @@ export default function SubidorPage() {
   // Carga inicial de datos
   useEffect(() => {
     if (isAuthenticated) {
+      fetchConfig();
       fetchChannel();
       fetchTasks();
       fetchScheduledUpdates();
@@ -996,7 +1010,7 @@ export default function SubidorPage() {
     );
   }
 
-  if (isAuthenticated && !channel.connected && currentUserRole !== "ADMIN") {
+  if (isAuthenticated && !channel.connected) {
     return (
       <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
         {isAuthenticated && <Navbar userEmail={currentUserEmail} userRole={currentUserRole} />}
@@ -1046,17 +1060,49 @@ export default function SubidorPage() {
           </p>
 
           <div style={{
-            background: "rgba(239, 68, 68, 0.1)",
-            border: "1px solid rgba(239, 68, 68, 0.2)",
-            borderRadius: "12px",
-            padding: "1rem",
-            color: "#f87171",
-            fontSize: "0.88rem",
-            lineHeight: "1.5",
-            maxWidth: "420px",
-            textAlign: "left"
+            display: "flex",
+            flexDirection: "column",
+            gap: "1rem",
+            width: "100%",
+            maxWidth: "320px",
+            marginTop: "1.5rem"
           }}>
-            ⚠️ <strong>Sin conexión:</strong> El administrador de la plataforma aún no ha configurado o conectado el canal de YouTube. Por favor, contacta con él para que realice la conexión para que puedas subir vídeos.
+            <button
+              onClick={() => {
+                if (!config.isConfigured) {
+                  alert("Las credenciales del servidor aún no están configuradas por el administrador.");
+                  return;
+                }
+                window.location.href = "/api/auth";
+              }}
+              style={{
+                width: "100%",
+                padding: "1rem",
+                borderRadius: "12px",
+                fontSize: "1rem",
+                fontWeight: "700",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "0.75rem",
+                cursor: "pointer",
+                background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
+                border: "none",
+                color: "#fff",
+                boxShadow: "0 4px 15px rgba(168, 85, 247, 0.3)",
+                transition: "all 0.3s ease"
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "translateY(-2px)";
+                e.currentTarget.style.boxShadow = "0 6px 20px rgba(168, 85, 247, 0.5)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "translateY(0)";
+                e.currentTarget.style.boxShadow = "0 4px 15px rgba(168, 85, 247, 0.3)";
+              }}
+            >
+              🔗 Vincular Canal de YouTube
+            </button>
           </div>
         </div>
       </div>

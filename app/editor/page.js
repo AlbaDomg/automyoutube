@@ -3767,10 +3767,7 @@ export default function Dashboard() {
             marginBottom: "2.5rem",
             maxWidth: "480px"
           }}>
-            {currentUserRole === "ADMIN" 
-              ? "Para poder gestionar y automatizar la sincronización de tus vídeos, diseñar portadas personalizadas con inteligencia artificial y programar actualizaciones, es necesario conectar primero tu canal de YouTube."
-              : "Para poder gestionar y automatizar la sincronización de tus vídeos, diseñar portadas personalizadas con inteligencia artificial y programar actualizaciones, el administrador de la plataforma debe conectar primero el canal de YouTube."
-            }
+            Para poder gestionar y automatizar la sincronización de tus vídeos, diseñar portadas personalizadas con inteligencia artificial y programar actualizaciones, es necesario conectar tu canal de YouTube.
           </p>
 
           <div style={{
@@ -3780,95 +3777,77 @@ export default function Dashboard() {
             width: "100%",
             maxWidth: "320px"
           }}>
-            {currentUserRole === "ADMIN" ? (
-              <>
-                <button
-                  onClick={() => {
-                    if (!config.isConfigured) {
-                      alert("Configura las credenciales OAuth primero.");
-                      setShowSettings(true);
-                      return;
-                    }
-                    window.location.href = "/api/auth";
-                  }}
-                  style={{
-                    width: "100%",
-                    padding: "1rem",
-                    borderRadius: "12px",
-                    fontSize: "1rem",
-                    fontWeight: "700",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "0.75rem",
-                    cursor: "pointer",
-                    background: "linear-gradient(135deg, #a855f7 0%, #6366f1 100%)",
-                    border: "none",
-                    color: "#fff",
-                    boxShadow: "0 4px 15px rgba(168, 85, 247, 0.3)",
-                    transition: "all 0.3s ease"
-                  }}
-                  onMouseOver={(e) => {
-                    e.currentTarget.style.transform = "translateY(-2px)";
-                    e.currentTarget.style.boxShadow = "0 6px 20px rgba(168, 85, 247, 0.5)";
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.transform = "translateY(0)";
-                    e.currentTarget.style.boxShadow = "0 4px 15px rgba(168, 85, 247, 0.3)";
-                  }}
-                >
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M23.498 6.163a3.003 3.003 0 0 0-2.11-2.11C19.517 3.545 12 3.545 12 3.545s-7.517 0-9.388.508a3.003 3.003 0 0 0-2.11 2.11C0 8.033 0 12 0 12s0 3.967.502 5.837a3.003 3.003 0 0 0 2.11 2.11c1.871.508 9.388.508 9.388.508s7.517 0 9.388-.508a3.003 3.003 0 0 0 2.11-2.11C24 15.967 24 12 24 12s0-3.967-.502-5.837zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
-                  </svg>
-                  Conectar canal de YouTube
-                </button>
-
-                {!config.isConfigured && (
-                  <button
-                    onClick={() => {
-                      setConfigInput({ GEMINI_API_KEY: "", YOUTUBE_CLIENT_ID: "", YOUTUBE_CLIENT_SECRET: "" });
-                      setShowSettings(true);
-                    }}
-                    style={{
-                      width: "100%",
-                      padding: "0.85rem",
-                      borderRadius: "12px",
-                      fontSize: "0.9rem",
-                      fontWeight: "600",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: "0.5rem",
-                      cursor: "pointer",
-                      background: "rgba(255, 255, 255, 0.05)",
-                      border: "1px solid var(--border-color)",
-                      color: "var(--text-primary)",
-                      transition: "all 0.3s ease"
-                    }}
-                    onMouseOver={(e) => {
-                      e.currentTarget.style.background = "rgba(255, 255, 255, 0.08)";
-                    }}
-                    onMouseOut={(e) => {
-                      e.currentTarget.style.background = "rgba(255, 255, 255, 0.05)";
-                    }}
-                  >
-                    ⚙️ Configurar Credenciales OAuth
-                  </button>
-                )}
-              </>
-            ) : (
-              <div style={{
-                background: "rgba(239, 68, 68, 0.1)",
-                border: "1px solid rgba(239, 68, 68, 0.2)",
-                borderRadius: "12px",
+            <button
+              onClick={() => {
+                if (!config.isConfigured) {
+                  alert("Configura las credenciales OAuth primero. Por favor, contacta con el administrador.");
+                  return;
+                }
+                window.location.href = "/api/auth";
+              }}
+              style={{
+                width: "100%",
                 padding: "1rem",
-                color: "#f87171",
-                fontSize: "0.85rem",
-                lineHeight: "1.5",
-                textAlign: "left"
-              }}>
-                ⚠️ <strong>Canal no configurado:</strong> El administrador aún no ha vinculado el canal de YouTube. Por favor, contacta con él para configurar la conexión y las credenciales.
-              </div>
+                borderRadius: "12px",
+                fontSize: "1rem",
+                fontWeight: "700",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "0.75rem",
+                cursor: "pointer",
+                background: "linear-gradient(135deg, #a855f7 0%, #6366f1 100%)",
+                border: "none",
+                color: "#fff",
+                boxShadow: "0 4px 15px rgba(168, 85, 247, 0.3)",
+                transition: "all 0.3s ease"
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.transform = "translateY(-2px)";
+                e.currentTarget.style.boxShadow = "0 6px 20px rgba(168, 85, 247, 0.5)";
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.transform = "translateY(0)";
+                e.currentTarget.style.boxShadow = "0 4px 15px rgba(168, 85, 247, 0.3)";
+              }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M23.498 6.163a3.003 3.003 0 0 0-2.11-2.11C19.517 3.545 12 3.545 12 3.545s-7.517 0-9.388.508a3.003 3.003 0 0 0-2.11 2.11C0 8.033 0 12 0 12s0 3.967.502 5.837a3.003 3.003 0 0 0 2.11 2.11c1.871.508 9.388.508 9.388.508s7.517 0 9.388-.508a3.003 3.003 0 0 0 2.11-2.11C24 15.967 24 12 24 12s0-3.967-.502-5.837zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+              </svg>
+              Conectar canal de YouTube
+            </button>
+
+            {currentUserRole === "ADMIN" && !config.isConfigured && (
+              <button
+                onClick={() => {
+                  setConfigInput({ GEMINI_API_KEY: "", YOUTUBE_CLIENT_ID: "", YOUTUBE_CLIENT_SECRET: "" });
+                  setShowSettings(true);
+                }}
+                style={{
+                  width: "100%",
+                  padding: "0.85rem",
+                  borderRadius: "12px",
+                  fontSize: "0.9rem",
+                  fontWeight: "600",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "0.5rem",
+                  cursor: "pointer",
+                  background: "rgba(255, 255, 255, 0.05)",
+                  border: "1px solid var(--border-color)",
+                  color: "var(--text-primary)",
+                  transition: "all 0.3s ease"
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.background = "rgba(255, 255, 255, 0.08)";
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.background = "rgba(255, 255, 255, 0.05)";
+                }}
+              >
+                ⚙️ Configurar Credenciales OAuth
+              </button>
             )}
           </div>
         </div>
