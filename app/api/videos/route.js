@@ -182,6 +182,7 @@ export async function DELETE(request) {
 
     const { searchParams } = new URL(request.url);
     const videoId = searchParams.get('id');
+    const onlyLocal = searchParams.get('onlyLocal') === 'true';
 
     if (!videoId) {
       return NextResponse.json({ error: 'Missing videoId parameter' }, { status: 400 });
@@ -243,8 +244,8 @@ export async function DELETE(request) {
       });
     }
 
-    // Intentar borrar también del canal de YouTube si el cliente tiene credenciales activas y disponemos de ytId
-    if (ytId && ytId.length === 11) {
+    // Intentar borrar también del canal de YouTube si el cliente tiene credenciales activas y disponemos de ytId y no es solo local
+    if (!onlyLocal && ytId && ytId.length === 11) {
       try {
         const oauth2Client = await getOAuth2Client();
         oauth2Client.setCredentials({

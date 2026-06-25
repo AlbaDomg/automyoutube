@@ -1828,7 +1828,7 @@ export default function SubidorPage() {
                           deletePromises.push(fetch(`/api/tasks?id=${item.taskId}`, { method: 'DELETE' }));
                         }
                         if (item.videoId) {
-                          deletePromises.push(fetch(`/api/videos?id=${item.videoId}`, { method: 'DELETE' }));
+                          deletePromises.push(fetch(`/api/videos?id=${item.videoId}&onlyLocal=true`, { method: 'DELETE' }));
                         }
                         
                         const responses = await Promise.all(deletePromises);
