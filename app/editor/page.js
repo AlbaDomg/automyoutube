@@ -1572,6 +1572,34 @@ export default function Dashboard() {
     }
 
     try {
+      if (selectedYoutubeVideo.isBatchItem) {
+        // Vinculación en el estado de React del lote
+        const updatedVideo = {
+          ...selectedYoutubeVideo,
+          youtubeId: draft.id,
+          thumbnail: selectedYoutubeVideo.thumbnail || draft.thumbnail
+        };
+        setSelectedYoutubeVideo(updatedVideo);
+
+        if (draft.thumbnail) {
+          const proxiedUrl = `/api/youtube/thumbnail-proxy?url=${encodeURIComponent(draft.thumbnail)}`;
+          setCustomBgBase64(proxiedUrl);
+        }
+
+        setParsedVideos(prev => prev.map(v => {
+          if (v.index === selectedYoutubeVideo.batchIndex) {
+            return { ...v, matchedVideoId: draft.id };
+          }
+          return v;
+        }));
+
+        await fetchPrivateVideos();
+        alert("¡Borrador de YouTube vinculado con éxito!");
+        setYtDraftSearchQuery("");
+        setShowYtDraftSearchDropdown(false);
+        return;
+      }
+
       const targetId = selectedYoutubeVideo.dbId || selectedYoutubeVideo.id;
       
       const res = await fetch(`/api/videos?id=${targetId}`, {
@@ -1660,6 +1688,85 @@ export default function Dashboard() {
         }
       } catch (err) {
         alert("Error al desconectar.");
+      }
+    }
+  };
+
+  // Seleccionar item de lote parsedVideos para edición individual
+  const handleSelectBatchItemForEditing = async (item) => {
+    // Buscar si el matchedVideoId tiene correspondencia en privateVideos para obtener la miniatura original
+    const ytVideo = privateVideos.find(pv => pv.id === item.matchedVideoId);
+    const dbVideo = dbVideos.find(v => v.youtubeId === item.matchedVideoId);
+    
+    const combinedVideo = {
+      id: item.matchedVideoId || `temp-${item.index}`,
+      youtubeId: item.matchedVideoId || '',
+      title: item.title,
+      description: item.description,
+      thumbnail: item.generatedThumbnailBase64 || ytVideo?.thumbnail || '',
+      isBatchItem: true,
+      batchIndex: item.index,
+      fileName: ytVideo?.fileName || '',
+      filePath: dbVideo?.filePath || null,
+      dbId: dbVideo?.id || null
+    };
+
+    setSelectedYoutubeVideo(combinedVideo);
+    setSuggestedScheduledAt(null);
+
+    setUpdateForm({
+      title: item.title,
+      description: item.description,
+      tags: item.tags || '',
+      isScheduled: item.isScheduled || false,
+      scheduledAt: item.scheduledAt ? toLocalDateTimeString(item.scheduledAt) : '',
+      playlistId: item.playlistId || ''
+    });
+
+    setThumbnailText(item.thumbnailText || '');
+    setIsAutoThumbnailEnabled(item.isAutoThumbnailEnabled !== undefined ? item.isAutoThumbnailEnabled : true);
+    setSelectedProgramLogo(item.selectedProgramLogo || 'none');
+    
+    // Configurar imagen de fondo personalizada
+    if (item.customBgBase64) {
+      setCustomBgBase64(item.customBgBase64);
+    } else if (dbVideo?.rawFrameBase64) {
+      setCustomBgBase64(dbVideo.rawFrameBase64);
+    } else if (combinedVideo.filePath && !['PDF_PARSED', 'YOUTUBE_UPLOAD', 'YOUTUBE_UPDATE'].includes(combinedVideo.filePath)) {
+      if (!combinedVideo.filePath.startsWith('https://')) {
+        setIsExtractingFrame(true);
+        extractVideoFrame(`/api/videos/stream?id=${combinedVideo.dbId}`)
+          .then(frame => {
+            setCustomBgBase64(frame);
+          })
+          .catch(err => {
+            console.error("Error al extraer fotograma del vídeo local en lote:", err);
+          })
+          .finally(() => {
+            setIsExtractingFrame(false);
+          });
+      }
+    } else {
+      setCustomBgBase64(null);
+    }
+
+    setNewThumbnailBase64(item.generatedThumbnailBase64 || null);
+    setOptimizationSuggestions(null);
+
+    // Cargar el vídeo en el elemento oculto para permitir el ajuste manual del fotograma si existe el archivo
+    if (combinedVideo.filePath && !['PDF_PARSED', 'YOUTUBE_UPLOAD', 'YOUTUBE_UPDATE'].includes(combinedVideo.filePath)) {
+      const srcUrl = combinedVideo.filePath.startsWith('https://') 
+        ? combinedVideo.filePath 
+        : `/api/videos/stream?id=${combinedVideo.dbId}`;
+      
+      if (videoObjectURL) {
+        URL.revokeObjectURL(videoObjectURL);
+      }
+      setVideoObjectURL("");
+      
+      if (hiddenVideoRef.current) {
+        hiddenVideoRef.current.src = srcUrl;
+        hiddenVideoRef.current.load();
       }
     }
   };
@@ -2656,6 +2763,72 @@ export default function Dashboard() {
     }
   };
 
+  // Sincronizar un único item de lote directamente a YouTube
+  const handleSyncSingleBatchItem = async (item) => {
+    if (!item.matchedVideoId) {
+      alert("Por favor, vincula este vídeo a uno de YouTube primero.");
+      return;
+    }
+    
+    // Validar frase SEO
+    if (item.isAutoThumbnailEnabled) {
+      const count = getWordCount(item.thumbnailText);
+      if (count < 3 || count > 5) {
+        alert(`La frase SEO para el vídeo ${item.index} debe tener entre 3 y 5 palabras. Tiene ${count}.`);
+        return;
+      }
+    }
+
+    if (!confirm(`¿Sincronizar el vídeo ${item.index} ("${item.title}") en YouTube?`)) {
+      return;
+    }
+
+    // Marcar como sincronizando
+    setParsedVideos(prev => prev.map(v => v.index === item.index ? { ...v, isSyncing: true, syncError: null } : v));
+
+    try {
+      const res = await fetch("/api/youtube/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          youtubeVideoId: item.matchedVideoId,
+          title: item.title,
+          description: item.description,
+          thumbnail: item.isAutoThumbnailEnabled ? item.generatedThumbnailBase64 : null,
+          scheduledAt: item.isScheduled ? toUTCISOString(item.scheduledAt) : null,
+          playlistId: item.playlistId || null,
+        }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Fallo al actualizar el vídeo en YouTube");
+      }
+
+      const resData = await res.json();
+
+      setParsedVideos(prev => prev.map(v => {
+        if (v.index === item.index) {
+          return {
+            ...v,
+            isSyncing: false,
+            isSynced: true,
+            syncError: resData.thumbnailError ? `Sincronizado sin miniatura: ${resData.thumbnailError}` : null
+          };
+        }
+        return v;
+      }));
+
+      alert("¡Vídeo sincronizado con éxito en YouTube!");
+      fetchTasks();
+      fetchScheduledUpdates();
+    } catch (err) {
+      console.error(err);
+      setParsedVideos(prev => prev.map(v => v.index === item.index ? { ...v, isSyncing: false, syncError: err.message } : v));
+      alert("Error al sincronizar el vídeo: " + err.message);
+    }
+  };
+
   // Sincronizar todos los videos mapeados en lote
   const handleSyncAllVideos = async () => {
     const matchedItems = parsedVideos.filter(v => v.matchedVideoId);
@@ -2882,6 +3055,74 @@ export default function Dashboard() {
 
     setUpdatingYoutubeVideo(true);
     try {
+      if (selectedYoutubeVideo.isBatchItem) {
+        // Sincronizar en YouTube directamente
+        setSimpleUploadProgress(10);
+        setSimpleUploadStatus("Sincronizando metadatos del lote...");
+        
+        const ytId = selectedYoutubeVideo.youtubeId; // el ID de YouTube vinculado
+        if (!ytId) {
+          throw new Error("Este vídeo no está vinculado a ningún vídeo de YouTube. Por favor vincúlalo antes de sincronizar.");
+        }
+        
+        const res = await fetch("/api/youtube/update", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            youtubeVideoId: ytId,
+            title: updateForm.title,
+            description: updateForm.description,
+            tags: updateForm.tags,
+            thumbnail: isAutoThumbnailEnabled ? newThumbnailBase64 : null,
+            scheduledAt: updateForm.isScheduled ? toUTCISOString(updateForm.scheduledAt) : null,
+            playlistId: updateForm.playlistId || null,
+            privacyStatus: privacyStatus
+          }),
+        });
+
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || "Fallo al guardar los cambios en YouTube");
+        }
+
+        const responseData = await res.json();
+
+        // Marcar como sincronizado en la lista del PDF
+        setParsedVideos(prev => prev.map(v => {
+          if (v.index === selectedYoutubeVideo.batchIndex) {
+            return {
+              ...v,
+              title: updateForm.title,
+              description: updateForm.description,
+              tags: updateForm.tags,
+              playlistId: updateForm.playlistId,
+              isAutoThumbnailEnabled: isAutoThumbnailEnabled,
+              thumbnailText: thumbnailText,
+              generatedThumbnailBase64: newThumbnailBase64 || v.generatedThumbnailBase64,
+              customBgBase64: customBgBase64 || v.customBgBase64,
+              isScheduled: updateForm.isScheduled,
+              scheduledAt: updateForm.scheduledAt,
+              isSynced: true,
+              syncError: responseData.thumbnailError ? `Sincronizado sin miniatura: ${responseData.thumbnailError}` : null
+            };
+          }
+          return v;
+        }));
+
+        setSimpleUploadProgress(100);
+        setSimpleUploadStatus("¡Sincronización completada con éxito!");
+        
+        if (responseData.scheduled) {
+          alert("¡Sincronización programada con éxito en YouTube!");
+        } else if (responseData.thumbnailError) {
+          alert(`¡Video sincronizado con éxito en YouTube, pero la miniatura no se pudo subir!\n\nDetalle: ${responseData.thumbnailError}`);
+        } else {
+          alert("¡Video sincronizado y actualizado en YouTube con éxito!");
+        }
+        handleCloseEditor();
+        return;
+      }
+
       const isLocal = !!selectedYoutubeVideo.isLocal;
 
       if (isLocal) {
@@ -4191,6 +4432,293 @@ export default function Dashboard() {
                 )}
               </div>
 
+              {/* Lote de vídeos detectados en el PDF */}
+              {parsedVideos.length > 0 && (
+                <div className={styles.card} style={{ border: "1px solid rgba(168, 85, 247, 0.4)", background: "rgba(168, 85, 247, 0.02)", marginTop: "1.5rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "1rem" }}>
+                    <div>
+                      <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.08em", color: "#a855f7", marginBottom: "0.2rem" }}>Documento Analizado</div>
+                      <h3 style={{ fontSize: "1.1rem", fontWeight: "800", color: "#f8fafc", margin: 0 }}>
+                        📋 Vídeos detectados: <span style={{ color: "#c084fc" }}>"{pendingDocumentName}"</span>
+                      </h3>
+                      <p style={{ fontSize: "0.72rem", color: "var(--text-muted)", margin: "0.2rem 0 0 0" }}>
+                        Revisa el emparejamiento con YouTube, edita el contenido SEO y publica todo el lote.
+                      </p>
+                    </div>
+                    <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        onClick={handleSyncAllVideos}
+                        disabled={isSyncingBatch}
+                        className={styles.btnSubmit}
+                        style={{
+                          width: "auto",
+                          background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                          padding: "0.45rem 1rem",
+                          fontSize: "0.75rem",
+                          fontWeight: "700",
+                          borderRadius: "8px",
+                          cursor: isSyncingBatch ? "not-allowed" : "pointer"
+                        }}
+                      >
+                        🚀 Sincronizar Lote
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBatchScheduleEnabled(!batchScheduleEnabled)}
+                        className={styles.btnSubmit}
+                        style={{
+                          width: "auto",
+                          background: "linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)",
+                          padding: "0.45rem 1rem",
+                          fontSize: "0.75rem",
+                          fontWeight: "700",
+                          borderRadius: "8px"
+                        }}
+                      >
+                        📅 Programar Lote
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (confirm("¿Estás seguro de que deseas limpiar este lote de vídeos? Se perderán las portadas y textos generados si no han sido sincronizados.")) {
+                            setParsedVideos([]);
+                            setPendingDocumentName("");
+                          }
+                        }}
+                        className={styles.btnDelete}
+                        style={{
+                          width: "auto",
+                          padding: "0.45rem 0.8rem",
+                          fontSize: "0.75rem",
+                          borderRadius: "8px"
+                        }}
+                      >
+                        Limpiar Lote
+                      </button>
+                    </div>
+                  </div>
+
+                  {batchScheduleEnabled && (
+                    <div style={{
+                      padding: "1rem",
+                      background: "rgba(59, 130, 246, 0.05)",
+                      border: "1px solid rgba(59, 130, 246, 0.2)",
+                      borderRadius: "8px",
+                      marginBottom: "1rem",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.75rem"
+                    }}>
+                      <div style={{ fontSize: "0.8rem", fontWeight: "600", color: "#60a5fa" }}>📅 Programar sincronización automática para todo el lote:</div>
+                      <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+                        <DateTimePicker
+                          value={batchScheduleDate}
+                          onChange={(e) => setBatchScheduleDate(e.target.value)}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleScheduleAllVideos}
+                          disabled={isSyncingBatch}
+                          className={styles.btnSubmit}
+                          style={{
+                            width: "auto",
+                            background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
+                            margin: 0,
+                            padding: "0.4rem 1rem",
+                            fontSize: "0.75rem",
+                            borderRadius: "6px"
+                          }}
+                        >
+                          Programar ahora
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Listado de items del lote */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.8rem", maxHeight: "600px", overflowY: "auto", paddingRight: "0.25rem" }}>
+                    {parsedVideos.map((item, idx) => {
+                      const matchedYtVideo = privateVideos.find(v => v.id === item.matchedVideoId);
+                      const isLinked = !!matchedYtVideo;
+                      const wordCount = getWordCount(item.thumbnailText);
+                      
+                      return (
+                        <div key={item.index} style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "0.75rem",
+                          padding: "1rem",
+                          background: item.isSynced 
+                            ? "rgba(16, 185, 129, 0.03)" 
+                            : (item.syncError ? "rgba(239, 68, 68, 0.04)" : "rgba(255, 255, 255, 0.015)"),
+                          border: item.isSynced
+                            ? "1px solid rgba(16, 185, 129, 0.25)"
+                            : (item.syncError ? "1px solid rgba(239, 68, 68, 0.25)" : "1px solid var(--border-color)"),
+                          borderRadius: "12px",
+                          position: "relative"
+                        }}>
+                          {/* Fila superior: Index, Logo, Título en PDF y estado */}
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", flexWrap: "wrap" }}>
+                            <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", minWidth: 0, flex: 1 }}>
+                              <span style={{
+                                width: "24px", height: "24px",
+                                background: "#a855f7", color: "#fff",
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                borderRadius: "50%", fontSize: "0.75rem", fontWeight: "700",
+                                flexShrink: 0
+                              }}>
+                                {item.index}
+                              </span>
+                              {item.selectedProgramLogo && item.selectedProgramLogo !== "none" && (
+                                <img
+                                  src={`/program_logos/${item.selectedProgramLogo}`}
+                                  alt="Logo"
+                                  style={{ width: "24px", height: "24px", objectFit: "contain", borderRadius: "4px", background: "rgba(255,255,255,0.05)", flexShrink: 0 }}
+                                />
+                              )}
+                              <h4 style={{ fontSize: "0.85rem", fontWeight: "700", color: "#f8fafc", margin: 0, textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+                                {item.title}
+                              </h4>
+                            </div>
+                            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                              {item.isSynced ? (
+                                <span style={{ fontSize: "0.68rem", fontWeight: "700", color: "#10b981", background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.25)", padding: "2px 8px", borderRadius: "6px" }}>
+                                  ✓ Sincronizado {item.isScheduled ? "⏰" : ""}
+                                </span>
+                              ) : item.syncError ? (
+                                <span style={{ fontSize: "0.68rem", fontWeight: "700", color: "#ef4444", background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.25)", padding: "2px 8px", borderRadius: "6px" }} title={item.syncError}>
+                                  ⚠ Error de Sync
+                                </span>
+                              ) : (
+                                <span style={{ fontSize: "0.68rem", fontWeight: "700", color: "#a855f7", background: "rgba(168,85,247,0.12)", border: "1px solid rgba(168,85,247,0.25)", padding: "2px 8px", borderRadius: "6px" }}>
+                                  Pendiente de Sync
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Fila intermedia: Selector de video de YouTube y previsualizaciones */}
+                          <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", alignItems: "center" }}>
+                            <div style={{ flex: 1, minWidth: "260px" }}>
+                              <label style={{ fontSize: "0.72rem", color: "var(--text-secondary)", fontWeight: "600", display: "block", marginBottom: "0.25rem" }}>
+                                🔗 Vincular a Vídeo de YouTube (Privado/Oculto):
+                              </label>
+                              <select
+                                value={item.matchedVideoId || ""}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setParsedVideos(prev => prev.map(v => v.index === item.index ? { ...v, matchedVideoId: val } : v));
+                                }}
+                                style={{
+                                  padding: "0.4rem 0.6rem",
+                                  background: "var(--bg-surface-solid, #1e293b)",
+                                  border: "1px solid var(--border-color, #334155)",
+                                  borderRadius: "6px",
+                                  color: "#fff",
+                                  fontSize: "0.75rem",
+                                  width: "100%"
+                                }}
+                              >
+                                <option value="">-- No vinculado --</option>
+                                {privateVideos.map(pv => (
+                                  <option key={pv.id} value={pv.id}>
+                                    {pv.title} ({pv.privacyStatus === 'private' ? 'Privado' : 'Oculto'}) - {pv.id}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            {isLinked && (
+                              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "rgba(255,255,255,0.02)", padding: "4px 8px", borderRadius: "6px", border: "1px solid rgba(255,255,255,0.04)" }}>
+                                <img src={matchedYtVideo.thumbnail} alt="" style={{ width: "48px", aspectRatio: "16/9", objectFit: "cover", borderRadius: "3px" }} />
+                                <div style={{ fontSize: "0.68rem" }}>
+                                  <div style={{ color: "#94a3b8", fontWeight: "600", maxWidth: "160px", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+                                    {matchedYtVideo.title}
+                                  </div>
+                                  <code style={{ color: "#64748b" }}>{matchedYtVideo.id}</code>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Secciones SEO */}
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "1rem", background: "rgba(0,0,0,0.15)", padding: "0.75rem", borderRadius: "8px" }}>
+                            <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", minWidth: 0 }}>
+                              <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                                <strong>Descripción:</strong> <span style={{ fontStyle: "italic" }}>{item.description.substring(0, 150)}...</span>
+                              </div>
+                              <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
+                                <span style={{ fontSize: "0.72rem", color: "var(--text-secondary)" }}>
+                                  <strong>Frase SEO miniatura:</strong>
+                                </span>
+                                <span style={{
+                                  fontSize: "0.72rem", fontWeight: "700",
+                                  color: (wordCount >= 3 && wordCount <= 5) ? "#f59e0b" : "#ef4444",
+                                  background: (wordCount >= 3 && wordCount <= 5) ? "rgba(245,158,11,0.12)" : "rgba(239,68,68,0.12)",
+                                  padding: "2px 8px", borderRadius: "4px"
+                                }}>
+                                  "{item.thumbnailText}" ({wordCount} palabras)
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Miniatura automática generada */}
+                            {item.generatedThumbnailBase64 && (
+                              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.25rem" }}>
+                                <img
+                                  src={item.generatedThumbnailBase64}
+                                  alt="Preview miniatura"
+                                  style={{ width: "96px", aspectRatio: "16/9", objectFit: "cover", borderRadius: "6px", border: "1px solid rgba(255,255,255,0.08)" }}
+                                />
+                                <span style={{ fontSize: "0.62rem", color: "#c084fc", fontWeight: "600" }}>Lienzo TVG</span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Fila inferior: Botones de acción */}
+                          <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.25rem" }}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleSelectBatchItemForEditing(item);
+                              }}
+                              className={styles.btnSubmit}
+                              style={{
+                                width: "auto",
+                                fontSize: "0.72rem",
+                                padding: "0.35rem 0.8rem",
+                                background: "rgba(168, 85, 247, 0.15)",
+                                border: "1px solid rgba(168, 85, 247, 0.3)",
+                                color: "#c084fc"
+                              }}
+                            >
+                              ✏️ Editar / Optimizar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSyncSingleBatchItem(item)}
+                              disabled={!item.matchedVideoId || item.isSynced || item.isSyncing}
+                              className={styles.btnSubmit}
+                              style={{
+                                width: "auto",
+                                fontSize: "0.72rem",
+                                padding: "0.35rem 0.8rem",
+                                background: !item.matchedVideoId 
+                                  ? "#475569" 
+                                  : (item.isSynced ? "#1e293b" : "linear-gradient(135deg, #10b981 0%, #059669 100%)"),
+                                opacity: !item.matchedVideoId ? 0.5 : 1,
+                                cursor: !item.matchedVideoId || item.isSynced || item.isSyncing ? "not-allowed" : "pointer"
+                              }}
+                            >
+                              {item.isSyncing ? "Sincronizando..." : (item.isSynced ? "Sincronizado" : "🚀 Sincronizar ahora")}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Cola 1 – Editor: Borradores en YouTube listos para editar */}
               <div className={styles.card}>
@@ -4545,6 +5073,29 @@ export default function Dashboard() {
                             </div>
                           )}
                         </div>
+
+                        {/* Control deslizante (scrubber) de fotograma */}
+                        {videoDuration > 0 && (
+                          <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", marginTop: "0.25rem" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.72rem", color: "var(--text-muted)" }}>
+                              <span>Ajustar segundo de captura:</span>
+                              <span style={{ fontWeight: "700", color: "#a855f7" }}>{Math.round(frameTime)}s / {Math.round(videoDuration)}s</span>
+                            </div>
+                            <input
+                              type="range"
+                              min={0}
+                              max={videoDuration}
+                              step={0.5}
+                              value={frameTime}
+                              onChange={handleSliderChange}
+                              style={{
+                                width: "100%",
+                                accentColor: "#a855f7",
+                                cursor: "pointer"
+                              }}
+                            />
+                          </div>
+                        )}
 
                         <div className={styles.inputGroup} style={{ margin: 0 }}>
                           <label style={{ fontSize: "0.75rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
