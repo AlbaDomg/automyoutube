@@ -75,13 +75,10 @@ export async function GET(request) {
     let isSearchById = false;
 
     if (q) {
-      console.log('videos search');
       const targetVideoId = extractVideoId(q);
       if (targetVideoId) {
         videoIds = [targetVideoId];
         isSearchById = true;
-        console.log('videos search by id');
-
       } else {
         // Si no es un ID de video directo, realizar búsqueda general por palabra clave en el canal
         try {
@@ -93,7 +90,6 @@ export async function GET(request) {
             maxResults: 50
           });
           videoIds = (searchRes.data.items || []).map(item => item.id.videoId).filter(Boolean);
-          console.log('videos found on search: ', videoIds);
         } catch (searchErr) {
           console.warn('[YouTube Videos GET] Fallo en la búsqueda directa de YouTube por q:', searchErr.message);
           // Si falla (por ejemplo por cuota), intentaremos usar la lista de reproducción uploads como fallback
