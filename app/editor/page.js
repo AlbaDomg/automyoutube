@@ -1172,7 +1172,9 @@ export default function Dashboard() {
             const cleanUrl = getCleanVideoFrameUrl(videoVal?.thumbnail, videoVal?.id);
             if (cleanUrl) {
               try {
-                const proxiedUrl = `/api/youtube/thumbnail-proxy?url=${encodeURIComponent(cleanUrl)}`;
+                const proxiedUrl = (cleanUrl.startsWith("data:") || cleanUrl.startsWith("/"))
+                  ? cleanUrl
+                  : `/api/youtube/thumbnail-proxy?url=${encodeURIComponent(cleanUrl)}`;
                 bgImg = await loadImage(proxiedUrl);
               } catch (proxyErr) {
                 console.warn(`[Thumbnail Generator] Fallo al cargar fotograma de YouTube, intentando con logo de programa. Error: ${proxyErr.message}`);

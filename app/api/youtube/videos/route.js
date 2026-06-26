@@ -90,6 +90,7 @@ export async function GET(request) {
             maxResults: 50
           });
           videoIds = (searchRes.data.items || []).map(item => item.id.videoId).filter(Boolean);
+          console.log('videos found on search: ', videoIds);
         } catch (searchErr) {
           console.warn('[YouTube Videos GET] Fallo en la búsqueda directa de YouTube por q:', searchErr.message);
           // Si falla (por ejemplo por cuota), intentaremos usar la lista de reproducción uploads como fallback
@@ -125,7 +126,7 @@ export async function GET(request) {
         nextPageToken = playlistRes.data.nextPageToken;
         if (!nextPageToken || items.length < 50) break;
       }
-      
+
       // Eliminar duplicados si los hubiera
       videoIds = [...new Set(videoIds)];
     }
@@ -145,7 +146,7 @@ export async function GET(request) {
       // YouTube videos.list acepta hasta 50 IDs por llamada, así que fragmentamos la petición
       const chunkSize = 50;
       const allVideoItems = [];
-      
+
       for (let i = 0; i < videoIds.length; i += chunkSize) {
         const chunk = videoIds.slice(i, i + chunkSize);
         const videoDetailsRes = await youtube.videos.list({
