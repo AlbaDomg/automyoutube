@@ -40,7 +40,8 @@ export default function DateTimePicker({
   placeholder = "Seleccionar fecha y hora..."
 }) {
   const [showPicker, setShowPicker] = useState(false);
-  const [popoverPos, setPopoverPos] = useState({ cssTop: '0px', cssBottom: 'auto', cssLeft: '0px' });
+  const [positioned, setPositioned] = useState(false);
+  const wrapperRef = useRef(null);
   
   // Temp internal picker state
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -75,6 +76,54 @@ export default function DateTimePicker({
       setIsPM(parsed.isPM);
     }
   }, [value]);
+
+  // Posicionar el popover justo debajo del input, usando mediciones reales del DOM
+  useEffect(() => {
+    if (!showPicker) {
+      setPositioned(false);
+      return;
+    }
+    if (!popoverRef.current || !wrapperRef.current) return;
+
+    const wrapRect = wrapperRef.current.getBoundingClientRect();
+    const popH = popoverRef.current.offsetHeight || 430;
+    const popW = popoverRef.current.offsetWidth || 620;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    // Horizontal: alinear con el input, sin salirse de pantalla
+    let left = wrapRect.left;
+    if (left + popW > vw - 8) left = Math.max(8, vw - popW - 8);
+
+    // Vertical: preferir abrir hacia abajo
+    const spaceBelow = vh - wrapRect.bottom;
+    let top, bottom;
+    if (spaceBelow >= popH + 8) {
+      // Hay espacio abajo -> abrir hacia abajo
+      top = wrapRect.bottom + 6;
+      bottom = 'auto';
+    } else {
+      // Abrir hacia arriba, pegado al borde superior del input
+      top = 'auto';
+      bottom = vh - wrapRect.top + 6;
+      // Asegurarse de que no se sale por arriba
+      const topPos = wrapRect.top - 6 - popH;
+      if (topPos < 8) {
+        // No cabe arriba tampoco: forzar abajo con scroll implícito
+        top = wrapRect.bottom + 6;
+        bottom = 'auto';
+      }
+    }
+
+    const el = popoverRef.current;
+    el.style.position = 'fixed';
+    el.style.left = `${left}px`;
+    el.style.top = top !== 'auto' ? `${top}px` : 'auto';
+    el.style.bottom = bottom !== 'auto' ? `${bottom}px` : 'auto';
+    el.style.zIndex = '99999';
+    el.style.visibility = 'visible';
+    setPositioned(true);
+  }, [showPicker]);
 
   // Handle clicking outside to close
   useEffect(() => {
@@ -197,31 +246,11 @@ export default function DateTimePicker({
   const handAngle = selectingHours ? (selectedHour * 30) : (selectedMinute * 6);
 
   return (
-    <div className={`${styles.container} ${className}`} style={style}>
+    <div className={`${styles.container} ${className}`} style={style} ref={wrapperRef}>
       <div
         className={styles.inputFieldWrapper}
-        onClick={(e) => {
+        onClick={() => {
           if (disabled) return;
-          if (!showPicker) {
-            const rect = e.currentTarget.getBoundingClientRect();
-            const POPUP_H = 430;
-            const spaceBelow = window.innerHeight - rect.bottom;
-            if (spaceBelow >= POPUP_H + 8) {
-              // Abrir hacia abajo
-              setPopoverPos({
-                cssTop: `${rect.bottom + 6}px`,
-                cssBottom: 'auto',
-                cssLeft: `${rect.left}px`
-              });
-            } else {
-              // Abrir hacia arriba
-              setPopoverPos({
-                cssTop: 'auto',
-                cssBottom: `${window.innerHeight - rect.top + 6}px`,
-                cssLeft: `${rect.left}px`
-              });
-            }
-          }
           setShowPicker(prev => !prev);
         }}
         style={disabled ? { opacity: 0.5, cursor: "not-allowed", pointerEvents: "none" } : {}}
@@ -250,9 +279,9 @@ export default function DateTimePicker({
           ref={popoverRef}
           style={{
             position: 'fixed',
-            top: popoverPos.cssTop,
-            bottom: popoverPos.cssBottom,
-            left: popoverPos.cssLeft,
+            top: '-9999px',
+            left: '-9999px',
+            visibility: positioned ? 'visible' : 'hidden',
             zIndex: 99999
           }}
         >
