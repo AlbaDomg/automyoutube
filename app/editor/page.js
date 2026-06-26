@@ -4821,6 +4821,41 @@ export default function Dashboard() {
                             )}
                             <button
                               type="button"
+                              onClick={() => {
+                                const videoObj = {
+                                  id: vId,
+                                  title: vTitle,
+                                  description: video.description || video.snippet?.description || "",
+                                  thumbnail: vThumb || "",
+                                  tags: video.tags || (video.snippet?.tags ? video.snippet.tags.join(", ") : ""),
+                                  privacyStatus: video.privacyStatus || "private",
+                                  fileName: video.fileName || video.fileDetails?.fileName || "",
+                                  publishedAt: video.publishedAt || video.snippet?.publishedAt || null
+                                };
+                                handleSelectVideo(videoObj);
+                                setTimeout(() => {
+                                  document.querySelector("[class*='inlineEditPanel']")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                                }, 150);
+                              }}
+                              className={styles.btnSubmit}
+                              style={{
+                                width: "auto",
+                                fontSize: "0.72rem",
+                                padding: "0.35rem 0.75rem",
+                                background: "rgba(168, 85, 247, 0.15)",
+                                color: "#c084fc",
+                                border: "1px solid rgba(168, 85, 247, 0.35)",
+                                borderRadius: "6px",
+                                cursor: "pointer",
+                                fontWeight: "700",
+                                whiteSpace: "nowrap"
+                              }}
+                              title="Abrir en el editor"
+                            >
+                              ✏️ Editar
+                            </button>
+                            <button
+                              type="button"
                               onClick={async () => {
                                 if (window.confirm("¿Estás seguro de que deseas eliminar este borrador de la lista? Se borrará de la base de datos local y dejará de aparecer en esta cola.")) {
                                   try {
