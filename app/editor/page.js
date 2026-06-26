@@ -4346,8 +4346,22 @@ export default function Dashboard() {
                         }}>
                           <div style={{ minWidth: 0, flex: 1 }}>
                             <div style={{ fontSize: "0.85rem", fontWeight: "600", color: "#f8fafc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{vTitle}</div>
-                            <div style={{ fontSize: "0.71rem", color: "var(--text-muted)", marginTop: "0.2rem" }}>
+                            <div style={{ fontSize: "0.71rem", color: "var(--text-muted)", marginTop: "0.2rem", display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
                               ID: <code style={{ color: "#94a3b8" }}>{vId}</code>{vDate && <span> · {formatDate(vDate)}</span>}
+                              {video.scheduledAt && (
+                                <span style={{
+                                  color: "#a855f7",
+                                  background: "rgba(168,85,247,0.12)",
+                                  border: "1px solid rgba(168,85,247,0.25)",
+                                  padding: "1px 7px",
+                                  borderRadius: "8px",
+                                  fontWeight: "700",
+                                  fontSize: "0.68rem",
+                                  whiteSpace: "nowrap"
+                                }}>
+                                  📅 Publicar: {formatDate(video.scheduledAt)}
+                                </span>
+                              )}
                             </div>
                           </div>
                           <span style={{ fontSize: "0.68rem", fontWeight: "700", color: "#f59e0b", background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", padding: "2px 9px", borderRadius: "6px", whiteSpace: "nowrap", flexShrink: 0 }}>
@@ -4761,8 +4775,22 @@ export default function Dashboard() {
                             {vThumb && <img src={vThumb} alt="" style={{ width: "64px", aspectRatio: "16/9", objectFit: "cover", borderRadius: "6px", flexShrink: 0 }} />}
                             <div style={{ minWidth: 0, flex: 1 }}>
                               <div style={{ fontSize: "0.85rem", fontWeight: "600", color: "#f8fafc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{vTitle}</div>
-                              <div style={{ fontSize: "0.71rem", color: "var(--text-muted)", marginTop: "0.2rem" }}>
+                              <div style={{ fontSize: "0.71rem", color: "var(--text-muted)", marginTop: "0.2rem", display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
                                 ID: <code style={{ color: "#94a3b8" }}>{vId}</code>{vDate && <span> · {formatDate(vDate)}</span>}
+                                {video.scheduledAt && (
+                                  <span style={{
+                                    color: "#a855f7",
+                                    background: "rgba(168,85,247,0.12)",
+                                    border: "1px solid rgba(168,85,247,0.25)",
+                                    padding: "1px 7px",
+                                    borderRadius: "8px",
+                                    fontWeight: "700",
+                                    fontSize: "0.68rem",
+                                    whiteSpace: "nowrap"
+                                  }}>
+                                    📅 Publicar: {formatDate(video.scheduledAt)}
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </div>
