@@ -382,17 +382,12 @@ export default function Dashboard() {
     }
   };
 
-  const handleSliderChange = async (e) => {
+  const handleSliderChange = (e) => {
     const newTime = parseFloat(e.target.value);
     setFrameTime(newTime);
-    const src = hiddenVideoRef.current?.src || videoObjectURL;
-    if (!src) return;
-    try {
-      const frame = await extractVideoFrame(src, newTime);
-      setLocalExtractedFrame(frame);
-      setCustomBgBase64(frame);
-    } catch (err) {
-      console.error('Error al extraer fotograma del scrubber:', err);
+    // Mover el vídeo oculto al segundo elegido; el evento onSeeked capturará el fotograma
+    if (hiddenVideoRef.current && hiddenVideoRef.current.src) {
+      hiddenVideoRef.current.currentTime = newTime;
     }
   };
 
@@ -5113,28 +5108,7 @@ export default function Dashboard() {
                           )}
                         </div>
 
-                        {/* Control deslizante (scrubber) de fotograma */}
-                        {videoDuration > 0 && (
-                          <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", marginTop: "0.25rem" }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.72rem", color: "var(--text-muted)" }}>
-                              <span>Ajustar segundo de captura:</span>
-                              <span style={{ fontWeight: "700", color: "#a855f7" }}>{Math.round(frameTime)}s / {Math.round(videoDuration)}s</span>
-                            </div>
-                            <input
-                              type="range"
-                              min={0}
-                              max={videoDuration}
-                              step={0.5}
-                              value={frameTime}
-                              onChange={handleSliderChange}
-                              style={{
-                                width: "100%",
-                                accentColor: "#a855f7",
-                                cursor: "pointer"
-                              }}
-                            />
-                          </div>
-                        )}
+
 
                         <div className={styles.inputGroup} style={{ margin: 0 }}>
                           <label style={{ fontSize: "0.75rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -5408,6 +5382,43 @@ export default function Dashboard() {
                             <button type="button" onClick={() => setNewThumbnailBase64(null)} style={{ position: "absolute", top: "-5px", right: "-5px", background: "#ef4444", color: "#fff", border: "none", borderRadius: "50%", cursor: "pointer", width: "18px", height: "18px", fontSize: "10px" }}>✕</button>
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {/* Control deslizante (scrubber) de fotograma — visible siempre que haya vídeo local */}
+                    {videoDuration > 0 && (
+                      <div style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "0.3rem",
+                        marginTop: "0.75rem",
+                        padding: "0.65rem 0.75rem",
+                        background: "rgba(168, 85, 247, 0.06)",
+                        border: "1px solid rgba(168, 85, 247, 0.2)",
+                        borderRadius: "8px"
+                      }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.72rem", color: "var(--text-muted)" }}>
+                          <span style={{ display: "flex", alignItems: "center", gap: "0.3rem", fontWeight: "600" }}>
+                            🎞️ Fotograma de la miniatura
+                          </span>
+                          <span style={{ fontWeight: "700", color: "#a855f7", fontVariantNumeric: "tabular-nums" }}>
+                            {Math.floor(frameTime / 60).toString().padStart(2, "0")}:{Math.floor(frameTime % 60).toString().padStart(2, "0")} / {Math.floor(videoDuration / 60).toString().padStart(2, "0")}:{Math.floor(videoDuration % 60).toString().padStart(2, "0")}
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={videoDuration}
+                          step={0.25}
+                          value={frameTime}
+                          onChange={handleSliderChange}
+                          style={{
+                            width: "100%",
+                            accentColor: "#a855f7",
+                            cursor: "pointer",
+                            height: "4px"
+                          }}
+                        />
                       </div>
                     )}
 
