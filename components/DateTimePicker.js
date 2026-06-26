@@ -40,8 +40,7 @@ export default function DateTimePicker({
   placeholder = "Seleccionar fecha y hora..."
 }) {
   const [showPicker, setShowPicker] = useState(false);
-  const [popoverPos, setPopoverPos] = useState({ top: 0, left: 0, openUpward: false });
-  const wrapperRef = useRef(null);
+  const [popoverPos, setPopoverPos] = useState({ cssTop: '0px', cssBottom: 'auto', cssLeft: '0px' });
   
   // Temp internal picker state
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -56,7 +55,6 @@ export default function DateTimePicker({
   const [selectingHours, setSelectingHours] = useState(true);
 
   const popoverRef = useRef(null);
-  const POPOVER_HEIGHT = 420; // Estimated popover height in px
 
   // Helper arrays
   const monthNames = [
@@ -198,24 +196,36 @@ export default function DateTimePicker({
   // Calculate clock hand rotation angle
   const handAngle = selectingHours ? (selectedHour * 30) : (selectedMinute * 6);
 
-  const handleTogglePicker = () => {
-    if (disabled) return;
-    if (!showPicker && wrapperRef.current) {
-      const rect = wrapperRef.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
-      const openUpward = spaceBelow < POPOVER_HEIGHT + 16;
-      setPopoverPos({
-        top: openUpward ? rect.top : rect.bottom + 6,
-        left: rect.left,
-        openUpward
-      });
-    }
-    setShowPicker(prev => !prev);
-  };
-
   return (
-    <div className={`${styles.container} ${className}`} style={style} ref={wrapperRef}>
-      <div className={styles.inputFieldWrapper} onClick={handleTogglePicker} style={disabled ? { opacity: 0.5, cursor: "not-allowed", pointerEvents: "none" } : {}}>
+    <div className={`${styles.container} ${className}`} style={style}>
+      <div
+        className={styles.inputFieldWrapper}
+        onClick={(e) => {
+          if (disabled) return;
+          if (!showPicker) {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const POPUP_H = 430;
+            const spaceBelow = window.innerHeight - rect.bottom;
+            if (spaceBelow >= POPUP_H + 8) {
+              // Abrir hacia abajo
+              setPopoverPos({
+                cssTop: `${rect.bottom + 6}px`,
+                cssBottom: 'auto',
+                cssLeft: `${rect.left}px`
+              });
+            } else {
+              // Abrir hacia arriba
+              setPopoverPos({
+                cssTop: 'auto',
+                cssBottom: `${window.innerHeight - rect.top + 6}px`,
+                cssLeft: `${rect.left}px`
+              });
+            }
+          }
+          setShowPicker(prev => !prev);
+        }}
+        style={disabled ? { opacity: 0.5, cursor: "not-allowed", pointerEvents: "none" } : {}}
+      >
         <input
           type="text"
           readOnly
@@ -240,9 +250,9 @@ export default function DateTimePicker({
           ref={popoverRef}
           style={{
             position: 'fixed',
-            top: popoverPos.openUpward ? 'auto' : popoverPos.top,
-            bottom: popoverPos.openUpward ? (window.innerHeight - popoverPos.top) : 'auto',
-            left: popoverPos.left,
+            top: popoverPos.cssTop,
+            bottom: popoverPos.cssBottom,
+            left: popoverPos.cssLeft,
             zIndex: 99999
           }}
         >
