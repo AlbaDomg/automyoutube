@@ -146,12 +146,10 @@ export default function DateTimePicker({
     const day = parsed.date.getDate().toString().padStart(2, "0");
     const month = (parsed.date.getMonth() + 1).toString().padStart(2, "0");
     const year = parsed.date.getFullYear();
-    const hours = (parsed.isPM 
-      ? (parsed.hour === 12 ? 12 : parsed.hour + 12) 
-      : (parsed.hour === 12 ? 0 : parsed.hour)
-    ).toString().padStart(2, "0");
+    const hours = parsed.hour.toString().padStart(2, "0");
     const minutes = parsed.minute.toString().padStart(2, "0");
-    return `${day}/${month}/${year} ${hours}:${minutes}`;
+    const ampm = parsed.isPM ? "PM" : "AM";
+    return `${day}/${month}/${year} ${hours}:${minutes} ${ampm}`;
   };
 
   // Month navigation logic

@@ -232,23 +232,42 @@
 }
 
 .ampmBtn {
-  background: transparent;
-  border: none;
-  color: var(--text-secondary);
-  font-size: 0.75rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-muted);
+  font-size: 0.78rem;
   font-weight: 700;
   cursor: pointer;
-  padding: 0.15rem 0.3rem;
-  border-radius: 4px;
-  opacity: 0.5;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  opacity: 0.45;
   transition: all 0.2s;
-  text-align: left;
+  text-align: center;
+  min-width: 2rem;
+  letter-spacing: 0.04em;
+}
+
+.ampmBtn:hover {
+  opacity: 0.75;
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .ampmBtnActive {
   opacity: 1;
   color: #ffffff;
   font-weight: 800;
+  border-color: transparent;
+  box-shadow: 0 0 8px rgba(139, 92, 246, 0.4);
+}
+
+/* AM activo = azul */
+.ampmBtnActive:first-child {
+  background: linear-gradient(135deg, #0ea5e9 0%, #38bdf8 100%);
+}
+
+/* PM activo = violeta */
+.ampmBtnActive:last-child {
+  background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%);
 }
 
 .clockFace {
