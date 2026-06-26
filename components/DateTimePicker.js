@@ -40,6 +40,8 @@ export default function DateTimePicker({
   placeholder = "Seleccionar fecha y hora..."
 }) {
   const [showPicker, setShowPicker] = useState(false);
+  const [popoverPos, setPopoverPos] = useState({ top: 0, left: 0, openUpward: false });
+  const wrapperRef = useRef(null);
   
   // Temp internal picker state
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -54,6 +56,7 @@ export default function DateTimePicker({
   const [selectingHours, setSelectingHours] = useState(true);
 
   const popoverRef = useRef(null);
+  const POPOVER_HEIGHT = 420; // Estimated popover height in px
 
   // Helper arrays
   const monthNames = [
@@ -195,9 +198,24 @@ export default function DateTimePicker({
   // Calculate clock hand rotation angle
   const handAngle = selectingHours ? (selectedHour * 30) : (selectedMinute * 6);
 
+  const handleTogglePicker = () => {
+    if (disabled) return;
+    if (!showPicker && wrapperRef.current) {
+      const rect = wrapperRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const openUpward = spaceBelow < POPOVER_HEIGHT + 16;
+      setPopoverPos({
+        top: openUpward ? rect.top : rect.bottom + 6,
+        left: rect.left,
+        openUpward
+      });
+    }
+    setShowPicker(prev => !prev);
+  };
+
   return (
-    <div className={`${styles.container} ${className}`} style={style}>
-      <div className={styles.inputFieldWrapper} onClick={() => { if (!disabled) setShowPicker(!showPicker); }} style={disabled ? { opacity: 0.5, cursor: "not-allowed", pointerEvents: "none" } : {}}>
+    <div className={`${styles.container} ${className}`} style={style} ref={wrapperRef}>
+      <div className={styles.inputFieldWrapper} onClick={handleTogglePicker} style={disabled ? { opacity: 0.5, cursor: "not-allowed", pointerEvents: "none" } : {}}>
         <input
           type="text"
           readOnly
@@ -217,7 +235,17 @@ export default function DateTimePicker({
       </div>
 
       {showPicker && (
-        <div className={styles.popover} ref={popoverRef}>
+        <div
+          className={styles.popover}
+          ref={popoverRef}
+          style={{
+            position: 'fixed',
+            top: popoverPos.openUpward ? 'auto' : popoverPos.top,
+            bottom: popoverPos.openUpward ? (window.innerHeight - popoverPos.top) : 'auto',
+            left: popoverPos.left,
+            zIndex: 99999
+          }}
+        >
           <div className={styles.panelsContainer}>
             {/* CALENDAR CARD */}
             <div className={styles.card}>
