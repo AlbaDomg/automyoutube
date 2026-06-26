@@ -703,6 +703,7 @@ export default function SubidorPage() {
       hour: "2-digit",
       minute: "2-digit",
       hour12: true,
+      timeZone: "Europe/Madrid",
     });
   };
 

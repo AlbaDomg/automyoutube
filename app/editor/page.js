@@ -3478,6 +3478,7 @@ export default function Dashboard() {
       hour: "2-digit",
       minute: "2-digit",
       hour12: true,
+      timeZone: "Europe/Madrid",
     });
   };
 
@@ -3490,13 +3491,19 @@ export default function Dashboard() {
   const toLocalDateTimeString = (date) => {
     if (!date) return "";
     const d = new Date(date);
-    const pad = (n) => n.toString().padStart(2, '0');
-    const year = d.getFullYear();
-    const month = pad(d.getMonth() + 1);
-    const day = pad(d.getDate());
-    const hours = pad(d.getHours());
-    const minutes = pad(d.getMinutes());
-    return `${year}-${month}-${day}T${hours}:${minutes}`;
+    // Usar Europe/Madrid explícitamente para que el picker muestre hora española
+    const fmt = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Madrid",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    const parts = fmt.formatToParts(d);
+    const get = (type) => parts.find(p => p.type === type)?.value || "00";
+    return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`;
   };
 
   const combinedPendingTasks = useMemo(() => {
