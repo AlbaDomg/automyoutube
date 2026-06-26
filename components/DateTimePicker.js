@@ -62,13 +62,8 @@ export default function DateTimePicker({
   ];
   const dayLabels = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 
-  // Sync internal state with value/showPicker during render
-  const [prevValue, setPrevValue] = useState(value);
-  const [prevShowPicker, setPrevShowPicker] = useState(showPicker);
-
-  if (value !== prevValue || showPicker !== prevShowPicker) {
-    setPrevValue(value);
-    setPrevShowPicker(showPicker);
+  // Sync internal state only when external value changes
+  useEffect(() => {
     if (value) {
       const parsed = parseValue(value);
       setSelectedDate(parsed.date);
@@ -78,7 +73,7 @@ export default function DateTimePicker({
       setSelectedMinute(parsed.minute);
       setIsPM(parsed.isPM);
     }
-  }
+  }, [value]);
 
   // Handle clicking outside to close
   useEffect(() => {
