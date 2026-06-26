@@ -75,10 +75,13 @@ export async function GET(request) {
     let isSearchById = false;
 
     if (q) {
+      console.log('videos search');
       const targetVideoId = extractVideoId(q);
       if (targetVideoId) {
         videoIds = [targetVideoId];
         isSearchById = true;
+        console.log('videos search by id');
+
       } else {
         // Si no es un ID de video directo, realizar búsqueda general por palabra clave en el canal
         try {
