@@ -199,6 +199,23 @@ export async function GET(request) {
       }
     }
 
+    // Enriquecer con datos de la BD (scheduledAt guardado por el subidor, rawFrameBase64, etc.)
+    if (videos.length > 0) {
+      const ytVideoIds = videos.map(v => v.id).filter(Boolean);
+      const dbVideos = await prisma.video.findMany({
+        where: { youtubeId: { in: ytVideoIds } },
+        select: { youtubeId: true, scheduledAt: true, rawFrameBase64: true, thumbnailBase64: true }
+      });
+      const dbMap = {};
+      dbVideos.forEach(dv => { if (dv.youtubeId) dbMap[dv.youtubeId] = dv; });
+      videos = videos.map(v => ({
+        ...v,
+        scheduledAt: dbMap[v.id]?.scheduledAt || null,
+        rawFrameBase64: dbMap[v.id]?.rawFrameBase64 || null,
+        thumbnailBase64: dbMap[v.id]?.thumbnailBase64 || null,
+      }));
+    }
+
     return NextResponse.json(videos);
   } catch (error) {
     console.error('Error fetching YouTube videos:', error);
