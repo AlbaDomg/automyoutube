@@ -1073,25 +1073,32 @@ export default function Dashboard() {
     }
   }, [isAuthenticated]);
 
-  // Cargar preferencia de logotipo al seleccionar un vídeo de forma dinámica y en tiempo real
+  // Cargar preferencia de logotipo al seleccionar un vídeo de forma dinámica y en tiempo real.
+  // Se ejecuta cuando cambia el vídeo seleccionado, el catálogo de logos o las playlists (por si cargan tarde).
   useEffect(() => {
-    if (selectedYoutubeVideo && selectedProgramLogo === "none") {
-      // Auto-detectar programa y playlist utilizando nuestro helper
-      const detected = detectProgramAndPlaylist(
-        selectedYoutubeVideo.title,
-        selectedYoutubeVideo.description,
-        selectedYoutubeVideo.fileName || selectedYoutubeVideo.filename || selectedYoutubeVideo.filePath || ""
-      );
+    if (!selectedYoutubeVideo) return;
 
-      if (detected.logoName !== "none") {
-        setSelectedProgramLogo(detected.logoName);
-        setIsAutoThumbnailEnabled(true);
-      }
-      // Aplicar también el playlistId detectado si el formulario aún no tiene uno asignado
-      // (evita la condición de carrera donde el catálogo de logos carga después de la selección del vídeo)
-      if (detected.playlistId && !updateForm?.playlistId) {
-        setUpdateForm(prev => ({ ...prev, playlistId: detected.playlistId }));
-      }
+    // Solo auto-detectar si todavía no se ha asignado logo ni playlist manualmente
+    const detected = detectProgramAndPlaylist(
+      selectedYoutubeVideo.title,
+      selectedYoutubeVideo.description,
+      selectedYoutubeVideo.fileName || selectedYoutubeVideo.filename || selectedYoutubeVideo.filePath || ""
+    );
+
+    if (detected.logoName !== "none" && selectedProgramLogo === "none") {
+      setSelectedProgramLogo(detected.logoName);
+      setIsAutoThumbnailEnabled(true);
+    }
+
+    // Aplicar playlistId detectado usando el updater funcional para evitar closure estale.
+    // Solo se aplica si el formulario todavía no tiene un playlistId asignado.
+    if (detected.playlistId) {
+      setUpdateForm(prev => {
+        if (!prev.playlistId) {
+          return { ...prev, playlistId: detected.playlistId };
+        }
+        return prev;
+      });
     }
   }, [selectedYoutubeVideo?.id, programLogosCatalog, playlists]);
 
@@ -1855,16 +1862,17 @@ export default function Dashboard() {
     handleResetThumbnailStates();
 
     // Cargar el vídeo en el elemento oculto para permitir el ajuste manual del fotograma si existe el archivo
-    if (combinedVideo.filePath && !['PDF_PARSED', 'YOUTUBE_UPLOAD', 'YOUTUBE_UPDATE'].includes(combinedVideo.filePath)) {
-      const srcUrl = combinedVideo.filePath.startsWith('https://') 
-        ? combinedVideo.filePath 
+    const validFilePath = combinedVideo.filePath &&
+      !['PDF_PARSED', 'YOUTUBE_UPLOAD', 'YOUTUBE_UPDATE'].includes(combinedVideo.filePath);
+
+    if (validFilePath && combinedVideo.dbId) {
+      const srcUrl = combinedVideo.filePath.startsWith('https://')
+        ? combinedVideo.filePath
         : `/api/videos/stream?id=${combinedVideo.dbId}`;
-      
-      if (videoObjectURL) {
-        URL.revokeObjectURL(videoObjectURL);
-      }
+
+      if (videoObjectURL) URL.revokeObjectURL(videoObjectURL);
       setVideoObjectURL("");
-      
+
       if (hiddenVideoRef.current) {
         hiddenVideoRef.current.src = srcUrl;
         hiddenVideoRef.current.load();
@@ -4822,20 +4830,44 @@ export default function Dashboard() {
                             <button
                               type="button"
                               onClick={() => {
-                                const videoObj = {
-                                  id: vId,
-                                  title: vTitle,
-                                  description: video.description || video.snippet?.description || "",
-                                  thumbnail: vThumb || "",
-                                  tags: video.tags || (video.snippet?.tags ? video.snippet.tags.join(", ") : ""),
-                                  privacyStatus: video.privacyStatus || "private",
-                                  fileName: video.fileName || video.fileDetails?.fileName || "",
-                                  publishedAt: video.publishedAt || video.snippet?.publishedAt || null
-                                };
-                                handleSelectVideo(videoObj);
+                                // Buscar el registro completo en la BD para tener acceso al filePath
+                                const dbRecord = dbVideos.find(dbv =>
+                                  dbv.youtubeId === vId || dbv.id === vId || dbv.id === video.dbId
+                                );
+
+                                if (video.isLocalDraft || (dbRecord && !dbRecord.youtubeId)) {
+                                  // Vídeo local: usar handleSelectLocalVideo con el registro completo de BD
+                                  if (dbRecord) {
+                                    handleSelectLocalVideo(dbRecord);
+                                  } else {
+                                    // Fallback: construir objeto mínimo
+                                    handleSelectLocalVideo({
+                                      id: vId,
+                                      title: vTitle,
+                                      description: video.description || video.snippet?.description || "",
+                                      filePath: null,
+                                      filename: video.fileName || "",
+                                      tags: video.tags || "",
+                                      status: "LOCAL_DRAFT"
+                                    });
+                                  }
+                                } else {
+                                  // Vídeo de YouTube: usar handleSelectVideo con el ID de YouTube
+                                  const videoObj = {
+                                    id: vId,
+                                    title: vTitle,
+                                    description: video.description || video.snippet?.description || "",
+                                    thumbnail: vThumb || "",
+                                    tags: video.tags || (video.snippet?.tags ? video.snippet.tags.join(", ") : ""),
+                                    privacyStatus: video.privacyStatus || video.snippet?.status?.privacyStatus || "private",
+                                    fileName: video.fileName || video.fileDetails?.fileName || dbRecord?.filename || "",
+                                    publishedAt: video.publishedAt || video.snippet?.publishedAt || null
+                                  };
+                                  handleSelectVideo(videoObj);
+                                }
                                 setTimeout(() => {
                                   document.querySelector("[class*='inlineEditPanel']")?.scrollIntoView({ behavior: "smooth", block: "start" });
-                                }, 150);
+                                }, 200);
                               }}
                               className={styles.btnSubmit}
                               style={{
