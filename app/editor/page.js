@@ -1092,6 +1092,11 @@ export default function Dashboard() {
         setSelectedProgramLogo(detected.logoName);
         setIsAutoThumbnailEnabled(true);
       }
+      // Aplicar también el playlistId detectado si el formulario aún no tiene uno asignado
+      // (evita la condición de carrera donde el catálogo de logos carga después de la selección del vídeo)
+      if (detected.playlistId && !updateForm?.playlistId) {
+        setUpdateForm(prev => ({ ...prev, playlistId: detected.playlistId }));
+      }
     }
   }, [selectedYoutubeVideo?.id, programLogosCatalog, playlists]);
 
