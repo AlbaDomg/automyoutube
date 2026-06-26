@@ -5763,24 +5763,6 @@ export default function Dashboard() {
             <div className={styles.card} style={{ marginTop: "1.5rem" }}>
               <div className={styles.cardTitle} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span>Proceso de Subida</span>
-                <button
-                  type="button"
-                  onClick={handleExecuteScheduler}
-                  disabled={executingScheduler}
-                  className={styles.btnSubmit}
-                  style={{
-                    width: "auto",
-                    fontSize: "0.75rem",
-                    padding: "0.3rem 0.75rem",
-                    background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-                    border: "none",
-                    margin: 0,
-                    opacity: executingScheduler ? 0.6 : 1,
-                    cursor: executingScheduler ? "not-allowed" : "pointer"
-                  }}
-                >
-                  {executingScheduler ? "Ejecutando..." : "⚡ Ejecutar Programados Ahora"}
-                </button>
               </div>
               <div className={styles.tasksList}>
                 {scheduledUpdates.map(update => (
@@ -5800,6 +5782,46 @@ export default function Dashboard() {
                             ? `Subiendo... ${update.uploadProgress || 0}%`
                             : (update.status === "SCHEDULED" ? "Programada" : "Aplicando...")}
                         </span>
+                        {/* Botón individual solo si tiene fecha programada y no está subiendo */}
+                        {update.scheduledAt && update.status !== "UPLOADING" && (
+                          <button
+                            type="button"
+                            title="Publicar este vídeo ahora, sin esperar a la hora programada"
+                            onClick={async () => {
+                              if (!confirm(`¿Publicar "${update.title || "este vídeo"}" ahora en YouTube, sin esperar a la hora programada?`)) return;
+                              setExecutingScheduler(true);
+                              try {
+                                const res = await fetch(`/api/scheduler?videoId=${update.id}`, { cache: "no-store" });
+                                if (res.ok) {
+                                  await fetchScheduledUpdates();
+                                  await fetchTasks();
+                                } else {
+                                  const data = await res.json();
+                                  alert(`Error: ${data.error || "error desconocido"}`);
+                                }
+                              } catch (err) {
+                                alert("Error de red al intentar publicar.");
+                              } finally {
+                                setExecutingScheduler(false);
+                              }
+                            }}
+                            disabled={executingScheduler}
+                            style={{
+                              background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                              border: "none",
+                              color: "#fff",
+                              borderRadius: "6px",
+                              padding: "2px 9px",
+                              fontSize: "0.68rem",
+                              fontWeight: "700",
+                              cursor: executingScheduler ? "not-allowed" : "pointer",
+                              opacity: executingScheduler ? 0.6 : 1,
+                              whiteSpace: "nowrap"
+                            }}
+                          >
+                            ▶ Publicar ahora
+                          </button>
+                        )}
                           <button
                             type="button"
                             title="Cancelar programación"

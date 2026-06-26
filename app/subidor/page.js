@@ -1661,20 +1661,9 @@ export default function SubidorPage() {
                 <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.08em", color: "#38bdf8", marginBottom: "0.25rem" }}>Subidor</div>
                 <h3 style={{ fontSize: "1rem", fontWeight: "700", color: "#f8fafc", margin: 0 }}>En proceso de subida a borradores</h3>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                <span style={{ fontSize: "0.72rem", fontWeight: "700", color: "#38bdf8", background: "rgba(14,165,233,0.12)", border: "1px solid rgba(14,165,233,0.25)", padding: "3px 12px", borderRadius: "20px", whiteSpace: "nowrap" }}>
-                  {scheduledUpdates.length} vídeo{scheduledUpdates.length !== 1 ? "s" : ""}
-                </span>
-                <button
-                  type="button"
-                  onClick={handleExecuteScheduler}
-                  disabled={executingScheduler}
-                  className={styles.btnSubmit}
-                  style={{ width: "auto", fontSize: "0.72rem", padding: "0.3rem 0.85rem", background: "linear-gradient(135deg, #10b981 0%, #059669 100%)", border: "none", margin: 0, opacity: executingScheduler ? 0.6 : 1, cursor: executingScheduler ? "not-allowed" : "pointer" }}
-                >
-                  {executingScheduler ? "Ejecutando..." : "Ejecutar ahora"}
-                </button>
-              </div>
+              <span style={{ fontSize: "0.72rem", fontWeight: "700", color: "#38bdf8", background: "rgba(14,165,233,0.12)", border: "1px solid rgba(14,165,233,0.25)", padding: "3px 12px", borderRadius: "20px", whiteSpace: "nowrap" }}>
+                {scheduledUpdates.length} vídeo{scheduledUpdates.length !== 1 ? "s" : ""}
+              </span>
             </div>
             <div className={styles.tasksList}>
               {scheduledUpdates.map(update => (
@@ -1689,6 +1678,46 @@ export default function SubidorPage() {
                       }}>
                         {update.status === "UPLOADING" ? `Subiendo… ${update.uploadProgress || 0}%` : "Programado"}
                       </span>
+                      {/* Botón individual solo si tiene fecha programada */}
+                      {update.scheduledAt && update.status !== "UPLOADING" && (
+                        <button
+                          type="button"
+                          title="Publicar este vídeo ahora, sin esperar a la hora programada"
+                          onClick={async () => {
+                            if (!confirm(`¿Publicar "${update.title || "este vídeo"}" ahora en YouTube, sin esperar a la hora programada?`)) return;
+                            setExecutingScheduler(true);
+                            try {
+                              const res = await fetch(`/api/scheduler?videoId=${update.id}`, { cache: "no-store" });
+                              if (res.ok) {
+                                await fetchScheduledUpdates();
+                                await fetchTasks();
+                              } else {
+                                const data = await res.json();
+                                alert(`Error: ${data.error || "error desconocido"}`);
+                              }
+                            } catch (err) {
+                              alert("Error de red al intentar publicar.");
+                            } finally {
+                              setExecutingScheduler(false);
+                            }
+                          }}
+                          disabled={executingScheduler}
+                          style={{
+                            background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                            border: "none",
+                            color: "#fff",
+                            borderRadius: "6px",
+                            padding: "2px 9px",
+                            fontSize: "0.68rem",
+                            fontWeight: "700",
+                            cursor: executingScheduler ? "not-allowed" : "pointer",
+                            opacity: executingScheduler ? 0.6 : 1,
+                            whiteSpace: "nowrap"
+                          }}
+                        >
+                          ▶ Publicar ahora
+                        </button>
+                      )}
                       <button
                         type="button"
                         title="Cancelar"
