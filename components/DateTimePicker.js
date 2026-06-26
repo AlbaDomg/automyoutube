@@ -34,6 +34,7 @@ export default function DateTimePicker({
   value,
   onChange,
   required = false,
+  disabled = false,
   className = "",
   style = {},
   placeholder = "Seleccionar fecha y hora..."
@@ -201,7 +202,7 @@ export default function DateTimePicker({
 
   return (
     <div className={`${styles.container} ${className}`} style={style}>
-      <div className={styles.inputFieldWrapper} onClick={() => setShowPicker(!showPicker)}>
+      <div className={styles.inputFieldWrapper} onClick={() => { if (!disabled) setShowPicker(!showPicker); }} style={disabled ? { opacity: 0.5, cursor: "not-allowed", pointerEvents: "none" } : {}}>
         <input
           type="text"
           readOnly

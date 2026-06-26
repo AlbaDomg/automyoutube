@@ -1712,14 +1712,15 @@ export default function Dashboard() {
     };
 
     setSelectedYoutubeVideo(combinedVideo);
-    setSuggestedScheduledAt(null);
+    // Pasar la fecha sugerida por el subidor (si existe) para mostrar el banner en el editor
+    setSuggestedScheduledAt(item.scheduledAt || null);
 
     setUpdateForm({
       title: item.title,
       description: item.description,
       tags: item.tags || '',
-      isScheduled: item.isScheduled || false,
-      scheduledAt: item.scheduledAt ? toLocalDateTimeString(item.scheduledAt) : '',
+      isScheduled: false,
+      scheduledAt: '',
       playlistId: item.playlistId || ''
     });
 
@@ -2795,7 +2796,7 @@ export default function Dashboard() {
           title: item.title,
           description: item.description,
           thumbnail: item.isAutoThumbnailEnabled ? item.generatedThumbnailBase64 : null,
-          scheduledAt: item.isScheduled ? toUTCISOString(item.scheduledAt) : null,
+          scheduledAt: item.scheduledAt ? toUTCISOString(item.scheduledAt) : null,
           playlistId: item.playlistId || null,
         }),
       });
@@ -2888,7 +2889,7 @@ export default function Dashboard() {
             title: item.title,
             description: item.description,
             thumbnail: item.isAutoThumbnailEnabled ? item.generatedThumbnailBase64 : null,
-            scheduledAt: item.isScheduled ? toUTCISOString(item.scheduledAt) : null,
+            scheduledAt: item.scheduledAt ? toUTCISOString(item.scheduledAt) : null,
             playlistId: item.playlistId || null,
           }),
         });
@@ -4584,7 +4585,7 @@ export default function Dashboard() {
                             <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
                               {item.isSynced ? (
                                 <span style={{ fontSize: "0.68rem", fontWeight: "700", color: "#10b981", background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.25)", padding: "2px 8px", borderRadius: "6px" }}>
-                                  ✓ Sincronizado {item.isScheduled ? "⏰" : ""}
+                                  ✓ Sincronizado {item.scheduledAt ? "⏰" : ""}
                                 </span>
                               ) : item.syncError ? (
                                 <span style={{ fontSize: "0.68rem", fontWeight: "700", color: "#ef4444", background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.25)", padding: "2px 8px", borderRadius: "6px" }} title={item.syncError}>
@@ -4694,24 +4695,18 @@ export default function Dashboard() {
                             >
                               ✏️ Editar / Optimizar
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => handleSyncSingleBatchItem(item)}
-                              disabled={!item.matchedVideoId || item.isSynced || item.isSyncing}
-                              className={styles.btnSubmit}
-                              style={{
-                                width: "auto",
+                            {item.isSynced && (
+                              <span style={{
                                 fontSize: "0.72rem",
-                                padding: "0.35rem 0.8rem",
-                                background: !item.matchedVideoId 
-                                  ? "#475569" 
-                                  : (item.isSynced ? "#1e293b" : "linear-gradient(135deg, #10b981 0%, #059669 100%)"),
-                                opacity: !item.matchedVideoId ? 0.5 : 1,
-                                cursor: !item.matchedVideoId || item.isSynced || item.isSyncing ? "not-allowed" : "pointer"
-                              }}
-                            >
-                              {item.isSyncing ? "Sincronizando..." : (item.isSynced ? "Sincronizado" : "🚀 Sincronizar ahora")}
-                            </button>
+                                fontWeight: "700",
+                                color: "#10b981",
+                                background: "rgba(16,185,129,0.12)",
+                                border: "1px solid rgba(16,185,129,0.25)",
+                                padding: "2px 10px",
+                                borderRadius: "6px",
+                                whiteSpace: "nowrap"
+                              }}>✓ Sincronizado</span>
+                            )}
                           </div>
                         </div>
                       );
@@ -4767,24 +4762,18 @@ export default function Dashboard() {
                             <span style={{ fontSize: "0.68rem", fontWeight: "700", color: "#f59e0b", background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", padding: "2px 9px", borderRadius: "6px", whiteSpace: "nowrap" }}>
                               Borrador
                             </span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (isUploading) return;
-                                handleSelectVideo(video);
-                              }}
-                              disabled={isUploading}
-                              className={styles.btnSubmit}
-                              style={{
-                                width: "auto",
+                            {isUploading && (
+                              <span style={{
                                 fontSize: "0.72rem",
-                                padding: "0.35rem 0.8rem",
-                                background: isUploading ? "#4b5563" : undefined,
-                                cursor: isUploading ? "not-allowed" : "pointer"
-                              }}
-                            >
-                              {isUploading ? "Subiendo..." : "Editar"}
-                            </button>
+                                fontWeight: "700",
+                                color: "#38bdf8",
+                                background: "rgba(56,189,248,0.12)",
+                                border: "1px solid rgba(56,189,248,0.25)",
+                                padding: "2px 9px",
+                                borderRadius: "6px",
+                                whiteSpace: "nowrap"
+                              }}>⚡ Subiendo...</span>
+                            )}
                             <button
                               type="button"
                               onClick={async () => {

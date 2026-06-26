@@ -427,7 +427,6 @@ export default function SubidorPage() {
       rawFrameBase64: null,
       hasMatched: false,
       index: null,
-      isScheduled: false,
       scheduledAt: ""
     }));
 
@@ -530,7 +529,7 @@ export default function SubidorPage() {
         fileSize: file.size,
         fileType: file.type || "video/mp4",
         rawFrameBase64: item.rawFrameBase64,
-        scheduledAt: item.isScheduled && item.scheduledAt ? toUTCISOString(item.scheduledAt) : null
+        scheduledAt: item.scheduledAt ? toUTCISOString(item.scheduledAt) : null
       })
     });
 
@@ -1427,29 +1426,23 @@ export default function SubidorPage() {
                               />
                             </div>
 
-                            {/* Programación sugerida de publicación */}
-                            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.5rem" }}>
-                              <input
-                                type="checkbox"
-                                id={`sched-${item.id}`}
-                                checked={item.isScheduled || false}
-                                disabled={isBatchUploading}
-                                onChange={(e) => handleUpdateBatchField(item.id, 'isScheduled', e.target.checked)}
-                              />
-                              <label htmlFor={`sched-${item.id}`} style={{ cursor: "pointer", fontSize: "0.75rem", fontWeight: "600", color: "var(--text-secondary)" }}>
-                                Sugerir fecha/hora de publicación:
+                            {/* Hora sugerida de publicación para el Editor */}
+                            <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", marginTop: "0.5rem" }}>
+                              <label style={{ fontSize: "0.75rem", fontWeight: "600", color: "#c084fc", display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                                📅 Hora sugerida de publicación <span style={{ fontWeight: "400", color: "var(--text-muted)", fontSize: "0.7rem" }}>(informa al Editor — opcional)</span>
                               </label>
+                              <DateTimePicker
+                                required={false}
+                                value={item.scheduledAt || ""}
+                                onChange={(e) => handleUpdateBatchField(item.id, 'scheduledAt', e.target.value)}
+                                disabled={isBatchUploading}
+                              />
+                              {item.scheduledAt && (
+                                <span style={{ fontSize: "0.68rem", color: "#a78bfa", fontStyle: "italic" }}>
+                                  ℹ️ El Editor verá esta hora como referencia para programar la publicación.
+                                </span>
+                              )}
                             </div>
-
-                            {item.isScheduled && (
-                              <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", marginTop: "0.25rem" }}>
-                                <DateTimePicker
-                                  required={item.isScheduled}
-                                  value={item.scheduledAt || ""}
-                                  onChange={(e) => handleUpdateBatchField(item.id, 'scheduledAt', e.target.value)}
-                                />
-                              </div>
-                            )}
 
                             {/* Badge de emparejamiento */}
                             {item.hasMatched && (
