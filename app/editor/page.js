@@ -382,11 +382,17 @@ export default function Dashboard() {
     }
   };
 
-  const handleSliderChange = (e) => {
+  const handleSliderChange = async (e) => {
     const newTime = parseFloat(e.target.value);
     setFrameTime(newTime);
-    if (hiddenVideoRef.current) {
-      hiddenVideoRef.current.currentTime = newTime;
+    const src = hiddenVideoRef.current?.src || videoObjectURL;
+    if (!src) return;
+    try {
+      const frame = await extractVideoFrame(src, newTime);
+      setLocalExtractedFrame(frame);
+      setCustomBgBase64(frame);
+    } catch (err) {
+      console.error('Error al extraer fotograma del scrubber:', err);
     }
   };
 
@@ -446,8 +452,9 @@ export default function Dashboard() {
     });
   };
 
-  // Extrae un fotograma del vídeo local de forma asíncrona mediante un canvas
-  const extractVideoFrame = (videoSrc) => {
+  // Extrae un fotograma del vídeo de forma asíncrona mediante un canvas
+  // seekTime: segundo concreto a capturar (opcional; por defecto usa 15s o mitad del vídeo)
+  const extractVideoFrame = (videoSrc, seekTime = null) => {
     return new Promise((resolve, reject) => {
       const video = document.createElement("video");
       video.crossOrigin = "anonymous";
@@ -476,8 +483,8 @@ export default function Dashboard() {
       };
 
       video.addEventListener("loadedmetadata", () => {
-        const seekTime = video.duration > 30 ? 15 : video.duration / 2;
-        video.currentTime = seekTime;
+        const targetTime = seekTime !== null ? Math.min(seekTime, video.duration - 0.1) : (video.duration > 30 ? 15 : video.duration / 2);
+        video.currentTime = Math.max(0, targetTime);
       });
 
       video.addEventListener("seeked", () => {
@@ -5095,7 +5102,7 @@ export default function Dashboard() {
                                 fontWeight: "bold",
                                 color: (getWordCount(thumbnailText) >= 3 && getWordCount(thumbnailText) <= 5) ? "#22c55e" : "#f59e0b"
                               }}>
-                                {getWordCount(thumbnailText)} (3-5) palabras
+                                (3-5 palabras)
                               </span>
                               )
                             </span>
