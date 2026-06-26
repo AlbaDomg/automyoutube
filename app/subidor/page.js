@@ -1678,46 +1678,6 @@ export default function SubidorPage() {
                       }}>
                         {update.status === "UPLOADING" ? `Subiendo… ${update.uploadProgress || 0}%` : "Programado"}
                       </span>
-                      {/* Botón individual solo si tiene fecha programada */}
-                      {update.scheduledAt && update.status !== "UPLOADING" && (
-                        <button
-                          type="button"
-                          title="Publicar este vídeo ahora, sin esperar a la hora programada"
-                          onClick={async () => {
-                            if (!confirm(`¿Publicar "${update.title || "este vídeo"}" ahora en YouTube, sin esperar a la hora programada?`)) return;
-                            setExecutingScheduler(true);
-                            try {
-                              const res = await fetch(`/api/scheduler?videoId=${update.id}`, { cache: "no-store" });
-                              if (res.ok) {
-                                await fetchScheduledUpdates();
-                                await fetchTasks();
-                              } else {
-                                const data = await res.json();
-                                alert(`Error: ${data.error || "error desconocido"}`);
-                              }
-                            } catch (err) {
-                              alert("Error de red al intentar publicar.");
-                            } finally {
-                              setExecutingScheduler(false);
-                            }
-                          }}
-                          disabled={executingScheduler}
-                          style={{
-                            background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-                            border: "none",
-                            color: "#fff",
-                            borderRadius: "6px",
-                            padding: "2px 9px",
-                            fontSize: "0.68rem",
-                            fontWeight: "700",
-                            cursor: executingScheduler ? "not-allowed" : "pointer",
-                            opacity: executingScheduler ? 0.6 : 1,
-                            whiteSpace: "nowrap"
-                          }}
-                        >
-                          ▶ Publicar ahora
-                        </button>
-                      )}
                       <button
                         type="button"
                         title="Cancelar"
