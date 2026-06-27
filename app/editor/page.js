@@ -1977,7 +1977,8 @@ export default function Dashboard() {
     if (combinedVideo.rawFrameBase64) {
       setCustomBgBase64(combinedVideo.rawFrameBase64);
     } else {
-      const directUrl = `https://img.youtube.com/vi/${video.id}/maxresdefault.jpg`;
+      // Priorizar la miniatura real que viene de YouTube (video.thumbnail), o caer en hqdefault.jpg
+      const directUrl = video.thumbnail || `https://img.youtube.com/vi/${video.id}/hqdefault.jpg`;
       const proxiedUrl = `/api/youtube/thumbnail-proxy?url=${encodeURIComponent(directUrl)}`;
       setCustomBgBase64(proxiedUrl);
     }
@@ -2117,7 +2118,7 @@ export default function Dashboard() {
         });
     } else if (video.youtubeId) {
       // Fallback: usar la miniatura por defecto que genera YouTube para este vídeo a través del proxy de CORS
-      const directUrl = `https://img.youtube.com/vi/${video.youtubeId}/maxresdefault.jpg`;
+      const directUrl = video.thumbnail || `https://img.youtube.com/vi/${video.youtubeId}/hqdefault.jpg`;
       const proxiedUrl = `/api/youtube/thumbnail-proxy?url=${encodeURIComponent(directUrl)}`;
       setCustomBgBase64(proxiedUrl);
     }

@@ -9,7 +9,13 @@ export async function GET(request) {
   }
 
   try {
-    const res = await fetch(url);
+    let res = await fetch(url);
+    if (!res.ok && url.includes("maxresdefault.jpg")) {
+      const fallbackUrl = url.replace("maxresdefault.jpg", "hqdefault.jpg");
+      console.log(`[Thumbnail Proxy] maxresdefault returned ${res.status}. Falling back to: ${fallbackUrl}`);
+      res = await fetch(fallbackUrl);
+    }
+
     if (!res.ok) {
       return NextResponse.json({ error: "Failed to fetch image from YouTube" }, { status: res.status });
     }
