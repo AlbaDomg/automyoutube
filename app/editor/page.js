@@ -5482,12 +5482,38 @@ export default function Dashboard() {
                           borderRadius: "8px"
                         }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.72rem", color: "var(--text-muted)" }}>
-                            <span style={{ display: "flex", alignItems: "center", gap: "0.3rem", fontWeight: "600" }}>
+                            <span style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontWeight: "600" }}>
                               🎞️ Fotograma de la miniatura
                               {!hasLocalVideo && (
-                                <span style={{ fontSize: "0.65rem", color: "#94a3b8", fontWeight: "400" }}>
-                                  (solo disponible con archivo local)
-                                </span>
+                                <label style={{
+                                  fontSize: "0.65rem",
+                                  color: "#a855f7",
+                                  fontWeight: "600",
+                                  cursor: "pointer",
+                                  background: "rgba(168,85,247,0.12)",
+                                  border: "1px solid rgba(168,85,247,0.3)",
+                                  borderRadius: "4px",
+                                  padding: "1px 7px",
+                                  whiteSpace: "nowrap"
+                                }}>
+                                  📂 Cargar vídeo
+                                  <input
+                                    type="file"
+                                    accept="video/*"
+                                    style={{ display: "none" }}
+                                    onChange={(e) => {
+                                      const file = e.target.files[0];
+                                      if (!file) return;
+                                      if (videoObjectURL) URL.revokeObjectURL(videoObjectURL);
+                                      const objURL = URL.createObjectURL(file);
+                                      setVideoObjectURL(objURL);
+                                      if (hiddenVideoRef.current) {
+                                        hiddenVideoRef.current.src = objURL;
+                                        hiddenVideoRef.current.load();
+                                      }
+                                    }}
+                                  />
+                                </label>
                               )}
                             </span>
                             <span style={{ fontWeight: "700", color: hasLocalVideo ? "#a855f7" : "#64748b", fontVariantNumeric: "tabular-nums" }}>
