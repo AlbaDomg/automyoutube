@@ -138,6 +138,7 @@ function findBestLogoForPlaylist(playlistId, playlistTitle, logosCatalog) {
 
 
 // Helper para actualizar el sufijo de programa del título y opcionalmente anteponer el emoji
+// Helper para actualizar el sufijo de programa del título y opcionalmente anteponer el emoji
 function updateTitleSuffix(title, programName, emoji = "") {
   let cleanTitle = (title || "").trim();
   
@@ -145,17 +146,21 @@ function updateTitleSuffix(title, programName, emoji = "") {
   const emojiPrefixRegex = /^([\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])\s*/u;
   cleanTitle = cleanTitle.replace(emojiPrefixRegex, "").trim();
 
-  // 2. Quitar el sufijo de programa si existe
+  // 2. Quitar emoji del final del título si existe
+  const endingEmojiRegex = /\s*([\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])\s*$/u;
+  cleanTitle = cleanTitle.replace(endingEmojiRegex, "").trim();
+
+  // 3. Quitar el sufijo de programa si existe
   const suffixRegex = /\s*\|.*$/;
   cleanTitle = cleanTitle.replace(suffixRegex, "").trim();
 
-  // 3. Re-construir con el programa al final
+  // 4. Re-construir con el programa al final
   if (programName && programName !== "none") {
     const cleanProg = programName.replace(/\.[^/.]+$/, "").replace(/_/g, " ").toUpperCase().trim();
     cleanTitle = `${cleanTitle} | ${cleanProg}`;
   }
   
-  // 4. Anteponer el emoji al principio
+  // 5. Anteponer el emoji al principio
   if (emoji) {
     cleanTitle = `${emoji.trim()} ${cleanTitle}`;
   }
@@ -1767,8 +1772,19 @@ export default function Dashboard() {
     // Pasar la fecha sugerida por el subidor (si existe) para mostrar el banner en el editor
     setSuggestedScheduledAt(item.scheduledAt || null);
 
+    // Detectar si el título ya tiene un emoji guardado al principio
+    let extractedEmoji = "";
+    const emojiMatch = item.title.match(/^([\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])/u);
+    if (emojiMatch) {
+      extractedEmoji = emojiMatch[1];
+    }
+    const logoName = item.selectedProgramLogo || 'none';
+
+    // Generar el título inicial con el emoji del principio (y limpiar cualquier emoji al final)
+    const updatedTitle = updateTitleSuffix(item.title, logoName, extractedEmoji);
+
     setUpdateForm({
-      title: item.title,
+      title: updatedTitle,
       description: item.description,
       tags: item.tags || '',
       isScheduled: false,
@@ -1778,11 +1794,10 @@ export default function Dashboard() {
 
     setThumbnailText(item.thumbnailText || '');
     setIsAutoThumbnailEnabled(item.isAutoThumbnailEnabled !== undefined ? item.isAutoThumbnailEnabled : true);
-    const logoName = item.selectedProgramLogo || 'none';
     setSelectedProgramLogo(logoName);
 
-    setCurrentEmoji("");
-    if (logoName && logoName !== "none") {
+    setCurrentEmoji(extractedEmoji);
+    if (logoName && logoName !== "none" && !extractedEmoji) {
       fetchEmojiForTitle(item.title, item.description || "").then(emoji => {
         if (emoji) {
           setCurrentEmoji(emoji);
@@ -1902,10 +1917,6 @@ export default function Dashboard() {
     const detectedPlaylistId = initialPlaylistId || detected.playlistId;
     const detectedLogo = detected.logoName;
 
-    // Generar el título y descripción iniciales
-    const updatedTitle = dbVideo?.title ? dbVideo.title : updateTitleSuffix(initialTitle, detectedLogo);
-    const updatedDesc = dbVideo?.description ? dbVideo.description : updateDescriptionUrl(initialDesc, detectedLogo);
-
     // Detectar si el título ya tiene un emoji guardado al principio
     let extractedEmoji = "";
     const titleToCheck = dbVideo?.title || video.title || "";
@@ -1913,6 +1924,10 @@ export default function Dashboard() {
     if (emojiMatch) {
       extractedEmoji = emojiMatch[1];
     }
+
+    // Generar el título y descripción iniciales
+    const updatedTitle = updateTitleSuffix(initialTitle, detectedLogo, extractedEmoji);
+    const updatedDesc = dbVideo?.description ? dbVideo.description : updateDescriptionUrl(initialDesc, detectedLogo);
 
     setUpdateForm({
       title: updatedTitle,
@@ -2015,19 +2030,18 @@ export default function Dashboard() {
     const detectedPlaylistId = detected.playlistId || "";
     const detectedLogo = detected.logoName;
 
-    const rawTitle = video.title || "";
-    const updatedTitle = updateTitleSuffix(rawTitle, detectedLogo);
-
-    const rawDesc = video.description || "";
-    const updatedDesc = updateDescriptionUrl(rawDesc, detectedLogo);
-
     // Detectar si el título ya tiene un emoji guardado al principio
     let extractedEmoji = "";
-    const titleToCheck = video.title || "";
-    const emojiMatch = titleToCheck.match(/^([\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])/u);
+    const rawTitle = video.title || "";
+    const emojiMatch = rawTitle.match(/^([\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])/u);
     if (emojiMatch) {
       extractedEmoji = emojiMatch[1];
     }
+
+    const updatedTitle = updateTitleSuffix(rawTitle, detectedLogo, extractedEmoji);
+
+    const rawDesc = video.description || "";
+    const updatedDesc = updateDescriptionUrl(rawDesc, detectedLogo);
 
     setUpdateForm({
       title: updatedTitle,
