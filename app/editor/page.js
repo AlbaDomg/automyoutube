@@ -137,17 +137,29 @@ function findBestLogoForPlaylist(playlistId, playlistTitle, logosCatalog) {
 }
 
 
-// Helper para actualizar el sufijo de programa del título y opcionalmente el emoji
+// Helper para actualizar el sufijo de programa del título y opcionalmente anteponer el emoji
 function updateTitleSuffix(title, programName, emoji = "") {
   let cleanTitle = (title || "").trim();
+  
+  // 1. Quitar emoji del principio del título si existe
+  const emojiPrefixRegex = /^([\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])\s*/u;
+  cleanTitle = cleanTitle.replace(emojiPrefixRegex, "").trim();
+
+  // 2. Quitar el sufijo de programa si existe
   const suffixRegex = /\s*\|.*$/;
   cleanTitle = cleanTitle.replace(suffixRegex, "").trim();
 
+  // 3. Re-construir con el programa al final
   if (programName && programName !== "none") {
     const cleanProg = programName.replace(/\.[^/.]+$/, "").replace(/_/g, " ").toUpperCase().trim();
-    const emojiStr = emoji ? ` ${emoji.trim()}` : "";
-    cleanTitle = `${cleanTitle} | ${cleanProg}${emojiStr}`;
+    cleanTitle = `${cleanTitle} | ${cleanProg}`;
   }
+  
+  // 4. Anteponer el emoji al principio
+  if (emoji) {
+    cleanTitle = `${emoji.trim()} ${cleanTitle}`;
+  }
+  
   return cleanTitle;
 }
 
@@ -1894,20 +1906,12 @@ export default function Dashboard() {
     const updatedTitle = dbVideo?.title ? dbVideo.title : updateTitleSuffix(initialTitle, detectedLogo);
     const updatedDesc = dbVideo?.description ? dbVideo.description : updateDescriptionUrl(initialDesc, detectedLogo);
 
-    // Detectar si el título ya tiene un emoji guardado al final
+    // Detectar si el título ya tiene un emoji guardado al principio
     let extractedEmoji = "";
-    if (dbVideo?.title) {
-      const parts = dbVideo.title.split("|");
-      if (parts.length > 1) {
-        const suffix = parts[parts.length - 1].trim();
-        const words = suffix.split(/\s+/);
-        if (words.length > 1) {
-          const lastWord = words[words.length - 1];
-          if (/[\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/u.test(lastWord)) {
-            extractedEmoji = lastWord;
-          }
-        }
-      }
+    const titleToCheck = dbVideo?.title || video.title || "";
+    const emojiMatch = titleToCheck.match(/^([\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])/u);
+    if (emojiMatch) {
+      extractedEmoji = emojiMatch[1];
     }
 
     setUpdateForm({
@@ -2017,20 +2021,12 @@ export default function Dashboard() {
     const rawDesc = video.description || "";
     const updatedDesc = updateDescriptionUrl(rawDesc, detectedLogo);
 
-    // Detectar si el título ya tiene un emoji guardado al final
+    // Detectar si el título ya tiene un emoji guardado al principio
     let extractedEmoji = "";
-    if (video.title) {
-      const parts = video.title.split("|");
-      if (parts.length > 1) {
-        const suffix = parts[parts.length - 1].trim();
-        const words = suffix.split(/\s+/);
-        if (words.length > 1) {
-          const lastWord = words[words.length - 1];
-          if (/[\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/u.test(lastWord)) {
-            extractedEmoji = lastWord;
-          }
-        }
-      }
+    const titleToCheck = video.title || "";
+    const emojiMatch = titleToCheck.match(/^([\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])/u);
+    if (emojiMatch) {
+      extractedEmoji = emojiMatch[1];
     }
 
     setUpdateForm({
@@ -2480,22 +2476,13 @@ export default function Dashboard() {
         const updatedTitle = updateTitleSuffix(task.title || video.title || "", detectedLogo);
         const updatedDesc = updateDescriptionUrl(task.description || video.description || "", detectedLogo);
 
-        // Detectar si el título ya tiene un emoji guardado al final
+        // Detectar si el título ya tiene un emoji guardado al principio
         let extractedEmoji = "";
         const taskTitle = task.title || video.title || "";
         const taskDesc = task.description || video.description || "";
-        if (taskTitle) {
-          const parts = taskTitle.split("|");
-          if (parts.length > 1) {
-            const suffix = parts[parts.length - 1].trim();
-            const words = suffix.split(/\s+/);
-            if (words.length > 1) {
-              const lastWord = words[words.length - 1];
-              if (/[\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/u.test(lastWord)) {
-                extractedEmoji = lastWord;
-              }
-            }
-          }
+        const emojiMatch = taskTitle.match(/^([\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])/u);
+        if (emojiMatch) {
+          extractedEmoji = emojiMatch[1];
         }
 
         setUpdateForm({
