@@ -1792,13 +1792,21 @@ export default function Dashboard() {
   const handleSelectVideo = async (video) => {
     setYoutubeId(video.id);
 
-    // Buscar si hay un registro correspondiente en nuestra base de datos local
+    // Buscar si hay un registro correspondiente en nuestra base de datos local.
+    // Puede haber múltiples registros para el mismo youtubeId (el original con filePath local
+    // y uno secundario con filePath='YOUTUBE_UPDATE' para el scheduler). Priorizamos el que
+    // tiene un filePath local real para que el slider de fotograma funcione.
     let dbVideo = null;
     try {
       const res = await fetch("/api/videos", { cache: "no-store" });
       if (res.ok) {
         const dbVideos = await res.json();
-        dbVideo = dbVideos.find(v => v.youtubeId === video.id);
+        const matches = dbVideos.filter(v => v.youtubeId === video.id);
+        // Primero intentar coger el que tiene un filePath real (no YOUTUBE_UPDATE, no null)
+        dbVideo = matches.find(v =>
+          v.filePath &&
+          !['YOUTUBE_UPDATE', 'YOUTUBE_UPLOAD', 'PDF_PARSED'].includes(v.filePath)
+        ) || matches[0] || null;
       }
     } catch (err) {
       console.warn("No se pudo buscar el video en la base de datos local:", err.message);
