@@ -5460,42 +5460,53 @@ export default function Dashboard() {
                       </div>
                     )}
 
-                    {/* Control deslizante (scrubber) de fotograma — visible siempre que haya vídeo local */}
-                    {videoDuration > 0 && (
-                      <div style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "0.3rem",
-                        marginTop: "0.75rem",
-                        padding: "0.65rem 0.75rem",
-                        background: "rgba(168, 85, 247, 0.06)",
-                        border: "1px solid rgba(168, 85, 247, 0.2)",
-                        borderRadius: "8px"
-                      }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.72rem", color: "var(--text-muted)" }}>
-                          <span style={{ display: "flex", alignItems: "center", gap: "0.3rem", fontWeight: "600" }}>
-                            🎞️ Fotograma de la miniatura
-                          </span>
-                          <span style={{ fontWeight: "700", color: "#a855f7", fontVariantNumeric: "tabular-nums" }}>
-                            {Math.floor(frameTime / 60).toString().padStart(2, "0")}:{Math.floor(frameTime % 60).toString().padStart(2, "0")} / {Math.floor(videoDuration / 60).toString().padStart(2, "0")}:{Math.floor(videoDuration % 60).toString().padStart(2, "0")}
-                          </span>
+                    {/* Control deslizante (scrubber) de fotograma — siempre visible */}
+                    {selectedYoutubeVideo && (() => {
+                      const sliderMax = videoDuration > 0 ? videoDuration : 3600;
+                      const hasLocalVideo = videoDuration > 0;
+                      return (
+                        <div style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "0.3rem",
+                          marginTop: "0.75rem",
+                          padding: "0.65rem 0.75rem",
+                          background: hasLocalVideo ? "rgba(168, 85, 247, 0.06)" : "rgba(100, 116, 139, 0.06)",
+                          border: `1px solid ${hasLocalVideo ? "rgba(168, 85, 247, 0.2)" : "rgba(100, 116, 139, 0.2)"}`,
+                          borderRadius: "8px"
+                        }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.72rem", color: "var(--text-muted)" }}>
+                            <span style={{ display: "flex", alignItems: "center", gap: "0.3rem", fontWeight: "600" }}>
+                              🎞️ Fotograma de la miniatura
+                              {!hasLocalVideo && (
+                                <span style={{ fontSize: "0.65rem", color: "#94a3b8", fontWeight: "400" }}>
+                                  (solo disponible con archivo local)
+                                </span>
+                              )}
+                            </span>
+                            <span style={{ fontWeight: "700", color: hasLocalVideo ? "#a855f7" : "#64748b", fontVariantNumeric: "tabular-nums" }}>
+                              {Math.floor(frameTime / 60).toString().padStart(2, "0")}:{Math.floor(frameTime % 60).toString().padStart(2, "0")} / {Math.floor(sliderMax / 60).toString().padStart(2, "0")}:{Math.floor(sliderMax % 60).toString().padStart(2, "0")}
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={sliderMax}
+                            step={0.25}
+                            value={frameTime}
+                            onChange={handleSliderChange}
+                            disabled={!hasLocalVideo}
+                            style={{
+                              width: "100%",
+                              accentColor: hasLocalVideo ? "#a855f7" : "#475569",
+                              cursor: hasLocalVideo ? "pointer" : "not-allowed",
+                              height: "4px",
+                              opacity: hasLocalVideo ? 1 : 0.45
+                            }}
+                          />
                         </div>
-                        <input
-                          type="range"
-                          min={0}
-                          max={videoDuration}
-                          step={0.25}
-                          value={frameTime}
-                          onChange={handleSliderChange}
-                          style={{
-                            width: "100%",
-                            accentColor: "#a855f7",
-                            cursor: "pointer",
-                            height: "4px"
-                          }}
-                        />
-                      </div>
-                    )}
+                      );
+                    })()}
 
                     <canvas ref={canvasRef} style={{ display: "none" }} />
                   </div>
