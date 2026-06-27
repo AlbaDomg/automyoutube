@@ -86,7 +86,7 @@ export default function DateTimePicker({
     if (!popoverRef.current || !wrapperRef.current) return;
 
     const wrapRect = wrapperRef.current.getBoundingClientRect();
-    const popH = popoverRef.current.offsetHeight || 430;
+    const popH = popoverRef.current.offsetHeight || 450;
     const popW = popoverRef.current.offsetWidth || 620;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
@@ -95,32 +95,36 @@ export default function DateTimePicker({
     let left = wrapRect.left;
     if (left + popW > vw - 8) left = Math.max(8, vw - popW - 8);
 
-    // Vertical: preferir abrir hacia abajo
+    // Vertical: preferir abrir hacia abajo, pero siempre dentro del viewport
     const spaceBelow = vh - wrapRect.bottom;
-    let top, bottom;
+    const spaceAbove = wrapRect.top;
+    let top;
+
     if (spaceBelow >= popH + 8) {
-      // Hay espacio abajo -> abrir hacia abajo
+      // Hay espacio abajo → abrir hacia abajo
       top = wrapRect.bottom + 6;
-      bottom = 'auto';
+    } else if (spaceAbove >= popH + 8) {
+      // Hay espacio arriba → abrir hacia arriba
+      top = wrapRect.top - popH - 6;
     } else {
-      // Abrir hacia arriba, pegado al borde superior del input
-      top = 'auto';
-      bottom = vh - wrapRect.top + 6;
-      // Asegurarse de que no se sale por arriba
-      const topPos = wrapRect.top - 6 - popH;
-      if (topPos < 8) {
-        // No cabe arriba tampoco: forzar abajo con scroll implícito
-        top = wrapRect.bottom + 6;
-        bottom = 'auto';
-      }
+      // No cabe ni arriba ni abajo → posicionar lo más visible posible
+      // Preferir abajo pero clampear para que no se salga del viewport
+      top = wrapRect.bottom + 6;
+      const maxTop = vh - popH - 8;
+      if (top > maxTop) top = Math.max(8, maxTop);
     }
+
+    // Clampear final para asegurarse de que nunca sale por arriba ni por abajo
+    top = Math.max(8, Math.min(top, vh - popH - 8));
 
     const el = popoverRef.current;
     el.style.position = 'fixed';
     el.style.left = `${left}px`;
-    el.style.top = top !== 'auto' ? `${top}px` : 'auto';
-    el.style.bottom = bottom !== 'auto' ? `${bottom}px` : 'auto';
+    el.style.top = `${top}px`;
+    el.style.bottom = 'auto';
     el.style.zIndex = '99999';
+    el.style.maxHeight = `${vh - top - 8}px`;
+    el.style.overflowY = 'auto';
     el.style.visibility = 'visible';
     setPositioned(true);
   }, [showPicker]);

@@ -137,15 +137,16 @@ function findBestLogoForPlaylist(playlistId, playlistTitle, logosCatalog) {
 }
 
 
-// Helper para actualizar el sufijo de programa del título
-function updateTitleSuffix(title, programName) {
+// Helper para actualizar el sufijo de programa del título y opcionalmente el emoji
+function updateTitleSuffix(title, programName, emoji = "") {
   let cleanTitle = (title || "").trim();
-  const suffixRegex = /\s*\|\s*[a-zA-Z0-9_\sÀ-ÿ\-]+$/i;
+  const suffixRegex = /\s*\|.*$/;
   cleanTitle = cleanTitle.replace(suffixRegex, "").trim();
 
   if (programName && programName !== "none") {
     const cleanProg = programName.replace(/\.[^/.]+$/, "").replace(/_/g, " ").toUpperCase().trim();
-    cleanTitle = `${cleanTitle} | ${cleanProg}`;
+    const emojiStr = emoji ? ` ${emoji.trim()}` : "";
+    cleanTitle = `${cleanTitle} | ${cleanProg}${emojiStr}`;
   }
   return cleanTitle;
 }
@@ -341,6 +342,7 @@ export default function Dashboard() {
   const [videoDuration, setVideoDuration] = useState(0);
   const [frameTime, setFrameTime] = useState(15);
   const [videoObjectURL, setVideoObjectURL] = useState("");
+  const [currentEmoji, setCurrentEmoji] = useState("");
 
   // Limpiar URL del objeto de vídeo al desmontar
   useEffect(() => {
@@ -389,6 +391,23 @@ export default function Dashboard() {
     if (hiddenVideoRef.current && hiddenVideoRef.current.src) {
       hiddenVideoRef.current.currentTime = newTime;
     }
+  };
+
+  const fetchEmojiForTitle = async (title, description) => {
+    try {
+      const res = await fetch("/api/youtube/generate-emoji", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, description })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return data.emoji || "";
+      }
+    } catch (err) {
+      console.warn("Failed to generate emoji:", err);
+    }
+    return "";
   };
 
   // Helper para contar palabras limpias de la frase SEO
@@ -693,7 +712,7 @@ export default function Dashboard() {
     setUpdateForm(prev => ({
       ...prev,
       playlistId: playlistId,
-      title: updateTitleSuffix(prev.title, matchedLogo),
+      title: updateTitleSuffix(prev.title, matchedLogo, currentEmoji),
       description: updateDescriptionUrl(prev.description, matchedLogo)
     }));
   };
@@ -715,9 +734,14 @@ export default function Dashboard() {
     regenerateThumbnailForIndex(index, { selectedProgramLogo: matchedLogo });
   };
 
-  // Cambiar logo en el editor individual (solo cambia el logo, no toca título/descripción/playlist)
+  // Cambiar logo en el editor individual
   const handleLogoChange = (logoVal) => {
     setSelectedProgramLogo(logoVal);
+    setUpdateForm(prev => ({
+      ...prev,
+      title: updateTitleSuffix(prev.title, logoVal, currentEmoji),
+      description: updateDescriptionUrl(prev.description, logoVal)
+    }));
   };
 
   // Cambiar logo en el editor por lotes (solo cambia el logo y regenera miniatura, no toca título/descripción/playlist)
@@ -1742,7 +1766,21 @@ export default function Dashboard() {
 
     setThumbnailText(item.thumbnailText || '');
     setIsAutoThumbnailEnabled(item.isAutoThumbnailEnabled !== undefined ? item.isAutoThumbnailEnabled : true);
-    setSelectedProgramLogo(item.selectedProgramLogo || 'none');
+    const logoName = item.selectedProgramLogo || 'none';
+    setSelectedProgramLogo(logoName);
+
+    setCurrentEmoji("");
+    if (logoName && logoName !== "none") {
+      fetchEmojiForTitle(item.title, item.description || "").then(emoji => {
+        if (emoji) {
+          setCurrentEmoji(emoji);
+          setUpdateForm(prev => {
+            const newTitle = updateTitleSuffix(prev.title, logoName, emoji);
+            return { ...prev, title: newTitle };
+          });
+        }
+      });
+    }
     
     // Configurar imagen de fondo personalizada
     if (item.customBgBase64) {
@@ -1856,6 +1894,22 @@ export default function Dashboard() {
     const updatedTitle = dbVideo?.title ? dbVideo.title : updateTitleSuffix(initialTitle, detectedLogo);
     const updatedDesc = dbVideo?.description ? dbVideo.description : updateDescriptionUrl(initialDesc, detectedLogo);
 
+    // Detectar si el título ya tiene un emoji guardado al final
+    let extractedEmoji = "";
+    if (dbVideo?.title) {
+      const parts = dbVideo.title.split("|");
+      if (parts.length > 1) {
+        const suffix = parts[parts.length - 1].trim();
+        const words = suffix.split(/\s+/);
+        if (words.length > 1) {
+          const lastWord = words[words.length - 1];
+          if (/[\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/u.test(lastWord)) {
+            extractedEmoji = lastWord;
+          }
+        }
+      }
+    }
+
     setUpdateForm({
       title: updatedTitle,
       description: updatedDesc,
@@ -1868,6 +1922,19 @@ export default function Dashboard() {
     });
     setOptimizationSuggestions(null);
     handleResetThumbnailStates();
+
+    setCurrentEmoji(extractedEmoji);
+    if (detectedLogo && detectedLogo !== "none" && !extractedEmoji) {
+      fetchEmojiForTitle(initialTitle, initialDesc).then(emoji => {
+        if (emoji) {
+          setCurrentEmoji(emoji);
+          setUpdateForm(prev => {
+            const newTitle = updateTitleSuffix(prev.title, detectedLogo, emoji);
+            return { ...prev, title: newTitle };
+          });
+        }
+      });
+    }
 
     // Cargar el vídeo en el elemento oculto para permitir el ajuste manual del fotograma si existe el archivo
     const validFilePath = combinedVideo.filePath &&
@@ -1950,6 +2017,22 @@ export default function Dashboard() {
     const rawDesc = video.description || "";
     const updatedDesc = updateDescriptionUrl(rawDesc, detectedLogo);
 
+    // Detectar si el título ya tiene un emoji guardado al final
+    let extractedEmoji = "";
+    if (video.title) {
+      const parts = video.title.split("|");
+      if (parts.length > 1) {
+        const suffix = parts[parts.length - 1].trim();
+        const words = suffix.split(/\s+/);
+        if (words.length > 1) {
+          const lastWord = words[words.length - 1];
+          if (/[\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/u.test(lastWord)) {
+            extractedEmoji = lastWord;
+          }
+        }
+      }
+    }
+
     setUpdateForm({
       title: updatedTitle,
       description: updatedDesc,
@@ -1959,6 +2042,19 @@ export default function Dashboard() {
       playlistId: detectedPlaylistId
     });
     handleResetThumbnailStates();
+
+    setCurrentEmoji(extractedEmoji);
+    if (detectedLogo && detectedLogo !== "none" && !extractedEmoji) {
+      fetchEmojiForTitle(rawTitle, rawDesc).then(emoji => {
+        if (emoji) {
+          setCurrentEmoji(emoji);
+          setUpdateForm(prev => {
+            const newTitle = updateTitleSuffix(prev.title, detectedLogo, emoji);
+            return { ...prev, title: newTitle };
+          });
+        }
+      });
+    }
 
     // Actualizar el estado en BD a EDITING para informar a otros usuarios
     if (video.status === "LOCAL_DRAFT") {
@@ -2384,6 +2480,24 @@ export default function Dashboard() {
         const updatedTitle = updateTitleSuffix(task.title || video.title || "", detectedLogo);
         const updatedDesc = updateDescriptionUrl(task.description || video.description || "", detectedLogo);
 
+        // Detectar si el título ya tiene un emoji guardado al final
+        let extractedEmoji = "";
+        const taskTitle = task.title || video.title || "";
+        const taskDesc = task.description || video.description || "";
+        if (taskTitle) {
+          const parts = taskTitle.split("|");
+          if (parts.length > 1) {
+            const suffix = parts[parts.length - 1].trim();
+            const words = suffix.split(/\s+/);
+            if (words.length > 1) {
+              const lastWord = words[words.length - 1];
+              if (/[\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/u.test(lastWord)) {
+                extractedEmoji = lastWord;
+              }
+            }
+          }
+        }
+
         setUpdateForm({
           title: updatedTitle,
           description: updatedDesc,
@@ -2396,6 +2510,19 @@ export default function Dashboard() {
         });
         setOptimizationSuggestions(null);
         handleResetThumbnailStates();
+
+        setCurrentEmoji(extractedEmoji);
+        if (detectedLogo && detectedLogo !== "none" && !extractedEmoji) {
+          fetchEmojiForTitle(taskTitle, taskDesc).then(emoji => {
+            if (emoji) {
+              setCurrentEmoji(emoji);
+              setUpdateForm(prev => {
+                const newTitle = updateTitleSuffix(prev.title, detectedLogo, emoji);
+                return { ...prev, title: newTitle };
+              });
+            }
+          });
+        }
         
         if (detectedLogo !== "none") {
           setSelectedProgramLogo(detectedLogo);
