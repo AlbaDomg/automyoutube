@@ -3309,26 +3309,10 @@ export default function Dashboard() {
           throw new Error(errData.error || "Fallo al completar subida en base de datos");
         }
 
-        // 6. Eliminar el archivo temporal de Supabase Storage para liberar espacio
-        try {
-          setSimpleUploadStatus("Limpiando archivo temporal de la nube...");
-          const urlParts = selectedYoutubeVideo.filePath.split('/videos/');
-          if (urlParts.length > 1) {
-            const storagePath = urlParts[1];
-            const deleteRes = await fetch("/api/upload/supabase/delete", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ path: storagePath })
-            });
-            if (deleteRes.ok) {
-              console.log("[Editor Upload] Temporary video file deleted from Supabase.");
-            } else {
-              console.warn("[Editor Upload] Failed to delete temporary file from Supabase:", await deleteRes.text());
-            }
-          }
-        } catch (deleteErr) {
-          console.warn("[Editor Upload] Error calling Supabase deletion endpoint:", deleteErr);
-        }
+        // Nota: el archivo de Supabase NO se borra aquí.
+        // Se conserva para que el editor pueda usar el slider de fotograma.
+        // Se eliminará automáticamente cuando el editor publique el vídeo (handleSaveVideo).
+        console.log("[Editor Upload] Supabase file preserved for editor frame selection slider.");
 
         setSimpleUploadStatus("¡Vídeo publicado con éxito!");
         alert("¡El vídeo ha sido subido a YouTube y configurado correctamente!");
@@ -3424,6 +3408,28 @@ export default function Dashboard() {
           clearTimeout(t1);
           clearTimeout(t2);
           clearTimeout(t3);
+        }
+      }
+
+      // Eliminar el archivo de Supabase si el vídeo lo tenía (filePath = URL de Supabase).
+      // Se hace aquí, tras publicar, para que el editor haya podido usar el slider.
+      const supabaseFilePath = selectedYoutubeVideo?.filePath;
+      if (supabaseFilePath && supabaseFilePath.startsWith('https://') && supabaseFilePath.includes('/storage/v1/object/public/videos/')) {
+        try {
+          const urlParts = supabaseFilePath.split('/videos/');
+          if (urlParts.length > 1) {
+            const storagePath = urlParts[1];
+            fetch("/api/upload/supabase/delete", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ path: storagePath })
+            }).then(res => {
+              if (res.ok) console.log("[handleSaveVideo] Supabase file deleted after editor published.");
+              else console.warn("[handleSaveVideo] Could not delete Supabase file after publish.");
+            }).catch(err => console.warn("[handleSaveVideo] Supabase delete error:", err));
+          }
+        } catch (deleteErr) {
+          console.warn("[handleSaveVideo] Error deleting Supabase file:", deleteErr);
         }
       }
 
