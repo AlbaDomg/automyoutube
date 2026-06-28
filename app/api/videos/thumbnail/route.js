@@ -13,8 +13,34 @@ export async function GET(request) {
       return new Response('Missing id parameter', { status: 400 });
     }
 
-    // Si se solicita un fotograma específico (0, 1, 2, 3)
+    // Si se solicita un fotograma específico (0 a 5)
     if (frame !== null && frame !== undefined) {
+      // 1. Intentar leer los fotogramas del JSON en la base de datos (Supabase)
+      try {
+        const video = await prisma.video.findUnique({
+          where: { id }
+        });
+
+        if (video && video.rawFrameBase64 && video.rawFrameBase64.startsWith('["data:image')) {
+          const frames = JSON.parse(video.rawFrameBase64);
+          const frameIndex = parseInt(frame);
+          const base64Image = frames[frameIndex] || frames[0];
+          if (base64Image) {
+            const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, "");
+            const imageBuffer = Buffer.from(base64Data, 'base64');
+            return new Response(imageBuffer, {
+              headers: {
+                'Content-Type': 'image/jpeg',
+                'Cache-Control': 'public, max-age=3600',
+              },
+            });
+          }
+        }
+      } catch (dbError) {
+        console.warn('[Thumbnail API] Database frame check failed:', dbError.message);
+      }
+
+      // 2. Fallback al sistema de archivos local (para entorno local/desarrollo)
       const uploadsDir = path.join(process.cwd(), 'uploads');
       const framePath = path.join(uploadsDir, `${id}-frame-${frame}.jpg`);
 
@@ -27,7 +53,7 @@ export async function GET(request) {
           },
         });
       }
-      return new Response('Frame file not found on server disk', { status: 404 });
+      return new Response('Frame not found in disk or database', { status: 404 });
     }
 
     // 1. Intentar buscar primero en la base de datos PostgreSQL

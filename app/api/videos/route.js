@@ -161,17 +161,31 @@ export async function GET(request) {
     const uploadsDir = path.join(process.cwd(), 'uploads');
     const videosWithFrames = videos.map(video => {
       let hasFrames = false;
-      try {
-        hasFrames = fs.existsSync(path.join(uploadsDir, `${video.id}-frame-0.jpg`)) &&
-                    fs.existsSync(path.join(uploadsDir, `${video.id}-frame-1.jpg`)) &&
-                    fs.existsSync(path.join(uploadsDir, `${video.id}-frame-2.jpg`)) &&
-                    fs.existsSync(path.join(uploadsDir, `${video.id}-frame-3.jpg`)) &&
-                    fs.existsSync(path.join(uploadsDir, `${video.id}-frame-4.jpg`)) &&
-                    fs.existsSync(path.join(uploadsDir, `${video.id}-frame-5.jpg`));
-      } catch (fsErr) {
-        console.warn('[Videos API] Failed to check frame files on disk:', fsErr.message);
+      let rawFrameBase64 = video.rawFrameBase64;
+
+      if (video.rawFrameBase64 && video.rawFrameBase64.startsWith('["data:image')) {
+        hasFrames = true;
+        try {
+          const parsed = JSON.parse(video.rawFrameBase64);
+          rawFrameBase64 = parsed[0] || null; // Conservar solo el primer fotograma como predeterminado
+        } catch (e) {
+          rawFrameBase64 = null;
+        }
+      } else {
+        // Fallback local en disco
+        try {
+          hasFrames = fs.existsSync(path.join(uploadsDir, `${video.id}-frame-0.jpg`)) &&
+                      fs.existsSync(path.join(uploadsDir, `${video.id}-frame-1.jpg`)) &&
+                      fs.existsSync(path.join(uploadsDir, `${video.id}-frame-2.jpg`)) &&
+                      fs.existsSync(path.join(uploadsDir, `${video.id}-frame-3.jpg`)) &&
+                      fs.existsSync(path.join(uploadsDir, `${video.id}-frame-4.jpg`)) &&
+                      fs.existsSync(path.join(uploadsDir, `${video.id}-frame-5.jpg`));
+        } catch (fsErr) {
+          console.warn('[Videos API] Failed to check frame files on disk:', fsErr.message);
+        }
       }
-      return { ...video, hasExtractedFrames: hasFrames };
+
+      return { ...video, rawFrameBase64, hasExtractedFrames: hasFrames };
     });
 
     return NextResponse.json(videosWithFrames);

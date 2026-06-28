@@ -128,6 +128,7 @@ async function handleInitiateUpload(request) {
         title: title || undefined,
         description: description || undefined,
         playlistId: playlistId || undefined,
+        rawFrameBase64: extractedFrames && extractedFrames.length > 0 ? JSON.stringify(extractedFrames) : (rawFrameBase64 || undefined),
         scheduledAt: scheduledAt ? new Date(scheduledAt) : undefined
       }
     });
@@ -143,7 +144,7 @@ async function handleInitiateUpload(request) {
         description: description || '',
         status: 'UPLOADING',
         uploadProgress: 0,
-        rawFrameBase64: rawFrameBase64 || null,
+        rawFrameBase64: extractedFrames && extractedFrames.length > 0 ? JSON.stringify(extractedFrames) : (rawFrameBase64 || null),
         playlistId: playlistId || null,
         userEmail: email,
         channelId: channel.id,

@@ -43,7 +43,7 @@ export async function POST(request) {
         description: description || '',
         status: 'READY', // Listo para que el editor lo procese
         uploadProgress: 0,
-        rawFrameBase64: rawFrameBase64 || null,
+        rawFrameBase64: extractedFrames && extractedFrames.length > 0 ? JSON.stringify(extractedFrames) : (rawFrameBase64 || null),
         playlistId: playlistId || null,
         userEmail: email,
         channelId: channel?.id || null
