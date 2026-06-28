@@ -115,12 +115,14 @@ export default function SubidorPage() {
       const duration = hiddenVideoRef.current.duration;
       setVideoDuration(duration);
       
-      // Secuencia de 4 fotogramas para todos los flujos (simple y lote)
+      // Secuencia de 6 fotogramas para todos los flujos (simple y lote)
       const times = [
-        duration * 0.15,
-        duration * 0.35,
+        duration * 0.10,
+        duration * 0.25,
+        duration * 0.40,
         duration * 0.55,
-        duration * 0.75
+        duration * 0.70,
+        duration * 0.85
       ];
       targetTimes.current = times;
       accumulatedFrames.current = [];
@@ -145,7 +147,7 @@ export default function SubidorPage() {
           if (capturingFrameIndex.current !== -1) {
             accumulatedFrames.current.push(base64);
             const nextIndex = capturingFrameIndex.current + 1;
-            if (nextIndex < 4 && nextIndex < targetTimes.current.length) {
+            if (nextIndex < 6 && nextIndex < targetTimes.current.length) {
               capturingFrameIndex.current = nextIndex;
               hiddenVideoRef.current.currentTime = targetTimes.current[nextIndex];
             } else {

@@ -397,12 +397,14 @@ export default function Dashboard() {
       const duration = hiddenVideoRef.current.duration;
       setVideoDuration(duration);
       
-      // Calcular 4 timestamps
+      // Calcular 6 timestamps
       const times = [
-        duration * 0.15,
-        duration * 0.35,
+        duration * 0.10,
+        duration * 0.25,
+        duration * 0.40,
         duration * 0.55,
-        duration * 0.75
+        duration * 0.70,
+        duration * 0.85
       ];
       targetTimes.current = times;
       accumulatedFrames.current = [];
@@ -430,11 +432,11 @@ export default function Dashboard() {
             accumulatedFrames.current.push(base64);
             
             const nextIndex = capturingFrameIndex.current + 1;
-            if (nextIndex < 4 && nextIndex < targetTimes.current.length) {
+            if (nextIndex < 6 && nextIndex < targetTimes.current.length) {
               capturingFrameIndex.current = nextIndex;
               hiddenVideoRef.current.currentTime = targetTimes.current[nextIndex];
             } else {
-              // Finalizada la captura de los 4 fotogramas
+              // Finalizada la captura de los 6 fotogramas
               capturingFrameIndex.current = -1;
               setIsExtractingFrames(false);
               const frames = [...accumulatedFrames.current];
@@ -567,10 +569,12 @@ export default function Dashboard() {
     if (historyModalVideoRef.current) {
       const duration = historyModalVideoRef.current.duration;
       const times = [
-        duration * 0.15,
-        duration * 0.35,
+        duration * 0.10,
+        duration * 0.25,
+        duration * 0.40,
         duration * 0.55,
-        duration * 0.75
+        duration * 0.70,
+        duration * 0.85
       ];
       historyModalTargetTimes.current = times;
       historyModalAccumulated.current = [];
@@ -592,7 +596,7 @@ export default function Dashboard() {
           historyModalAccumulated.current.push(base64);
           
           const nextIndex = historyModalCapturingIndex.current + 1;
-          if (nextIndex < 4 && nextIndex < historyModalTargetTimes.current.length) {
+          if (nextIndex < 6 && nextIndex < historyModalTargetTimes.current.length) {
             historyModalCapturingIndex.current = nextIndex;
             historyModalVideoRef.current.currentTime = historyModalTargetTimes.current[nextIndex];
           } else {
@@ -2372,7 +2376,9 @@ export default function Dashboard() {
         `/api/videos/thumbnail?id=${video.id}&frame=0`,
         `/api/videos/thumbnail?id=${video.id}&frame=1`,
         `/api/videos/thumbnail?id=${video.id}&frame=2`,
-        `/api/videos/thumbnail?id=${video.id}&frame=3`
+        `/api/videos/thumbnail?id=${video.id}&frame=3`,
+        `/api/videos/thumbnail?id=${video.id}&frame=4`,
+        `/api/videos/thumbnail?id=${video.id}&frame=5`
       ];
       setCapturedFrames(serverFrames);
       setVideoDuration(1); // Hacer que hasLocalVideo sea true para el renderizado
@@ -5979,7 +5985,7 @@ export default function Dashboard() {
                               <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", fontWeight: "600" }}>
                                 🎞️ Selecciona un fotograma del vídeo:
                               </span>
-                              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "0.4rem" }}>
+                              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(85px, 1fr))", gap: "0.4rem" }}>
                                 {capturedFrames.map((frame, idx) => {
                                   const isSelected = customBgBase64 === frame || localExtractedFrame === frame;
                                   return (
@@ -7069,7 +7075,7 @@ export default function Dashboard() {
                 )}
                 
                 {!historyModalIsExtracting && (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "0.4rem" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(85px, 1fr))", gap: "0.4rem" }}>
                     {/* Opción 1: Miniatura actual de YouTube */}
                     {historyModalCustomBg && (
                       <div

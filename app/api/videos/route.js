@@ -163,7 +163,9 @@ export async function GET(request) {
       const hasFrames = fs.existsSync(path.join(uploadsDir, `${video.id}-frame-0.jpg`)) &&
                         fs.existsSync(path.join(uploadsDir, `${video.id}-frame-1.jpg`)) &&
                         fs.existsSync(path.join(uploadsDir, `${video.id}-frame-2.jpg`)) &&
-                        fs.existsSync(path.join(uploadsDir, `${video.id}-frame-3.jpg`));
+                        fs.existsSync(path.join(uploadsDir, `${video.id}-frame-3.jpg`)) &&
+                        fs.existsSync(path.join(uploadsDir, `${video.id}-frame-4.jpg`)) &&
+                        fs.existsSync(path.join(uploadsDir, `${video.id}-frame-5.jpg`));
       return { ...video, hasExtractedFrames: hasFrames };
     });
 
