@@ -163,7 +163,7 @@ export async function GET(request) {
       let hasFrames = false;
       let rawFrameBase64 = video.rawFrameBase64;
 
-      if (video.rawFrameBase64 && video.rawFrameBase64.startsWith('["data:image')) {
+      if (video.rawFrameBase64 && video.rawFrameBase64.startsWith('[')) {
         hasFrames = true;
         try {
           const parsed = JSON.parse(video.rawFrameBase64);

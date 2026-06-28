@@ -21,7 +21,7 @@ export async function GET(request) {
           where: { id }
         });
 
-        if (video && video.rawFrameBase64 && video.rawFrameBase64.startsWith('["data:image')) {
+        if (video && video.rawFrameBase64 && video.rawFrameBase64.startsWith('[')) {
           const frames = JSON.parse(video.rawFrameBase64);
           const frameIndex = parseInt(frame);
           const base64Image = frames[frameIndex] || frames[0];
