@@ -494,7 +494,17 @@ export default function Dashboard() {
 
   const handleOpenHistoryThumbnailModal = async (item) => {
     setHistoryModalItem(item);
-    setHistoryModalText(item.title ? item.title.split(" | ")[0] : "");
+    
+    // Buscar si existe una tarea de sincronización para este video y cargar la frase SEO original
+    const task = tasks.find(t => t.youtubeId === item.youtubeId);
+    let initialText = "";
+    if (task && task.thumbnailText) {
+      initialText = task.thumbnailText;
+    } else {
+      initialText = ensureThreeToFiveWords(item.title ? item.title.split(" | ")[0] : "", item.title || "");
+    }
+    
+    setHistoryModalText(initialText);
     setHistoryModalLogo("none");
     setHistoryModalCustomBg(null);
     setHistoryModalGeneratedBase64(null);
@@ -1630,7 +1640,6 @@ export default function Dashboard() {
         const line2 = words.slice(splitIndex).join(" ");
 
         ctx.save();
-        ctx.font = "bold 86px Impact, Arial Black, sans-serif";
         ctx.textAlign = "left";
         ctx.textBaseline = "alphabetic";
 
@@ -1640,12 +1649,30 @@ export default function Dashboard() {
         ctx.shadowOffsetY = 5;
 
         ctx.strokeStyle = "#000000";
-        ctx.lineWidth = 14;
         ctx.lineJoin = "round";
 
         const textX = 60;
+        const maxWidth = 1050; // Margen derecho seguro para evitar desbordamiento
+
+        // Medir y calcular el tamaño de fuente óptimo para que quepan ambas líneas
+        let fontSize = 86;
+        ctx.font = `bold ${fontSize}px Impact, Arial Black, sans-serif`;
+        let w1 = line1 ? ctx.measureText(line1).width : 0;
+        let w2 = line2 ? ctx.measureText(line2).width : 0;
+        let maxW = Math.max(w1, w2);
+
+        if (maxW > maxWidth) {
+          fontSize = Math.floor(fontSize * (maxWidth / maxW));
+          if (fontSize < 40) fontSize = 40; // Clampear a un tamaño mínimo legible
+          ctx.font = `bold ${fontSize}px Impact, Arial Black, sans-serif`;
+        }
+
+        // Ajustar el grosor del contorno negro proporcionalmente al tamaño de fuente
+        ctx.lineWidth = Math.max(6, Math.floor(fontSize * 0.16));
+
+        const lineSpacing = Math.floor(fontSize * 1.1);
         const line2Y = 720 - 65;
-        const line1Y = line2Y - 95;
+        const line1Y = line2Y - lineSpacing;
 
         if (line1) {
           ctx.fillStyle = "#ffffff";
@@ -2996,93 +3023,51 @@ export default function Dashboard() {
 
       const data = await res.json();
 
-      // 3. Crear mapeo inicial usando el emparejamiento inteligente de Gemini
-      const mapped = data.videos.map((v, i) => {
-        const matchedVideo = activePrivateVideos.find(pv => pv.id === v.matchedVideoId) || null;
-  
-        const detected = detectProgramAndPlaylist(
-          v.title || "", v.description || "", matchedVideo?.fileName || "", v.programName || ""
-        );
-  
-        const item = {
-          index: v.index,
-          title: v.title || "",
-          description: updateDescriptionUrl(v.description || "", detected.logoName),
-          thumbnailText: v.thumbnailText || "",
-          isAutoThumbnailEnabled: true,
-          selectedProgramLogo: detected.logoName,
-          customBgBase64: null,
-          generatedThumbnailBase64: null,
-          matchedVideoId: matchedVideo ? matchedVideo.id : "",
-          isScheduled: false,
-          scheduledAt: "",
-          playlistId: detected.playlistId || "",
-          isSyncing: false,
-          isSynced: false,
-          syncError: null
-        };
-
-        generateSingleAutoThumbnail(
-          item.thumbnailText,
-          matchedVideo,
-          item.customBgBase64,
-          item.selectedProgramLogo
-        ).then(thumbBase64 => {
-          setParsedVideos(latest => {
-            const latestList = [...latest];
-            const targetIdx = latestList.findIndex(x => x.index === v.index);
-            if (targetIdx !== -1) {
-              latestList[targetIdx].generatedThumbnailBase64 = thumbBase64 || "";
-            }
-            return latestList;
-          });
-        });
-
-        return item;
-      });
-
-      setParsedVideos(mapped);
-      setSelectedYoutubeVideo(null); // Cerrar editor individual
-
-      // 3b. Asignar automáticamente y guardar los metadatos en la base de datos para los borradores locales
-      const matchedDrafts = new Map(); // Mapea draftId -> parsedVideo v
-      const alreadyMatchedDraftIds = new Set();
+      // 3. Emparejamiento inicial usando todas las fases
+      const matchedMap = new Map(); // Mapea v.index -> video del editor (de activePrivateVideos o localVideosQueue)
+      const alreadyMatchedEditorIds = new Set(); // Evitar duplicados
 
       // Fase 1: Coincidencia directa por ID de Gemini
       for (const v of data.videos) {
         if (v.matchedVideoId) {
-          const draft = localVideosQueue.find(ld => (ld.youtubeId === v.matchedVideoId || ld.id === v.matchedVideoId) && !alreadyMatchedDraftIds.has(ld.id));
-          if (draft) {
-            matchedDrafts.set(draft.id, v);
-            alreadyMatchedDraftIds.add(draft.id);
+          // Buscar primero en activePrivateVideos (YouTube)
+          let match = activePrivateVideos.find(pv => pv.id === v.matchedVideoId && !alreadyMatchedEditorIds.has(pv.id));
+          // Si no está, buscar en localVideosQueue (local DB)
+          if (!match) {
+            match = localVideosQueue.find(ld => (ld.id === v.matchedVideoId || ld.youtubeId === v.matchedVideoId) && !alreadyMatchedEditorIds.has(ld.id));
+          }
+          if (match) {
+            matchedMap.set(v.index, match);
+            alreadyMatchedEditorIds.add(match.id);
           }
         }
       }
 
-      // Fase 2: Coincidencia por número de índice exacto en el nombre del archivo
+      // Fase 2: Coincidencia por número de índice exacto en el nombre del archivo (para localVideosQueue)
       for (const ld of localVideosQueue) {
-        if (alreadyMatchedDraftIds.has(ld.id)) continue;
+        if (alreadyMatchedEditorIds.has(ld.id)) continue;
         const cleanFilename = (ld.filename || ld.fileName || "").toLowerCase();
         const numberMatch = cleanFilename.match(/(?:^|\D)(\d+)(?:\D|$)/);
         if (numberMatch) {
           const fileIndex = parseInt(numberMatch[1], 10);
-          const match = data.videos.find(v => v.index === fileIndex);
+          const match = data.videos.find(v => v.index === fileIndex && !matchedMap.has(v.index));
           if (match) {
-            matchedDrafts.set(ld.id, match);
-            alreadyMatchedDraftIds.add(ld.id);
+            matchedMap.set(match.index, ld);
+            alreadyMatchedEditorIds.add(ld.id);
           }
         }
       }
 
-      // Fase 3: Coincidencia por siglas y palabras clave (p. ej., "LR" -> "LAND ROBER")
+      // Fase 3: Coincidencia por siglas y palabras clave (para localVideosQueue)
       for (const ld of localVideosQueue) {
-        if (alreadyMatchedDraftIds.has(ld.id)) continue;
+        if (alreadyMatchedEditorIds.has(ld.id)) continue;
         const cleanFilename = (ld.filename || ld.fileName || "").toLowerCase();
         
         let bestCandidate = null;
         let bestScore = 0;
 
         for (const v of data.videos) {
+          if (matchedMap.has(v.index)) continue;
           const progName = (v.programName || "").toLowerCase().trim();
           if (!progName) continue;
           
@@ -3119,20 +3104,18 @@ export default function Dashboard() {
         }
 
         if (bestCandidate && bestScore >= 50) {
-          matchedDrafts.set(ld.id, bestCandidate);
-          alreadyMatchedDraftIds.add(ld.id);
+          matchedMap.set(bestCandidate.index, ld);
+          alreadyMatchedEditorIds.add(ld.id);
         }
       }
 
-      // Fase 4: Coincidencia visual por fotograma de Gemini Vision
+      // Fase 4: Coincidencia visual por fotograma de Gemini Vision (para localVideosQueue)
       for (const ld of localVideosQueue) {
-        if (alreadyMatchedDraftIds.has(ld.id)) continue;
+        if (alreadyMatchedEditorIds.has(ld.id)) continue;
         if (!ld.rawFrameBase64) continue;
 
         // Candidatos de la escaleta aún no emparejados
-        const unmatchedCandidates = data.videos.filter(v => 
-          !Array.from(matchedDrafts.values()).some(m => m.index === v.index)
-        );
+        const unmatchedCandidates = data.videos.filter(v => !matchedMap.has(v.index));
 
         if (unmatchedCandidates.length > 0) {
           console.log(`[handleAnalyzeFile] Intentando emparejamiento visual para el vídeo local ${ld.filename || ld.id} con ${unmatchedCandidates.length} candidatos...`);
@@ -3152,8 +3135,8 @@ export default function Dashboard() {
                 const bestCandidate = data.videos.find(v => v.index === matchData.matchedIndex);
                 if (bestCandidate) {
                   console.log(`[handleAnalyzeFile] Coincidencia visual exitosa! Vídeo local ${ld.filename || ld.id} coincide con index ${matchData.matchedIndex} ("${bestCandidate.title}")`);
-                  matchedDrafts.set(ld.id, bestCandidate);
-                  alreadyMatchedDraftIds.add(ld.id);
+                  matchedMap.set(bestCandidate.index, ld);
+                  alreadyMatchedEditorIds.add(ld.id);
                 }
               }
             }
@@ -3163,21 +3146,23 @@ export default function Dashboard() {
         }
       }
 
-      // Guardar las actualizaciones en la base de datos para los elementos que han sido emparejados
+      // 4. Crear mapeo de parsedVideos de la escaleta (EXCLUYENDO los no vinculados)
+      const mapped = [];
       const matchedResults = [];
-      for (const [draftId, v] of matchedDrafts.entries()) {
-        const matchedDraft = localVideosQueue.find(ld => ld.id === draftId);
-        if (!matchedDraft) continue;
 
-        console.log(`[handleAnalyzeFile] Procesando y guardando vídeo emparejado: index ${v.index} a draft ${matchedDraft.id}`);
+      for (const v of data.videos) {
+        const matchedVideo = matchedMap.get(v.index) || null;
+        if (!matchedVideo) {
+          console.log(`[handleAnalyzeFile] Omitiendo vídeo no vinculado de la escaleta: index ${v.index} ("${v.title}")`);
+          continue;
+        }
 
         const detected = detectProgramAndPlaylist(
-          v.title || "", v.description || "", matchedDraft.filename || matchedDraft.fileName || "", v.programName || ""
+          v.title || "", v.description || "", matchedVideo.filename || matchedVideo.fileName || "", v.programName || ""
         );
 
         let finalTitle = (v.title || "").trim();
         if (detected.logoName && detected.logoName !== "none") {
-          // Obtener nombre del programa limpio
           const progClean = detected.logoName.replace(/\.[^/.]+$/, "").replace(/_/g, " ").toUpperCase().trim();
           const suffix = `| ${progClean}`;
           if (!finalTitle.toUpperCase().endsWith(suffix.toUpperCase())) {
@@ -3192,41 +3177,88 @@ export default function Dashboard() {
           finalThumbnailText = ensureThreeToFiveWords(finalThumbnailText, finalTitle);
         }
 
-        let finalThumbnailBase64 = null;
-        if (finalThumbnailText && detected.logoName !== "none") {
-          try {
-            finalThumbnailBase64 = await generateSingleAutoThumbnail(
-              finalThumbnailText,
-              matchedDraft,
-              null,
-              detected.logoName
-            );
-          } catch (thumbErr) {
-            console.error("[handleAnalyzeFile] Error al generar miniatura automática en mapeo:", thumbErr);
-          }
-        }
+        const item = {
+          index: v.index,
+          title: finalTitle,
+          description: finalDesc,
+          thumbnailText: finalThumbnailText,
+          isAutoThumbnailEnabled: true,
+          selectedProgramLogo: detected.logoName,
+          customBgBase64: null,
+          generatedThumbnailBase64: null,
+          matchedVideoId: matchedVideo.id,
+          isScheduled: false,
+          scheduledAt: "",
+          playlistId: detected.playlistId || "",
+          isSyncing: false,
+          isSynced: false,
+          syncError: null
+        };
 
-        try {
-          const patchRes = await fetch(`/api/videos?id=${matchedDraft.dbId || matchedDraft.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              title: finalTitle,
-              description: finalDesc,
-              playlistId: detected.playlistId || null,
-              thumbnailBase64: finalThumbnailBase64 || undefined,
-              status: "EDITING"
-            })
+        // Generar miniatura automática en segundo plano
+        generateSingleAutoThumbnail(
+          item.thumbnailText,
+          matchedVideo,
+          item.customBgBase64,
+          item.selectedProgramLogo
+        ).then(thumbBase64 => {
+          setParsedVideos(latest => {
+            const latestList = [...latest];
+            const targetIdx = latestList.findIndex(x => x.index === v.index);
+            if (targetIdx !== -1) {
+              latestList[targetIdx].generatedThumbnailBase64 = thumbBase64 || "";
+            }
+            return latestList;
           });
-          if (patchRes.ok) {
-            matchedResults.push({ index: v.index, success: true });
-          } else {
-            console.error(`[handleAnalyzeFile] Fallo al actualizar video en BD:`, await patchRes.text());
+        });
+
+        mapped.push(item);
+
+        // Guardar la actualización en la base de datos para los elementos que pertenecen a la cola local
+        const isLocalDraft = localVideosQueue.some(ld => ld.id === matchedVideo.id);
+        if (isLocalDraft) {
+          try {
+            let finalThumbnailBase64 = null;
+            if (item.thumbnailText && detected.logoName !== "none") {
+              try {
+                finalThumbnailBase64 = await generateSingleAutoThumbnail(
+                  item.thumbnailText,
+                  matchedVideo,
+                  null,
+                  detected.logoName
+                );
+              } catch (thumbErr) {
+                console.error("[handleAnalyzeFile] Error al generar miniatura automática en mapeo:", thumbErr);
+              }
+            }
+
+            const patchRes = await fetch(`/api/videos?id=${matchedVideo.dbId || matchedVideo.id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                title: item.title,
+                description: item.description,
+                playlistId: detected.playlistId || null,
+                thumbnailBase64: finalThumbnailBase64 || undefined,
+                status: "EDITING"
+              })
+            });
+            if (patchRes.ok) {
+              matchedResults.push({ index: v.index, success: true });
+            } else {
+              console.error(`[handleAnalyzeFile] Fallo al actualizar video en BD:`, await patchRes.text());
+            }
+          } catch (dbErr) {
+            console.error(`[handleAnalyzeFile] Error de red al actualizar base de datos:`, dbErr);
           }
-        } catch (dbErr) {
-          console.error(`[handleAnalyzeFile] Error de red al actualizar base de datos:`, dbErr);
+        } else {
+          // Si es un vídeo de YouTube directo, lo contamos como mapeado con éxito
+          matchedResults.push({ index: v.index, success: true });
         }
       }
+
+      setParsedVideos(mapped);
+      setSelectedYoutubeVideo(null); // Cerrar editor individual
 
       clearInterval(progressInterval);
       setAnalyzeProgress(100);
@@ -3236,7 +3268,7 @@ export default function Dashboard() {
 
       // Esperar brevemente para mostrar el 100%
       await new Promise(r => setTimeout(r, 400));
-      alert(`¡Análisis y mapeo completado! Se detectaron y asignaron automáticamente ${matchedResults.length} de ${data.videos.length} vídeos del documento PDF a los borradores de la cola.`);
+      alert(`¡Análisis y mapeo completado! Se detectaron y asignaron automáticamente ${matchedResults.length} de ${data.videos.length} vídeos del documento PDF (los no vinculados han sido omitidos).`);
     } catch (err) {
       clearInterval(progressInterval);
       alert("Error al procesar el archivo: " + err.message);
@@ -5289,23 +5321,6 @@ export default function Dashboard() {
 
                           {/* Fila inferior: Botones de acción */}
                           <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.25rem" }}>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                handleSelectBatchItemForEditing(item);
-                              }}
-                              className={styles.btnSubmit}
-                              style={{
-                                width: "auto",
-                                fontSize: "0.72rem",
-                                padding: "0.35rem 0.8rem",
-                                background: "rgba(168, 85, 247, 0.15)",
-                                border: "1px solid rgba(168, 85, 247, 0.3)",
-                                color: "#c084fc"
-                              }}
-                            >
-                              ✏️ Editar / Optimizar
-                            </button>
                             {item.isSynced && (
                               <span style={{
                                 fontSize: "0.72rem",
