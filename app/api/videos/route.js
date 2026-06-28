@@ -158,7 +158,16 @@ export async function GET(request) {
       }
     }
 
-    return NextResponse.json(videos);
+    const uploadsDir = path.join(process.cwd(), 'uploads');
+    const videosWithFrames = videos.map(video => {
+      const hasFrames = fs.existsSync(path.join(uploadsDir, `${video.id}-frame-0.jpg`)) &&
+                        fs.existsSync(path.join(uploadsDir, `${video.id}-frame-1.jpg`)) &&
+                        fs.existsSync(path.join(uploadsDir, `${video.id}-frame-2.jpg`)) &&
+                        fs.existsSync(path.join(uploadsDir, `${video.id}-frame-3.jpg`));
+      return { ...video, hasExtractedFrames: hasFrames };
+    });
+
+    return NextResponse.json(videosWithFrames);
   } catch (error) {
     console.error('Error fetching videos:', error);
     return NextResponse.json({ error: 'Failed to query database' }, { status: 500 });

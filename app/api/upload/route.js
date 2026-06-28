@@ -29,7 +29,7 @@ export async function POST(request) {
 // Fase 1: Iniciar sesión de subida resumible con la API de YouTube
 async function handleInitiateUpload(request) {
   const body = await request.json();
-  const { title, description, fileName, fileSize, fileType, rawFrameBase64, playlistId, scheduledAt } = body;
+  const { title, description, fileName, fileSize, fileType, rawFrameBase64, extractedFrames, playlistId, scheduledAt } = body;
 
   if (!fileName || !fileSize) {
     return NextResponse.json({ error: 'Missing fileName or fileSize' }, { status: 400 });
@@ -148,6 +148,29 @@ async function handleInitiateUpload(request) {
         userEmail: email,
         channelId: channel.id,
         scheduledAt: scheduledAt ? new Date(scheduledAt) : null
+      }
+    });
+  }
+
+  // Guardar fotogramas extraídos si se proporcionan
+  if (extractedFrames && Array.isArray(extractedFrames)) {
+    const fs = require('fs');
+    const path = require('path');
+    const uploadsDir = path.join(process.cwd(), 'uploads');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+    extractedFrames.forEach((frameBase64, index) => {
+      if (frameBase64 && frameBase64.startsWith('data:image/')) {
+        try {
+          const base64Data = frameBase64.replace(/^data:image\/\w+;base64,/, "");
+          const buffer = Buffer.from(base64Data, 'base64');
+          const framePath = path.join(uploadsDir, `${finalVideoId}-frame-${index}.jpg`);
+          fs.writeFileSync(framePath, buffer);
+          console.log(`[Upload API] Saved frame ${index} to ${framePath}`);
+        } catch (err) {
+          console.error(`[Upload API] Failed to save frame ${index}:`, err);
+        }
       }
     });
   }

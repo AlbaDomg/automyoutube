@@ -2367,7 +2367,17 @@ export default function Dashboard() {
     }
 
     // Cargar el vídeo en el elemento oculto para permitir el ajuste manual del fotograma si es necesario
-    if (video.filePath && !['PDF_PARSED', 'YOUTUBE_UPLOAD', 'YOUTUBE_UPDATE'].includes(video.filePath)) {
+    if (video.hasExtractedFrames) {
+      const serverFrames = [
+        `/api/videos/thumbnail?id=${video.id}&frame=0`,
+        `/api/videos/thumbnail?id=${video.id}&frame=1`,
+        `/api/videos/thumbnail?id=${video.id}&frame=2`,
+        `/api/videos/thumbnail?id=${video.id}&frame=3`
+      ];
+      setCapturedFrames(serverFrames);
+      setVideoDuration(1); // Hacer que hasLocalVideo sea true para el renderizado
+      setIsExtractingFrames(false);
+    } else if (video.filePath && !['PDF_PARSED', 'YOUTUBE_UPLOAD', 'YOUTUBE_UPDATE'].includes(video.filePath)) {
       const srcUrl = video.filePath.startsWith('https://') 
         ? video.filePath 
         : `/api/videos/stream?id=${video.id}`;
@@ -2385,6 +2395,8 @@ export default function Dashboard() {
 
     if (video.rawFrameBase64) {
       setCustomBgBase64(video.rawFrameBase64);
+    } else if (video.hasExtractedFrames) {
+      setCustomBgBase64(`/api/videos/thumbnail?id=${video.id}&frame=0`);
     } else if (video.filePath && video.filePath.startsWith('https://')) {
       // El video está en Supabase Storage: no podemos hacer streaming local.
       // Si tiene un rawFrameBase64 guardado, ya se usó arriba. Si no, dejamos sin fondo.
@@ -3632,6 +3644,7 @@ export default function Dashboard() {
             fileSize: videoBlob.size,
             fileType: videoBlob.type || "video/mp4",
             playlistId: updateForm.playlistId || null,
+            extractedFrames: capturedFrames || [],
             scheduledAt: updateForm.isScheduled ? toUTCISOString(updateForm.scheduledAt) : null
           })
         });

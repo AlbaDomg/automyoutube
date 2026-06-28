@@ -7,9 +7,27 @@ export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
+    const frame = searchParams.get('frame');
 
     if (!id) {
       return new Response('Missing id parameter', { status: 400 });
+    }
+
+    // Si se solicita un fotograma específico (0, 1, 2, 3)
+    if (frame !== null && frame !== undefined) {
+      const uploadsDir = path.join(process.cwd(), 'uploads');
+      const framePath = path.join(uploadsDir, `${id}-frame-${frame}.jpg`);
+
+      if (fs.existsSync(framePath)) {
+        const imageBuffer = fs.readFileSync(framePath);
+        return new Response(imageBuffer, {
+          headers: {
+            'Content-Type': 'image/jpeg',
+            'Cache-Control': 'public, max-age=3600',
+          },
+        });
+      }
+      return new Response('Frame file not found on server disk', { status: 404 });
     }
 
     // 1. Intentar buscar primero en la base de datos PostgreSQL

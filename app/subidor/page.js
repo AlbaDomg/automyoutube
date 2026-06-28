@@ -115,26 +115,19 @@ export default function SubidorPage() {
       const duration = hiddenVideoRef.current.duration;
       setVideoDuration(duration);
       
-      if (extractingIndex >= 0) {
-        // Lógica original para extracción en lote
-        const defaultSeek = duration > 30 ? 15 : duration / 2;
-        setFrameTime(defaultSeek);
-        hiddenVideoRef.current.currentTime = defaultSeek;
-      } else {
-        // Secuencia de 4 fotogramas para subida individual
-        const times = [
-          duration * 0.15,
-          duration * 0.35,
-          duration * 0.55,
-          duration * 0.75
-        ];
-        targetTimes.current = times;
-        accumulatedFrames.current = [];
-        setCapturedFrames([]);
-        setIsExtractingFrames(true);
-        capturingFrameIndex.current = 0;
-        hiddenVideoRef.current.currentTime = times[0];
-      }
+      // Secuencia de 4 fotogramas para todos los flujos (simple y lote)
+      const times = [
+        duration * 0.15,
+        duration * 0.35,
+        duration * 0.55,
+        duration * 0.75
+      ];
+      targetTimes.current = times;
+      accumulatedFrames.current = [];
+      setCapturedFrames([]);
+      setIsExtractingFrames(true);
+      capturingFrameIndex.current = 0;
+      hiddenVideoRef.current.currentTime = times[0];
     }
   };
 
@@ -149,30 +142,29 @@ export default function SubidorPage() {
           ctx.drawImage(hiddenVideoRef.current, 0, 0, canvas.width, canvas.height);
           const base64 = canvas.toDataURL("image/jpeg", 0.85);
 
-          if (extractingIndex >= 0) {
-            const currentIdx = extractingIndex;
-            await processExtractionResult(currentIdx, base64);
-          } else {
-            // Flujo de captura secuencial individual
-            if (capturingFrameIndex.current !== -1) {
-              accumulatedFrames.current.push(base64);
-              const nextIndex = capturingFrameIndex.current + 1;
-              if (nextIndex < 4 && nextIndex < targetTimes.current.length) {
-                capturingFrameIndex.current = nextIndex;
-                hiddenVideoRef.current.currentTime = targetTimes.current[nextIndex];
+          if (capturingFrameIndex.current !== -1) {
+            accumulatedFrames.current.push(base64);
+            const nextIndex = capturingFrameIndex.current + 1;
+            if (nextIndex < 4 && nextIndex < targetTimes.current.length) {
+              capturingFrameIndex.current = nextIndex;
+              hiddenVideoRef.current.currentTime = targetTimes.current[nextIndex];
+            } else {
+              capturingFrameIndex.current = -1;
+              setIsExtractingFrames(false);
+              const frames = [...accumulatedFrames.current];
+              
+              if (extractingIndex >= 0) {
+                // Flujo de extracción en lote (batchFiles)
+                const currentIdx = extractingIndex;
+                await processExtractionResult(currentIdx, frames);
               } else {
-                capturingFrameIndex.current = -1;
-                setIsExtractingFrames(false);
-                const frames = [...accumulatedFrames.current];
+                // Flujo de subida simple (individual)
                 setCapturedFrames(frames);
                 if (frames.length > 0) {
                   setLocalExtractedFrame(frames[0]);
                   setSimpleUploadStatus("Fotogramas del vídeo capturados correctamente.");
                 }
               }
-            } else {
-              setLocalExtractedFrame(base64);
-              setSimpleUploadStatus("Portada del vídeo capturada correctamente.");
             }
           }
         }
@@ -513,7 +505,7 @@ export default function SubidorPage() {
   };
 
   // Procesar el fotograma extraído
-  const processExtractionResult = async (idx, base64) => {
+  const processExtractionResult = async (idx, frames) => {
     setBatchFiles(prev => {
       const item = prev[idx];
       if (!item) {
@@ -529,7 +521,12 @@ export default function SubidorPage() {
 
       setTimeout(() => setExtractingIndex(-1), 0);
       return prev.map((it, i) => 
-        i === idx ? { ...it, rawFrameBase64: base64, status: 'ready' } : it
+        i === idx ? { 
+          ...it, 
+          rawFrameBase64: frames[0] || null, 
+          extractedFrames: frames, 
+          status: 'ready' 
+        } : it
       );
     });
   };
@@ -581,6 +578,7 @@ export default function SubidorPage() {
         fileSize: file.size,
         fileType: file.type || "video/mp4",
         rawFrameBase64: item.rawFrameBase64,
+        extractedFrames: item.extractedFrames || [],
         scheduledAt: item.scheduledAt ? toUTCISOString(item.scheduledAt) : null
       })
     });
