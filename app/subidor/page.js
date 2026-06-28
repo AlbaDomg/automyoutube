@@ -1381,7 +1381,7 @@ export default function SubidorPage() {
                               )}
                               {item.status === 'extracting' && (
                                 <span style={{ fontSize: "0.68rem", fontWeight: "700", color: "#f59e0b", background: "rgba(245, 158, 11, 0.12)", border: "1px solid rgba(245,158,11,0.25)", padding: "2px 8px", borderRadius: "6px" }}>
-                                  🔄 Extrayendo portada...
+                                  🎞️ Extrayendo 6 fotogramas...
                                 </span>
                               )}
                               {item.status === 'ready' && (
@@ -1520,7 +1520,11 @@ export default function SubidorPage() {
                         {(item.status === 'uploading' || item.status === 'completed') && (
                           <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "0.75rem", marginTop: "0.25rem" }}>
                             <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>
-                              <span>Progreso de subida a Youtube como borrador:</span>
+                              <span>
+                                {item.progress <= 1 && item.status !== 'completed'
+                                  ? "🎞️ Guardando fotogramas en la nube..."
+                                  : "Progreso de subida a Youtube como borrador:"}
+                              </span>
                               <span style={{ 
                                 color: (item.progress >= 100 || item.status === 'completed') ? '#10b981' : 'inherit', 
                                 fontWeight: (item.progress >= 100 || item.status === 'completed') ? '700' : 'normal' 

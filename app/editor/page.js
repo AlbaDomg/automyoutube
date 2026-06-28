@@ -2568,7 +2568,7 @@ export default function Dashboard() {
       return;
     }
 
-    setSimpleUploadStatus("Extrayendo portada del vídeo local...");
+    setSimpleUploadStatus("🎞️ Extrayendo fotogramas del vídeo...");
     try {
       if (videoObjectURL) {
         URL.revokeObjectURL(videoObjectURL);
