@@ -679,7 +679,17 @@ export default function Dashboard() {
         });
 
         if (patchRes.ok) {
-          setCompletedLocalVideos(prev => prev.map(v => v.id === dbVideo.id ? { ...v, thumbnailBase64: historyModalGeneratedBase64, rawFrameBase64: historyModalCustomBg } : v));
+          setCompletedLocalVideos(prev => prev.map(v => 
+            v.id === dbVideo.id 
+              ? { 
+                  ...v, 
+                  thumbnailBase64: historyModalGeneratedBase64, 
+                  rawFrameBase64: (v.rawFrameBase64 && v.rawFrameBase64.startsWith('[')) 
+                    ? v.rawFrameBase64 
+                    : historyModalCustomBg 
+                } 
+              : v
+          ));
         }
       }
 

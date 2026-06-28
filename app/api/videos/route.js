@@ -374,7 +374,17 @@ export async function PATCH(request) {
     }
     if (status !== undefined) updateData.status = status;
     if (playlistId !== undefined) updateData.playlistId = playlistId;
-    if (rawFrameBase64 !== undefined) updateData.rawFrameBase64 = rawFrameBase64;
+    if (rawFrameBase64 !== undefined) {
+      const existingRaw = video.rawFrameBase64;
+      const isExistingArray = existingRaw && existingRaw.startsWith('[');
+      const isNewArray = rawFrameBase64 && rawFrameBase64.startsWith('[');
+      
+      if (isExistingArray && !isNewArray) {
+        console.log(`[Videos PATCH] Preserving existing frame array in database, ignoring single image overwrite.`);
+      } else {
+        updateData.rawFrameBase64 = rawFrameBase64;
+      }
+    }
     if (privacyStatus !== undefined) updateData.privacyStatus = privacyStatus;
     if (youtubeId !== undefined) updateData.youtubeId = youtubeId;
     if (uploadProgress !== undefined) {
