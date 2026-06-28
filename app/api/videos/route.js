@@ -160,12 +160,17 @@ export async function GET(request) {
 
     const uploadsDir = path.join(process.cwd(), 'uploads');
     const videosWithFrames = videos.map(video => {
-      const hasFrames = fs.existsSync(path.join(uploadsDir, `${video.id}-frame-0.jpg`)) &&
-                        fs.existsSync(path.join(uploadsDir, `${video.id}-frame-1.jpg`)) &&
-                        fs.existsSync(path.join(uploadsDir, `${video.id}-frame-2.jpg`)) &&
-                        fs.existsSync(path.join(uploadsDir, `${video.id}-frame-3.jpg`)) &&
-                        fs.existsSync(path.join(uploadsDir, `${video.id}-frame-4.jpg`)) &&
-                        fs.existsSync(path.join(uploadsDir, `${video.id}-frame-5.jpg`));
+      let hasFrames = false;
+      try {
+        hasFrames = fs.existsSync(path.join(uploadsDir, `${video.id}-frame-0.jpg`)) &&
+                    fs.existsSync(path.join(uploadsDir, `${video.id}-frame-1.jpg`)) &&
+                    fs.existsSync(path.join(uploadsDir, `${video.id}-frame-2.jpg`)) &&
+                    fs.existsSync(path.join(uploadsDir, `${video.id}-frame-3.jpg`)) &&
+                    fs.existsSync(path.join(uploadsDir, `${video.id}-frame-4.jpg`)) &&
+                    fs.existsSync(path.join(uploadsDir, `${video.id}-frame-5.jpg`));
+      } catch (fsErr) {
+        console.warn('[Videos API] Failed to check frame files on disk:', fsErr.message);
+      }
       return { ...video, hasExtractedFrames: hasFrames };
     });
 

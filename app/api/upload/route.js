@@ -152,27 +152,31 @@ async function handleInitiateUpload(request) {
     });
   }
 
-  // Guardar fotogramas extraídos si se proporcionan
+  // Guardar fotogramas extraídos si se proporcionan (de forma segura sin romper en Vercel)
   if (extractedFrames && Array.isArray(extractedFrames)) {
-    const fs = require('fs');
-    const path = require('path');
-    const uploadsDir = path.join(process.cwd(), 'uploads');
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
-    }
-    extractedFrames.forEach((frameBase64, index) => {
-      if (frameBase64 && frameBase64.startsWith('data:image/')) {
-        try {
-          const base64Data = frameBase64.replace(/^data:image\/\w+;base64,/, "");
-          const buffer = Buffer.from(base64Data, 'base64');
-          const framePath = path.join(uploadsDir, `${finalVideoId}-frame-${index}.jpg`);
-          fs.writeFileSync(framePath, buffer);
-          console.log(`[Upload API] Saved frame ${index} to ${framePath}`);
-        } catch (err) {
-          console.error(`[Upload API] Failed to save frame ${index}:`, err);
-        }
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const uploadsDir = path.join(process.cwd(), 'uploads');
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
       }
-    });
+      extractedFrames.forEach((frameBase64, index) => {
+        if (frameBase64 && frameBase64.startsWith('data:image/')) {
+          try {
+            const base64Data = frameBase64.replace(/^data:image\/\w+;base64,/, "");
+            const buffer = Buffer.from(base64Data, 'base64');
+            const framePath = path.join(uploadsDir, `${finalVideoId}-frame-${index}.jpg`);
+            fs.writeFileSync(framePath, buffer);
+            console.log(`[Upload API] Saved frame ${index} to ${framePath}`);
+          } catch (err) {
+            console.error(`[Upload API] Failed to save frame ${index}:`, err);
+          }
+        }
+      });
+    } catch (fsErr) {
+      console.warn('[Upload API] Filesystem is read-only or not writeable, skipping local frame save:', fsErr.message);
+    }
   }
 
   return NextResponse.json({

@@ -50,27 +50,31 @@ export async function POST(request) {
       }
     });
 
-    // Guardar fotogramas extraídos si se proporcionan
+    // Guardar fotogramas extraídos si se proporcionan (de forma segura sin romper en Vercel)
     if (extractedFrames && Array.isArray(extractedFrames)) {
-      const fs = require('fs');
-      const path = require('path');
-      const uploadsDir = path.join(process.cwd(), 'uploads');
-      if (!fs.existsSync(uploadsDir)) {
-        fs.mkdirSync(uploadsDir, { recursive: true });
-      }
-      extractedFrames.forEach((frameBase64, index) => {
-        if (frameBase64 && frameBase64.startsWith('data:image/')) {
-          try {
-            const base64Data = frameBase64.replace(/^data:image\/\w+;base64,/, "");
-            const buffer = Buffer.from(base64Data, 'base64');
-            const framePath = path.join(uploadsDir, `${videoId}-frame-${index}.jpg`);
-            fs.writeFileSync(framePath, buffer);
-            console.log(`[Supabase Register] Saved frame ${index} to ${framePath}`);
-          } catch (err) {
-            console.error(`[Supabase Register] Failed to save frame ${index}:`, err);
-          }
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const uploadsDir = path.join(process.cwd(), 'uploads');
+        if (!fs.existsSync(uploadsDir)) {
+          fs.mkdirSync(uploadsDir, { recursive: true });
         }
-      });
+        extractedFrames.forEach((frameBase64, index) => {
+          if (frameBase64 && frameBase64.startsWith('data:image/')) {
+            try {
+              const base64Data = frameBase64.replace(/^data:image\/\w+;base64,/, "");
+              const buffer = Buffer.from(base64Data, 'base64');
+              const framePath = path.join(uploadsDir, `${videoId}-frame-${index}.jpg`);
+              fs.writeFileSync(framePath, buffer);
+              console.log(`[Supabase Register] Saved frame ${index} to ${framePath}`);
+            } catch (err) {
+              console.error(`[Supabase Register] Failed to save frame ${index}:`, err);
+            }
+          }
+        });
+      } catch (fsErr) {
+        console.warn('[Supabase Register] Filesystem is read-only or not writeable, skipping local frame save:', fsErr.message);
+      }
     }
 
     console.log(`[Supabase Register] Video registered in DB: ${videoId}, publicUrl: ${publicVideoUrl}`);
