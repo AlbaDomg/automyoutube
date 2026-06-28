@@ -2514,14 +2514,25 @@ export default function Dashboard() {
       return;
     }
 
-    // Si es un título, extraer el sufijo "| NOMBREPROGRAMA" para reañadirlo después de la optimización IA
+    // Si es un título, extraer el sufijo y el emoji para reañadirlos después de la optimización IA
     let suffix = "";
+    let emojiPrefix = "";
     let textToOptimize = text;
     if (field === 'title') {
-      const pipeIndex = text.lastIndexOf(" | ");
+      // 1. Extraer el emoji del inicio
+      const emojiMatch = text.match(/^([\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])\s*/u);
+      if (emojiMatch) {
+        emojiPrefix = emojiMatch[0]; // Ej.: "🚨 "
+        textToOptimize = text.substring(emojiPrefix.length).trim();
+      } else if (currentEmoji) {
+        emojiPrefix = currentEmoji + " ";
+      }
+
+      // 2. Extraer el sufijo
+      const pipeIndex = textToOptimize.lastIndexOf(" | ");
       if (pipeIndex !== -1) {
-        suffix = text.substring(pipeIndex); // Ej.: " | Canal Galego"
-        textToOptimize = text.substring(0, pipeIndex).trim();
+        suffix = textToOptimize.substring(pipeIndex); // Ej.: " | HORA GALEGA"
+        textToOptimize = textToOptimize.substring(0, pipeIndex).trim();
       }
     } else if (field === 'description') {
       // Intentar encontrar el bloque de redes sociales para extraerlo
@@ -2560,8 +2571,8 @@ export default function Dashboard() {
       if (res.ok) {
         const data = await res.json();
         if (data.optimizedText) {
-          // Para títulos, reañadir el sufijo del programa si existía
-          setFieldFn(data.optimizedText + suffix);
+          // Reañadir el emoji al inicio y el sufijo del programa al final
+          setFieldFn(emojiPrefix + data.optimizedText + suffix);
         }
       } else {
         const data = await res.json();
