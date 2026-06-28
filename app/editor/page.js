@@ -282,7 +282,7 @@ export default function Dashboard() {
   // Selección de Video, Carga de PDF, Archivos e Interfaz por Lotes
   const [youtubeId, setYoutubeId] = useState("");
   const [suggestedScheduledAt, setSuggestedScheduledAt] = useState(null);
-  const [documentFile, setDocumentFile] = useState(null);
+  const [documentFiles, setDocumentFiles] = useState([]);
   const [isAnalyzingFile, setIsAnalyzingFile] = useState(false);
   const [logoUploadProgress, setLogoUploadProgress] = useState(null);
   const [analyzeProgress, setAnalyzeProgress] = useState(0);
@@ -348,6 +348,23 @@ export default function Dashboard() {
   const [isGeneratingThumbnail, setIsGeneratingThumbnail] = useState(false);
   const [isExtractingFrame, setIsExtractingFrame] = useState(false);
 
+  // Estados para regeneración de miniaturas desde el historial
+  const [showHistoryThumbnailModal, setShowHistoryThumbnailModal] = useState(false);
+  const [historyModalItem, setHistoryModalItem] = useState(null);
+  const [historyModalText, setHistoryModalText] = useState("");
+  const [historyModalLogo, setHistoryModalLogo] = useState("none");
+  const [historyModalCustomBg, setHistoryModalCustomBg] = useState(null);
+  const [historyModalGeneratedBase64, setHistoryModalGeneratedBase64] = useState(null);
+  const [historyModalCapturedFrames, setHistoryModalCapturedFrames] = useState([]);
+  const [historyModalIsExtracting, setHistoryModalIsExtracting] = useState(false);
+  const [historyModalStatus, setHistoryModalStatus] = useState("");
+  const [historyModalIsSaving, setHistoryModalIsSaving] = useState(false);
+  const historyModalVideoRef = useRef(null);
+  const historyModalCanvasRef = useRef(null);
+  const historyModalTargetTimes = useRef([]);
+  const historyModalCapturingIndex = useRef(-1);
+  const historyModalAccumulated = useRef([]);
+
   const canvasRef = useRef(null);
   const templateImageRef = useRef(null);
   const defaultProgramLogoCanvasRef = useRef(null);
@@ -360,6 +377,11 @@ export default function Dashboard() {
   const [frameTime, setFrameTime] = useState(15);
   const [videoObjectURL, setVideoObjectURL] = useState("");
   const [currentEmoji, setCurrentEmoji] = useState("");
+  const [capturedFrames, setCapturedFrames] = useState([]);
+  const [isExtractingFrames, setIsExtractingFrames] = useState(false);
+  const targetTimes = useRef([]);
+  const capturingFrameIndex = useRef(-1);
+  const accumulatedFrames = useRef([]);
 
   // Limpiar URL del objeto de vídeo al desmontar
   useEffect(() => {
@@ -374,41 +396,302 @@ export default function Dashboard() {
     if (hiddenVideoRef.current) {
       const duration = hiddenVideoRef.current.duration;
       setVideoDuration(duration);
-      // Por defecto capturamos a los 15 segundos, o a la mitad del vídeo si dura menos de 30 segundos
-      const defaultSeek = duration > 30 ? 15 : duration / 2;
-      setFrameTime(defaultSeek);
-      hiddenVideoRef.current.currentTime = defaultSeek;
+      
+      // Calcular 4 timestamps
+      const times = [
+        duration * 0.15,
+        duration * 0.35,
+        duration * 0.55,
+        duration * 0.75
+      ];
+      targetTimes.current = times;
+      accumulatedFrames.current = [];
+      setCapturedFrames([]);
+      setIsExtractingFrames(true);
+      capturingFrameIndex.current = 0;
+      
+      // Iniciar secuencia de seek
+      hiddenVideoRef.current.currentTime = times[0];
     }
   };
 
   const handleVideoSeeked = () => {
     if (hiddenVideoRef.current) {
-      try {
-        const canvas = document.createElement("canvas");
-        canvas.width = 1280;
-        canvas.height = 720;
-        const ctx = canvas.getContext("2d");
-        if (ctx) {
-          ctx.drawImage(hiddenVideoRef.current, 0, 0, canvas.width, canvas.height);
-          const base64 = canvas.toDataURL("image/jpeg", 0.85);
-          setLocalExtractedFrame(base64);
-          setCustomBgBase64(base64);
-          setSimpleUploadStatus("Portada del vídeo capturada correctamente.");
+      // Si estamos en medio del flujo de captura secuencial
+      if (capturingFrameIndex.current !== -1) {
+        try {
+          const canvas = document.createElement("canvas");
+          canvas.width = 1280;
+          canvas.height = 720;
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.drawImage(hiddenVideoRef.current, 0, 0, canvas.width, canvas.height);
+            const base64 = canvas.toDataURL("image/jpeg", 0.85);
+            accumulatedFrames.current.push(base64);
+            
+            const nextIndex = capturingFrameIndex.current + 1;
+            if (nextIndex < 4 && nextIndex < targetTimes.current.length) {
+              capturingFrameIndex.current = nextIndex;
+              hiddenVideoRef.current.currentTime = targetTimes.current[nextIndex];
+            } else {
+              // Finalizada la captura de los 4 fotogramas
+              capturingFrameIndex.current = -1;
+              setIsExtractingFrames(false);
+              const frames = [...accumulatedFrames.current];
+              setCapturedFrames(frames);
+              
+              // Seleccionar el primero por defecto
+              if (frames.length > 0) {
+                setLocalExtractedFrame(frames[0]);
+                setCustomBgBase64(frames[0]);
+                setSimpleUploadStatus("Fotogramas del vídeo capturados correctamente.");
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Error al extraer fotogramas en seeked secuencial:", err);
+          capturingFrameIndex.current = -1;
+          setIsExtractingFrames(false);
+          setSimpleUploadStatus("Fallo al extraer fotogramas del vídeo.");
         }
-      } catch (err) {
-        console.error("Error al extraer fotograma en seeked:", err);
+      } else {
+        // Fallback de seek manual libre
+        try {
+          const canvas = document.createElement("canvas");
+          canvas.width = 1280;
+          canvas.height = 720;
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.drawImage(hiddenVideoRef.current, 0, 0, canvas.width, canvas.height);
+            const base64 = canvas.toDataURL("image/jpeg", 0.85);
+            setLocalExtractedFrame(base64);
+            setCustomBgBase64(base64);
+          }
+        } catch (err) {
+          console.error("Error al extraer fotograma en seeked libre:", err);
+        }
       }
+    }
+  };
+
+  const handleSelectFrame = (base64, idx) => {
+    setLocalExtractedFrame(base64);
+    setCustomBgBase64(base64);
+    if (targetTimes.current && targetTimes.current[idx] !== undefined) {
+      setFrameTime(targetTimes.current[idx]);
     }
   };
 
   const handleSliderChange = (e) => {
     const newTime = parseFloat(e.target.value);
     setFrameTime(newTime);
-    // Mover el vídeo oculto al segundo elegido; el evento onSeeked capturará el fotograma
     if (hiddenVideoRef.current && hiddenVideoRef.current.src) {
       hiddenVideoRef.current.currentTime = newTime;
     }
   };
+
+  const handleOpenHistoryThumbnailModal = async (item) => {
+    setHistoryModalItem(item);
+    setHistoryModalText(item.title ? item.title.split(" | ")[0] : "");
+    setHistoryModalLogo("none");
+    setHistoryModalCustomBg(null);
+    setHistoryModalGeneratedBase64(null);
+    setHistoryModalCapturedFrames([]);
+    setHistoryModalIsExtracting(false);
+    setHistoryModalStatus("Inicializando...");
+    setHistoryModalIsSaving(false);
+    setShowHistoryThumbnailModal(true);
+
+    const dbVideo = completedLocalVideos.find(v => v.youtubeId === item.youtubeId) || dbVideos.find(v => v.youtubeId === item.youtubeId);
+    
+    let detectedLogo = "none";
+    if (item.title) {
+      const parts = item.title.split(" | ");
+      if (parts.length > 1) {
+        const programName = parts[1];
+        const bestLogo = findBestLogoForPlaylist(null, programName, programLogosCatalog);
+        if (bestLogo) {
+          detectedLogo = bestLogo;
+        }
+      }
+    }
+    setHistoryModalLogo(detectedLogo);
+
+    if (item.youtubeId) {
+      setHistoryModalStatus("Cargando miniatura actual de YouTube...");
+      try {
+        const ytThumbUrl = `https://i.ytimg.com/vi/${item.youtubeId}/hqdefault.jpg`;
+        const proxiedUrl = `/api/youtube/thumbnail-proxy?url=${encodeURIComponent(ytThumbUrl)}`;
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.src = proxiedUrl;
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = reject;
+        });
+        
+        const canvas = document.createElement("canvas");
+        canvas.width = 1280;
+        canvas.height = 720;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, 1280, 720);
+          const base64 = canvas.toDataURL("image/jpeg", 0.85);
+          setHistoryModalCustomBg(base64);
+        }
+      } catch (err) {
+        console.warn("Fallo al precargar la miniatura de YouTube:", err);
+      }
+    }
+
+    if (dbVideo && dbVideo.filePath && !['PDF_PARSED', 'YOUTUBE_UPLOAD', 'YOUTUBE_UPDATE'].includes(dbVideo.filePath)) {
+      setHistoryModalStatus("Cargando vídeo local para extraer fotogramas...");
+      setHistoryModalIsExtracting(true);
+      
+      const srcUrl = dbVideo.filePath.startsWith('https://') 
+        ? dbVideo.filePath 
+        : `/api/videos/stream?id=${dbVideo.id}`;
+      
+      setTimeout(() => {
+        if (historyModalVideoRef.current) {
+          historyModalVideoRef.current.src = srcUrl;
+          historyModalVideoRef.current.load();
+        }
+      }, 300);
+    } else {
+      setHistoryModalStatus("Listo.");
+    }
+  };
+
+  const handleHistoryVideoLoadedMetadata = () => {
+    if (historyModalVideoRef.current) {
+      const duration = historyModalVideoRef.current.duration;
+      const times = [
+        duration * 0.15,
+        duration * 0.35,
+        duration * 0.55,
+        duration * 0.75
+      ];
+      historyModalTargetTimes.current = times;
+      historyModalAccumulated.current = [];
+      historyModalCapturingIndex.current = 0;
+      historyModalVideoRef.current.currentTime = times[0];
+    }
+  };
+
+  const handleHistoryVideoSeeked = () => {
+    if (historyModalVideoRef.current && historyModalCapturingIndex.current !== -1) {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = 1280;
+        canvas.height = 720;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(historyModalVideoRef.current, 0, 0, canvas.width, canvas.height);
+          const base64 = canvas.toDataURL("image/jpeg", 0.85);
+          historyModalAccumulated.current.push(base64);
+          
+          const nextIndex = historyModalCapturingIndex.current + 1;
+          if (nextIndex < 4 && nextIndex < historyModalTargetTimes.current.length) {
+            historyModalCapturingIndex.current = nextIndex;
+            historyModalVideoRef.current.currentTime = historyModalTargetTimes.current[nextIndex];
+          } else {
+            historyModalCapturingIndex.current = -1;
+            setHistoryModalIsExtracting(false);
+            setHistoryModalCapturedFrames([...historyModalAccumulated.current]);
+            setHistoryModalStatus("Listo.");
+          }
+        }
+      } catch (err) {
+        console.error("Error al extraer fotograma del historial en seeked:", err);
+        historyModalCapturingIndex.current = -1;
+        setHistoryModalIsExtracting(false);
+        setHistoryModalStatus("Fallo al extraer fotogramas del vídeo local.");
+      }
+    }
+  };
+
+  const handleGenerateHistoryModalPreview = async () => {
+    if (!historyModalItem) return;
+    const base64 = await generateSingleAutoThumbnail(
+      historyModalText,
+      historyModalItem,
+      historyModalCustomBg,
+      historyModalLogo
+    );
+    if (base64) {
+      setHistoryModalGeneratedBase64(base64);
+    }
+  };
+
+  const handleSaveHistoryThumbnail = async () => {
+    if (!historyModalGeneratedBase64 || !historyModalItem) return;
+    setHistoryModalIsSaving(true);
+    setHistoryModalStatus("Subiendo nueva miniatura a YouTube...");
+
+    try {
+      const ytRes = await fetch("/api/youtube/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          youtubeVideoId: historyModalItem.youtubeId,
+          thumbnail: historyModalGeneratedBase64
+        })
+      });
+
+      if (!ytRes.ok) {
+        const data = await ytRes.json();
+        throw new Error(data.error || "Fallo al subir la miniatura a YouTube");
+      }
+
+      const ytData = await ytRes.json();
+      if (ytData.thumbnailError) {
+        throw new Error(ytData.thumbnailError);
+      }
+
+      const dbVideo = completedLocalVideos.find(v => v.youtubeId === historyModalItem.youtubeId) || dbVideos.find(v => v.youtubeId === historyModalItem.youtubeId);
+      if (dbVideo) {
+        setHistoryModalStatus("Guardando en la base de datos local...");
+        const patchRes = await fetch(`/api/videos?id=${dbVideo.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            thumbnailBase64: historyModalGeneratedBase64,
+            rawFrameBase64: (historyModalCustomBg && historyModalCustomBg.startsWith("data:")) ? historyModalCustomBg : undefined
+          })
+        });
+
+        if (patchRes.ok) {
+          setCompletedLocalVideos(prev => prev.map(v => v.id === dbVideo.id ? { ...v, thumbnailBase64: historyModalGeneratedBase64, rawFrameBase64: historyModalCustomBg } : v));
+        }
+      }
+
+      alert("¡Miniatura actualizada con éxito en YouTube!");
+      setShowHistoryThumbnailModal(false);
+    } catch (err) {
+      alert("Error al actualizar la miniatura: " + err.message);
+    } finally {
+      setHistoryModalIsSaving(false);
+      setHistoryModalStatus("Listo.");
+    }
+  };
+
+  const handleHistoryModalNewBgSelect = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setHistoryModalCustomBg(event.target.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  useEffect(() => {
+    if (showHistoryThumbnailModal && historyModalItem) {
+      handleGenerateHistoryModalPreview();
+    }
+  }, [showHistoryThumbnailModal, historyModalText, historyModalLogo, historyModalCustomBg]);
 
   const fetchEmojiForTitle = async (title, description) => {
     try {
@@ -872,9 +1155,10 @@ export default function Dashboard() {
     if (parsedVideos.length > 0) {
       try {
         localStorage.setItem("pending_videos_to_edit", JSON.stringify(parsedVideos));
-        if (documentFile) {
-          localStorage.setItem("pending_videos_document_name", documentFile.name);
-          setPendingDocumentName(documentFile.name);
+        if (documentFiles && documentFiles.length > 0) {
+          const namesCombined = documentFiles.map(f => f.name).join(", ");
+          localStorage.setItem("pending_videos_document_name", namesCombined);
+          setPendingDocumentName(namesCombined);
         }
       } catch (error) {
         console.warn("Límite de localStorage excedido, guardando vídeos sin imágenes base64...", error);
@@ -886,9 +1170,10 @@ export default function Dashboard() {
         }));
         try {
           localStorage.setItem("pending_videos_to_edit", JSON.stringify(optimizedList));
-          if (documentFile) {
-            localStorage.setItem("pending_videos_document_name", documentFile.name);
-            setPendingDocumentName(documentFile.name);
+          if (documentFiles && documentFiles.length > 0) {
+            const namesCombined = documentFiles.map(f => f.name).join(", ");
+            localStorage.setItem("pending_videos_document_name", namesCombined);
+            setPendingDocumentName(namesCombined);
           }
         } catch (fallbackErr) {
           console.error("Fallo crítico al guardar estado de vídeos optimizado:", fallbackErr);
@@ -899,7 +1184,7 @@ export default function Dashboard() {
       localStorage.removeItem("pending_videos_document_name");
       setPendingDocumentName("");
     }
-  }, [parsedVideos, documentFile, isInitialLoadDone]);
+  }, [parsedVideos, documentFiles, isInitialLoadDone]);
 
   // Precargar y enmascarar logotipo de la cadena (TVG) y plantilla de programa (Hora Galega)
   useEffect(() => {
@@ -2447,7 +2732,7 @@ export default function Dashboard() {
 
       alert("¡Lote de vídeos guardado con éxito en la base de datos!");
       setParsedVideos([]);
-      setDocumentFile(null);
+      setDocumentFiles([]);
       fetchScheduledUpdates();
     } catch (err) {
       alert("Error al guardar lote: " + err.message);
@@ -2598,11 +2883,11 @@ export default function Dashboard() {
     }
   };
 
-  // Analizar el documento (PDF o Word) con Gemini e iniciar mapeo automático
+  // Analizar los documentos (PDF o Word) con Gemini e iniciar mapeo automático
   const handleAnalyzeFile = async (e) => {
     e.preventDefault();
-    if (!documentFile) {
-      alert("Por favor, sube un documento PDF o Word de referencia.");
+    if (!documentFiles || documentFiles.length === 0) {
+      alert("Por favor, sube uno o varios documentos PDF o Word de referencia.");
       return;
     }
 
@@ -2622,9 +2907,11 @@ export default function Dashboard() {
       // 1. Obtener la lista de videos privados/ocultos de YouTube
       const activePrivateVideos = await fetchPrivateVideos();
 
-      // 2. Analizar el archivo (PDF o Word)
+      // 2. Analizar los archivos (PDF o Word)
       const formData = new FormData();
-      formData.append("file", documentFile);
+      documentFiles.forEach(file => {
+        formData.append("file", file);
+      });
       formData.append("youtubeVideos", JSON.stringify(activePrivateVideos));
 
       const res = await fetch("/api/youtube/analyze-pdf", {
@@ -3566,7 +3853,7 @@ export default function Dashboard() {
       setOptimizationSuggestions(null);
       setYoutubeId("");
       try { setPdfFile(null); } catch (_) {}
-      setDocumentFile(null);
+      setDocumentFiles([]);
       handleResetThumbnailStates();
       fetchTasks();
       fetchScheduledUpdates();
@@ -4306,25 +4593,42 @@ export default function Dashboard() {
                           border: "1px solid rgba(255, 255, 255, 0.1)"
                         }}
                       />
-                      {videoDuration > 0 && (
-                        <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                            <span>Ajustar segundo de captura:</span>
-                            <span style={{ fontWeight: "700", color: "#a855f7" }}>{Math.round(frameTime)}s / {Math.round(videoDuration)}s</span>
+                      {isExtractingFrames && (
+                        <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", textAlign: "center", padding: "0.5rem" }}>
+                          ⏳ Capturando fotogramas del vídeo...
+                        </div>
+                      )}
+                      {!isExtractingFrames && capturedFrames.length > 0 && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", marginTop: "0.25rem" }}>
+                          <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", fontWeight: "600" }}>
+                            🎞️ Elige el fotograma que más te guste:
+                          </span>
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "0.4rem" }}>
+                            {capturedFrames.map((frame, idx) => {
+                              const isSelected = customBgBase64 === frame || localExtractedFrame === frame;
+                              return (
+                                <div
+                                  key={idx}
+                                  onClick={() => handleSelectFrame(frame, idx)}
+                                  style={{
+                                    cursor: "pointer",
+                                    borderRadius: "6px",
+                                    overflow: "hidden",
+                                    border: `2px solid ${isSelected ? "#a855f7" : "transparent"}`,
+                                    boxShadow: isSelected ? "0 0 6px rgba(168, 85, 247, 0.4)" : "none",
+                                    transition: "all 0.15s ease",
+                                    aspectRatio: "16/9"
+                                  }}
+                                >
+                                  <img
+                                    src={frame}
+                                    alt={`Fotograma ${idx + 1}`}
+                                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                                  />
+                                </div>
+                              );
+                            })}
                           </div>
-                          <input
-                            type="range"
-                            min={0}
-                            max={videoDuration}
-                            step={0.5}
-                            value={frameTime}
-                            onChange={handleSliderChange}
-                            style={{
-                              width: "100%",
-                              accentColor: "#a855f7",
-                              cursor: "pointer"
-                            }}
-                          />
                         </div>
                       )}
                     </div>
@@ -4548,8 +4852,9 @@ export default function Dashboard() {
                     <input
                       type="file"
                       ref={pdfInputRef}
+                      multiple
                       accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                      onChange={(e) => setDocumentFile(e.target.files[0])}
+                      onChange={(e) => setDocumentFiles(Array.from(e.target.files))}
                       required
                     />
                   </div>
@@ -5595,45 +5900,65 @@ export default function Dashboard() {
                       </div>
                     )}
 
-                    {/* Control deslizante (scrubber) de fotograma — siempre visible */}
+                    {/* Selector de fotogramas fijos para miniatura automática */}
                     {selectedYoutubeVideo && (() => {
-                      const sliderMax = videoDuration > 0 ? videoDuration : 3600;
                       const hasLocalVideo = videoDuration > 0;
-                      return (
-                        <div style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: "0.3rem",
-                          marginTop: "0.75rem",
-                          padding: "0.65rem 0.75rem",
-                          background: hasLocalVideo ? "rgba(168, 85, 247, 0.06)" : "rgba(100, 116, 139, 0.06)",
-                          border: `1px solid ${hasLocalVideo ? "rgba(168, 85, 247, 0.2)" : "rgba(100, 116, 139, 0.2)"}`,
-                          borderRadius: "8px"
-                        }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.72rem", color: "var(--text-muted)" }}>
-                            <span style={{ display: "flex", alignItems: "center", gap: "0.3rem", fontWeight: "600" }}>
-                              🎞️ Fotograma de la miniatura
-                            </span>
-                            <span style={{ fontWeight: "700", color: hasLocalVideo ? "#a855f7" : "#64748b", fontVariantNumeric: "tabular-nums" }}>
-                              {Math.floor(frameTime / 60).toString().padStart(2, "0")}:{Math.floor(frameTime % 60).toString().padStart(2, "0")} / {Math.floor(sliderMax / 60).toString().padStart(2, "0")}:{Math.floor(sliderMax % 60).toString().padStart(2, "0")}
-                            </span>
+                      if (!hasLocalVideo) {
+                        return (
+                          <div style={{
+                            fontSize: "0.72rem",
+                            color: "var(--text-muted)",
+                            textAlign: "center",
+                            padding: "0.65rem 0.75rem",
+                            background: "rgba(100, 116, 139, 0.06)",
+                            border: "1px solid rgba(100, 116, 139, 0.2)",
+                            borderRadius: "8px",
+                            marginTop: "0.75rem"
+                          }}>
+                            ℹ️ Vídeo local no disponible para extraer fotogramas. Puedes subir una imagen de portada.
                           </div>
-                          <input
-                            type="range"
-                            min={0}
-                            max={sliderMax}
-                            step={0.25}
-                            value={frameTime}
-                            onChange={handleSliderChange}
-                            disabled={!hasLocalVideo}
-                            style={{
-                              width: "100%",
-                              accentColor: hasLocalVideo ? "#a855f7" : "#475569",
-                              cursor: hasLocalVideo ? "pointer" : "not-allowed",
-                              height: "4px",
-                              opacity: hasLocalVideo ? 1 : 0.45
-                            }}
-                          />
+                        );
+                      }
+                      return (
+                        <div style={{ marginTop: "0.75rem" }}>
+                          {isExtractingFrames && (
+                            <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", textAlign: "center", padding: "0.5rem" }}>
+                              ⏳ Capturando fotogramas del vídeo...
+                            </div>
+                          )}
+                          {!isExtractingFrames && capturedFrames.length > 0 && (
+                            <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                              <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", fontWeight: "600" }}>
+                                🎞️ Selecciona un fotograma del vídeo:
+                              </span>
+                              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "0.4rem" }}>
+                                {capturedFrames.map((frame, idx) => {
+                                  const isSelected = customBgBase64 === frame || localExtractedFrame === frame;
+                                  return (
+                                    <div
+                                      key={idx}
+                                      onClick={() => handleSelectFrame(frame, idx)}
+                                      style={{
+                                        cursor: "pointer",
+                                        borderRadius: "6px",
+                                        overflow: "hidden",
+                                        border: `2px solid ${isSelected ? "#a855f7" : "transparent"}`,
+                                        boxShadow: isSelected ? "0 0 6px rgba(168, 85, 247, 0.4)" : "none",
+                                        transition: "all 0.15s ease",
+                                        aspectRatio: "16/9"
+                                      }}
+                                    >
+                                      <img
+                                        src={frame}
+                                        alt={`Fotograma ${idx + 1}`}
+                                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                                      />
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })()}
@@ -6279,6 +6604,27 @@ export default function Dashboard() {
                         </a>
                         <button
                           type="button"
+                          onClick={() => handleOpenHistoryThumbnailModal(item)}
+                          className={styles.btnSubmit}
+                          style={{
+                            width: "auto",
+                            fontSize: "0.72rem",
+                            padding: "0.35rem 0.8rem",
+                            background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
+                            border: "none",
+                            color: "#fff",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "0.25rem",
+                            borderRadius: "6px",
+                            fontWeight: "600",
+                            height: "fit-content"
+                          }}
+                        >
+                          🎨 Miniatura
+                        </button>
+                        <button
+                          type="button"
                           title="Eliminar del historial"
                           onClick={async () => {
                             if (!confirm(`¿Eliminar "${item.title || "este vídeo"}" del historial?`)) return;
@@ -6576,6 +6922,277 @@ export default function Dashboard() {
         onLoadedMetadata={handleVideoLoadedMetadata}
         onSeeked={handleVideoSeeked}
       />
+
+      {/* Modal para regenerar miniatura desde el historial */}
+      {showHistoryThumbnailModal && historyModalItem && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: "rgba(15, 23, 42, 0.85)",
+          backdropFilter: "blur(8px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 9999,
+          padding: "1rem"
+        }}>
+          <div style={{
+            background: "rgba(30, 41, 59, 0.95)",
+            border: "1px solid rgba(255, 255, 255, 0.08)",
+            borderRadius: "16px",
+            width: "100%",
+            maxWidth: "960px",
+            maxHeight: "90vh",
+            overflowY: "auto",
+            padding: "2rem",
+            boxShadow: "0 20px 40px rgba(0, 0, 0, 0.5)",
+            display: "grid",
+            gridTemplateColumns: "1.2fr 1fr",
+            gap: "2rem",
+            position: "relative"
+          }}>
+            {/* Botón de cerrar */}
+            <button
+              onClick={() => setShowHistoryThumbnailModal(false)}
+              style={{
+                position: "absolute",
+                top: "1rem",
+                right: "1.25rem",
+                background: "transparent",
+                border: "none",
+                color: "#94a3b8",
+                fontSize: "1.5rem",
+                cursor: "pointer"
+              }}
+            >
+              ✕
+            </button>
+
+            {/* Columna Izquierda: Vista previa y Fotogramas */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <h3 style={{ fontSize: "1.2rem", fontWeight: "800", color: "#fff", margin: 0 }}>
+                Diseño de Miniatura
+              </h3>
+              
+              {/* Previsualización del canvas */}
+              <div style={{
+                position: "relative",
+                aspectRatio: "16/9",
+                borderRadius: "12px",
+                overflow: "hidden",
+                border: "1px solid rgba(255, 255, 255, 0.1)",
+                background: "#090d1f"
+              }}>
+                {historyModalGeneratedBase64 ? (
+                  <img
+                    src={historyModalGeneratedBase64}
+                    alt="Preview miniatura"
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  />
+                ) : (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--text-muted)", fontSize: "0.85rem" }}>
+                    Generando preview...
+                  </div>
+                )}
+              </div>
+
+              {/* Selector de fondo/fotogramas */}
+              <div style={{
+                background: "rgba(255, 255, 255, 0.02)",
+                border: "1px solid rgba(255,255,255,0.05)",
+                borderRadius: "12px",
+                padding: "1rem",
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.75rem"
+              }}>
+                <span style={{ fontSize: "0.8rem", fontWeight: "700", color: "#f8fafc" }}>
+                  🖼️ Fotograma de fondo:
+                </span>
+                
+                {historyModalIsExtracting && (
+                  <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", textAlign: "center", padding: "0.5rem" }}>
+                    ⏳ Extrayendo fotogramas del vídeo local...
+                  </div>
+                )}
+                
+                {!historyModalIsExtracting && (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "0.4rem" }}>
+                    {/* Opción 1: Miniatura actual de YouTube */}
+                    {historyModalCustomBg && (
+                      <div
+                        onClick={() => setHistoryModalCustomBg(historyModalCustomBg)}
+                        style={{
+                          cursor: "pointer",
+                          borderRadius: "6px",
+                          overflow: "hidden",
+                          border: `2px solid ${historyModalCustomBg ? "#a855f7" : "transparent"}`,
+                          aspectRatio: "16/9",
+                          position: "relative"
+                        }}
+                      >
+                        <img src={historyModalCustomBg} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        <span style={{
+                          position: "absolute", bottom: 0, left: 0, right: 0,
+                          fontSize: "8px", background: "rgba(0,0,0,0.7)", color: "#fff",
+                          textAlign: "center", padding: "1px 0"
+                        }}>YouTube</span>
+                      </div>
+                    )}
+                    
+                    {/* Fotogramas locales */}
+                    {historyModalCapturedFrames.map((frame, idx) => {
+                      const isSelected = historyModalCustomBg === frame;
+                      return (
+                        <div
+                          key={idx}
+                          onClick={() => setHistoryModalCustomBg(frame)}
+                          style={{
+                            cursor: "pointer",
+                            borderRadius: "6px",
+                            overflow: "hidden",
+                            border: `2px solid ${isSelected ? "#a855f7" : "transparent"}`,
+                            aspectRatio: "16/9"
+                          }}
+                        >
+                          <img src={frame} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                
+                {/* Subida manual */}
+                <div style={{ marginTop: "0.25rem" }}>
+                  <label style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>Subir fondo personalizado:</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleHistoryModalNewBgSelect}
+                    style={{ fontSize: "0.72rem", background: "transparent", border: "none", color: "#cbd5e1" }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Columna Derecha: Edición de campos y guardado */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                <h3 style={{ fontSize: "1.2rem", fontWeight: "800", color: "#fff", margin: 0 }}>
+                  Ajustes de Portada
+                </h3>
+                
+                {/* Texto Frase SEO */}
+                <div className={styles.inputGroup} style={{ margin: 0 }}>
+                  <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span>Frase SEO en miniatura (3-5 palabras)</span>
+                    <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>
+                      {historyModalText.trim().split(/\s+/).filter(Boolean).length}/5 palabras
+                    </span>
+                  </label>
+                  <input
+                    type="text"
+                    value={historyModalText}
+                    onChange={(e) => setHistoryModalText(e.target.value)}
+                    required
+                  />
+                </div>
+
+                {/* Logotipo del programa */}
+                <div className={styles.inputGroup} style={{ margin: 0 }}>
+                  <label>Logotipo del Programa</label>
+                  <select
+                    value={historyModalLogo}
+                    onChange={(e) => setHistoryModalLogo(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "0.5rem",
+                      background: "rgba(15, 23, 42, 0.4)",
+                      border: "1px solid var(--border-color)",
+                      borderRadius: "8px",
+                      color: "#fff"
+                    }}
+                  >
+                    <option value="none">Ninguno (solo logo TVG)</option>
+                    {programLogosCatalog.map((logo) => {
+                      const logoName = typeof logo === "string" ? logo : logo.name;
+                      return (
+                        <option key={logoName} value={logoName}>
+                          {logoName.replace(/_/g, " ").replace(/\.[^/.]+$/, "")}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+
+                {/* Estado */}
+                <div style={{
+                  background: "rgba(0, 0, 0, 0.2)",
+                  padding: "0.75rem",
+                  borderRadius: "8px",
+                  border: "1px solid rgba(255, 255, 255, 0.03)",
+                  fontSize: "0.75rem",
+                  color: "#cbd5e1"
+                }}>
+                  <strong>Estado:</strong> {historyModalStatus}
+                </div>
+              </div>
+
+              {/* Botón de actualizar */}
+              <div style={{ display: "flex", gap: "0.75rem", marginTop: "1rem" }}>
+                <button
+                  type="button"
+                  onClick={() => setShowHistoryThumbnailModal(false)}
+                  style={{
+                    flex: 1,
+                    padding: "0.75rem",
+                    borderRadius: "10px",
+                    background: "rgba(255, 255, 255, 0.05)",
+                    border: "1px solid var(--border-color)",
+                    color: "#f1f5f9",
+                    cursor: "pointer",
+                    fontWeight: "600"
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={historyModalIsSaving || historyModalIsExtracting}
+                  onClick={handleSaveHistoryThumbnail}
+                  style={{
+                    flex: 1.5,
+                    padding: "0.75rem",
+                    borderRadius: "10px",
+                    background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
+                    border: "none",
+                    color: "#fff",
+                    cursor: (historyModalIsSaving || historyModalIsExtracting) ? "not-allowed" : "pointer",
+                    fontWeight: "700",
+                    boxShadow: "0 4px 15px rgba(168, 85, 247, 0.3)"
+                  }}
+                >
+                  {historyModalIsSaving ? "Subiendo..." : "Guardar y Subir 📤"}
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          {/* Elemento de vídeo oculto del modal */}
+          <video
+            ref={historyModalVideoRef}
+            style={{ display: "none" }}
+            preload="auto"
+            muted
+            playsInline
+            onLoadedMetadata={handleHistoryVideoLoadedMetadata}
+            onSeeked={handleHistoryVideoSeeked}
+          />
+        </div>
+      )}
     </div>
     </div>
   );

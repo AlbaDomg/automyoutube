@@ -89,6 +89,11 @@ export default function SubidorPage() {
   const [videoDuration, setVideoDuration] = useState(0);
   const [frameTime, setFrameTime] = useState(15);
   const [videoObjectURL, setVideoObjectURL] = useState("");
+  const [capturedFrames, setCapturedFrames] = useState([]);
+  const [isExtractingFrames, setIsExtractingFrames] = useState(false);
+  const targetTimes = useRef([]);
+  const capturingFrameIndex = useRef(-1);
+  const accumulatedFrames = useRef([]);
 
   // Estados de la cola de subidas por lote
   const [batchFiles, setBatchFiles] = useState([]);
@@ -109,10 +114,27 @@ export default function SubidorPage() {
     if (hiddenVideoRef.current) {
       const duration = hiddenVideoRef.current.duration;
       setVideoDuration(duration);
-      // Por defecto capturamos a los 15 segundos, o a la mitad del vídeo si dura menos de 30 segundos
-      const defaultSeek = duration > 30 ? 15 : duration / 2;
-      setFrameTime(defaultSeek);
-      hiddenVideoRef.current.currentTime = defaultSeek;
+      
+      if (extractingIndex >= 0) {
+        // Lógica original para extracción en lote
+        const defaultSeek = duration > 30 ? 15 : duration / 2;
+        setFrameTime(defaultSeek);
+        hiddenVideoRef.current.currentTime = defaultSeek;
+      } else {
+        // Secuencia de 4 fotogramas para subida individual
+        const times = [
+          duration * 0.15,
+          duration * 0.35,
+          duration * 0.55,
+          duration * 0.75
+        ];
+        targetTimes.current = times;
+        accumulatedFrames.current = [];
+        setCapturedFrames([]);
+        setIsExtractingFrames(true);
+        capturingFrameIndex.current = 0;
+        hiddenVideoRef.current.currentTime = times[0];
+      }
     }
   };
 
@@ -131,8 +153,27 @@ export default function SubidorPage() {
             const currentIdx = extractingIndex;
             await processExtractionResult(currentIdx, base64);
           } else {
-            setLocalExtractedFrame(base64);
-            setSimpleUploadStatus("Portada del vídeo capturada correctamente.");
+            // Flujo de captura secuencial individual
+            if (capturingFrameIndex.current !== -1) {
+              accumulatedFrames.current.push(base64);
+              const nextIndex = capturingFrameIndex.current + 1;
+              if (nextIndex < 4 && nextIndex < targetTimes.current.length) {
+                capturingFrameIndex.current = nextIndex;
+                hiddenVideoRef.current.currentTime = targetTimes.current[nextIndex];
+              } else {
+                capturingFrameIndex.current = -1;
+                setIsExtractingFrames(false);
+                const frames = [...accumulatedFrames.current];
+                setCapturedFrames(frames);
+                if (frames.length > 0) {
+                  setLocalExtractedFrame(frames[0]);
+                  setSimpleUploadStatus("Fotogramas del vídeo capturados correctamente.");
+                }
+              }
+            } else {
+              setLocalExtractedFrame(base64);
+              setSimpleUploadStatus("Portada del vídeo capturada correctamente.");
+            }
           }
         }
       } catch (err) {
@@ -143,8 +184,19 @@ export default function SubidorPage() {
             idx === currentIdx ? { ...item, status: 'ready' } : item
           ));
           setExtractingIndex(-1);
+        } else {
+          capturingFrameIndex.current = -1;
+          setIsExtractingFrames(false);
+          setSimpleUploadStatus("Fallo al extraer fotogramas del vídeo.");
         }
       }
+    }
+  };
+
+  const handleSelectFrame = (base64, idx) => {
+    setLocalExtractedFrame(base64);
+    if (targetTimes.current && targetTimes.current[idx] !== undefined) {
+      setFrameTime(targetTimes.current[idx]);
     }
   };
 

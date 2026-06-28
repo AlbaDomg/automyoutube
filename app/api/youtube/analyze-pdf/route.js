@@ -122,10 +122,10 @@ export async function POST(request) {
     }
 
     const formData = await request.formData();
-    const file = formData.get('file');
+    const files = formData.getAll('file');
 
-    if (!file) {
-      return NextResponse.json({ error: 'Por favor, selecciona un documento de referencia (PDF o Word).' }, { status: 400 });
+    if (!files || files.length === 0) {
+      return NextResponse.json({ error: 'Por favor, selecciona al menos un documento de referencia (PDF o Word).' }, { status: 400 });
     }
 
     const youtubeVideosRaw = formData.get('youtubeVideos');
@@ -138,24 +138,34 @@ export async function POST(request) {
       }
     }
 
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const fileName = file.name.toLowerCase();
-    const isDocx = fileName.endsWith('.docx') || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    const fileNamesJoined = files.map(f => f.name).join(", ");
+    const geminiContentsParts = [];
 
-    let pdfBase64 = "";
-    let docxText = "";
+    for (const file of files) {
+      const arrayBuffer = await file.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const fileName = file.name.toLowerCase();
+      const isDocx = fileName.endsWith('.docx') || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
-    if (isDocx) {
-      console.log(`[Analyze File API] Extracting text from DOCX: ${file.name}...`);
-      const result = await mammoth.extractRawText({ buffer });
-      docxText = result.value;
-      if (!docxText.trim()) {
-        return NextResponse.json({ error: 'El archivo Word parece estar vacío o no contiene texto legible.' }, { status: 400 });
+      if (isDocx) {
+        console.log(`[Analyze File API] Extracting text from DOCX: ${file.name}...`);
+        const result = await mammoth.extractRawText({ buffer });
+        const docxText = result.value;
+        if (!docxText.trim()) {
+          return NextResponse.json({ error: `El archivo Word "${file.name}" parece estar vacío o no contiene texto legible.` }, { status: 400 });
+        }
+        geminiContentsParts.push({ text: `Texto extraído del documento de Word "${file.name}":\n\n${docxText}` });
+      } else {
+        console.log(`[Analyze File API] Preparing PDF file: ${file.name}...`);
+        const pdfBase64 = buffer.toString('base64');
+        geminiContentsParts.push({
+          inlineData: {
+            data: pdfBase64,
+            mimeType: 'application/pdf'
+          }
+        });
+        geminiContentsParts.push({ text: `Este PDF corresponde al documento: "${file.name}"` });
       }
-    } else {
-      console.log(`[Analyze File API] Preparing PDF file: ${file.name}...`);
-      pdfBase64 = buffer.toString('base64');
     }
 
     // 3. Inicializar Gemini
@@ -298,11 +308,11 @@ Response format:
     const cleanProgramNames = availableLogos.map(l => l.replace(/\.[^/.]+$/, "").replace(/_/g, " ").toUpperCase().trim());
 
     const prompt = `
-Analiza el documento de referencia adjunto. Este documento contiene la planificación o tabla con los metadatos de los videos de redes sociales/YouTube de uno o varios programas de televisión.
-El nombre del archivo de este documento subido es: "${file.name}".
+Analiza los documentos de referencia adjuntos. Estos documentos contienen la planificación o tabla con los metadatos de los videos de redes sociales/YouTube de uno o varios programas de televisión.
+Los nombres de los archivos subidos son: "${fileNamesJoined}".
 Los nombres de programas/logotipos válidos registrados en el sistema son: ${JSON.stringify(cleanProgramNames)}.
 
-Extrae la información de los vídeos que estén definidos y listados en la tabla o el texto del documento.
+Extrae la información de los vídeos que estén definidos y listados en las tablas o el texto de los documentos.
 
 REGLA CRÍTICA DE FILTRADO (MUY IMPORTANTE): Debes ignorar por completo cualquier fila, celda o sección de vídeo que esté vacía o que sirva como plantilla sin contenido real (por ejemplo, si el documento tiene una fila llamada 'Vídeo 4' o 'Vídeo 5' pero no contiene un título ni una descripción redactados en sus celdas correspondientes). Únicamente debes extraer y devolver los vídeos que tengan un título y una descripción/sinopsis reales y definidos en el documento.
 
@@ -358,27 +368,17 @@ Responde obligatoriamente en formato JSON con la siguiente estructura exacta:
 }
 `;
 
-    console.log(`[Analyze File API] Sending document to Gemini to parse videos...`);
+    console.log(`[Analyze File API] Sending documents to Gemini to parse videos...`);
     let response;
     
-    // Preparar el contenido a enviar según el tipo de archivo
+    // Preparar el contenido a enviar conteniendo todos los archivos subidos
     const geminiContents = [
       {
         role: 'user',
-        parts: isDocx 
-          ? [
-              { text: `Aquí está el texto extraído del documento de Word de referencia:\n\n${docxText}` },
-              { text: prompt }
-            ]
-          : [
-              {
-                inlineData: {
-                  data: pdfBase64,
-                  mimeType: 'application/pdf'
-                }
-              },
-              { text: prompt }
-            ]
+        parts: [
+          ...geminiContentsParts,
+          { text: prompt }
+        ]
       }
     ];
 
@@ -418,8 +418,6 @@ Responde obligatoriamente en formato JSON con la siguiente estructura exacta:
       return NextResponse.json({ error: 'El documento no contiene videos con el formato esperado.' }, { status: 400 });
     }
 
-
-
     const processedVideos = parsedResult.videos.map(v => {
       const baseDesc = v.description || '';
       let finalDesc = baseDesc.trim();
@@ -454,7 +452,7 @@ Responde obligatoriamente en formato JSON con la siguiente estructura exacta:
     return NextResponse.json({
       success: true,
       videos: processedVideos,
-      fileName: file.name
+      fileName: fileNamesJoined
     });
 
   } catch (error) {
