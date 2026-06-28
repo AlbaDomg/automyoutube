@@ -2196,7 +2196,8 @@ export default function Dashboard() {
       ...video,
       rawFrameBase64: dbVideo?.rawFrameBase64 || null,
       filePath: dbVideo?.filePath || null,
-      dbId: dbVideo?.id || null
+      dbId: dbVideo?.id || null,
+      hasExtractedFrames: dbVideo?.hasExtractedFrames || false
     };
 
     setSelectedYoutubeVideo(combinedVideo);
@@ -2256,21 +2257,35 @@ export default function Dashboard() {
       });
     }
 
-    // Cargar el vídeo en el elemento oculto para permitir el ajuste manual del fotograma si existe el archivo
-    const validFilePath = combinedVideo.filePath &&
-      !['PDF_PARSED', 'YOUTUBE_UPLOAD', 'YOUTUBE_UPDATE'].includes(combinedVideo.filePath);
+    // Cargar el vídeo en el elemento oculto para permitir el ajuste manual del fotograma si existe el archivo, o usar fotogramas del servidor
+    if (dbVideo && dbVideo.hasExtractedFrames) {
+      const serverFrames = [
+        `/api/videos/thumbnail?id=${dbVideo.id}&frame=0`,
+        `/api/videos/thumbnail?id=${dbVideo.id}&frame=1`,
+        `/api/videos/thumbnail?id=${dbVideo.id}&frame=2`,
+        `/api/videos/thumbnail?id=${dbVideo.id}&frame=3`,
+        `/api/videos/thumbnail?id=${dbVideo.id}&frame=4`,
+        `/api/videos/thumbnail?id=${dbVideo.id}&frame=5`
+      ];
+      setCapturedFrames(serverFrames);
+      setVideoDuration(1); // Hacer que hasLocalVideo sea true para el renderizado
+      setIsExtractingFrames(false);
+    } else {
+      const validFilePath = combinedVideo.filePath &&
+        !['PDF_PARSED', 'YOUTUBE_UPLOAD', 'YOUTUBE_UPDATE'].includes(combinedVideo.filePath);
 
-    if (validFilePath && combinedVideo.dbId) {
-      const srcUrl = combinedVideo.filePath.startsWith('https://')
-        ? combinedVideo.filePath
-        : `/api/videos/stream?id=${combinedVideo.dbId}`;
+      if (validFilePath && combinedVideo.dbId) {
+        const srcUrl = combinedVideo.filePath.startsWith('https://')
+          ? combinedVideo.filePath
+          : `/api/videos/stream?id=${combinedVideo.dbId}`;
 
-      if (videoObjectURL) URL.revokeObjectURL(videoObjectURL);
-      setVideoObjectURL("");
+        if (videoObjectURL) URL.revokeObjectURL(videoObjectURL);
+        setVideoObjectURL("");
 
-      if (hiddenVideoRef.current) {
-        hiddenVideoRef.current.src = srcUrl;
-        hiddenVideoRef.current.load();
+        if (hiddenVideoRef.current) {
+          hiddenVideoRef.current.src = srcUrl;
+          hiddenVideoRef.current.load();
+        }
       }
     }
 
