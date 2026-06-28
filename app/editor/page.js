@@ -2259,14 +2259,11 @@ export default function Dashboard() {
 
     // Cargar el vídeo en el elemento oculto para permitir el ajuste manual del fotograma si existe el archivo, o usar fotogramas del servidor
     if (dbVideo && dbVideo.hasExtractedFrames) {
-      const serverFrames = [
-        `/api/videos/thumbnail?id=${dbVideo.id}&frame=0`,
-        `/api/videos/thumbnail?id=${dbVideo.id}&frame=1`,
-        `/api/videos/thumbnail?id=${dbVideo.id}&frame=2`,
-        `/api/videos/thumbnail?id=${dbVideo.id}&frame=3`,
-        `/api/videos/thumbnail?id=${dbVideo.id}&frame=4`,
-        `/api/videos/thumbnail?id=${dbVideo.id}&frame=5`
-      ];
+      const count = dbVideo.extractedFramesCount || 6;
+      const serverFrames = [];
+      for (let i = 0; i < count; i++) {
+        serverFrames.push(`/api/videos/thumbnail?id=${dbVideo.id}&frame=${i}`);
+      }
       setCapturedFrames(serverFrames);
       setVideoDuration(1); // Hacer que hasLocalVideo sea true para el renderizado
       setIsExtractingFrames(false);
@@ -2399,14 +2396,11 @@ export default function Dashboard() {
 
     // Cargar el vídeo en el elemento oculto para permitir el ajuste manual del fotograma si es necesario
     if (video.hasExtractedFrames) {
-      const serverFrames = [
-        `/api/videos/thumbnail?id=${video.id}&frame=0`,
-        `/api/videos/thumbnail?id=${video.id}&frame=1`,
-        `/api/videos/thumbnail?id=${video.id}&frame=2`,
-        `/api/videos/thumbnail?id=${video.id}&frame=3`,
-        `/api/videos/thumbnail?id=${video.id}&frame=4`,
-        `/api/videos/thumbnail?id=${video.id}&frame=5`
-      ];
+      const count = video.extractedFramesCount || 6;
+      const serverFrames = [];
+      for (let i = 0; i < count; i++) {
+        serverFrames.push(`/api/videos/thumbnail?id=${video.id}&frame=${i}`);
+      }
       setCapturedFrames(serverFrames);
       setVideoDuration(1); // Hacer que hasLocalVideo sea true para el renderizado
       setIsExtractingFrames(false);
@@ -2426,8 +2420,17 @@ export default function Dashboard() {
       }
     }
 
-    if (video.rawFrameBase64) {
-      setCustomBgBase64(video.rawFrameBase64);
+    let rawFrame = video.rawFrameBase64 || null;
+    if (rawFrame && rawFrame.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(rawFrame);
+        rawFrame = parsed[0] || null;
+      } catch (e) {
+        rawFrame = null;
+      }
+    }
+    if (rawFrame) {
+      setCustomBgBase64(rawFrame);
     } else if (video.hasExtractedFrames) {
       setCustomBgBase64(`/api/videos/thumbnail?id=${video.id}&frame=0`);
     } else if (video.filePath && video.filePath.startsWith('https://')) {

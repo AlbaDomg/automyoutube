@@ -162,30 +162,41 @@ export async function GET(request) {
     const videosWithFrames = videos.map(video => {
       let hasFrames = false;
       let rawFrameBase64 = video.rawFrameBase64;
+      let extractedFramesCount = 0;
 
-      if (video.rawFrameBase64 && video.rawFrameBase64.startsWith('[')) {
+      if (video.rawFrameBase64) {
         hasFrames = true;
-        try {
-          const parsed = JSON.parse(video.rawFrameBase64);
-          rawFrameBase64 = parsed[0] || null; // Conservar solo el primer fotograma como predeterminado
-        } catch (e) {
-          rawFrameBase64 = null;
+        if (video.rawFrameBase64.startsWith('[')) {
+          try {
+            const parsed = JSON.parse(video.rawFrameBase64);
+            rawFrameBase64 = parsed[0] || null; // Conservar solo el primer fotograma como predeterminado
+            extractedFramesCount = parsed.length;
+          } catch (e) {
+            rawFrameBase64 = null;
+            extractedFramesCount = 0;
+          }
+        } else {
+          extractedFramesCount = 1;
         }
       } else {
         // Fallback local en disco
         try {
-          hasFrames = fs.existsSync(path.join(uploadsDir, `${video.id}-frame-0.jpg`)) &&
-                      fs.existsSync(path.join(uploadsDir, `${video.id}-frame-1.jpg`)) &&
-                      fs.existsSync(path.join(uploadsDir, `${video.id}-frame-2.jpg`)) &&
-                      fs.existsSync(path.join(uploadsDir, `${video.id}-frame-3.jpg`)) &&
-                      fs.existsSync(path.join(uploadsDir, `${video.id}-frame-4.jpg`)) &&
-                      fs.existsSync(path.join(uploadsDir, `${video.id}-frame-5.jpg`));
+          const hasLocalFrames = fs.existsSync(path.join(uploadsDir, `${video.id}-frame-0.jpg`)) &&
+                                 fs.existsSync(path.join(uploadsDir, `${video.id}-frame-1.jpg`)) &&
+                                 fs.existsSync(path.join(uploadsDir, `${video.id}-frame-2.jpg`)) &&
+                                 fs.existsSync(path.join(uploadsDir, `${video.id}-frame-3.jpg`)) &&
+                                 fs.existsSync(path.join(uploadsDir, `${video.id}-frame-4.jpg`)) &&
+                                 fs.existsSync(path.join(uploadsDir, `${video.id}-frame-5.jpg`));
+          if (hasLocalFrames) {
+            hasFrames = true;
+            extractedFramesCount = 6;
+          }
         } catch (fsErr) {
           console.warn('[Videos API] Failed to check frame files on disk:', fsErr.message);
         }
       }
 
-      return { ...video, rawFrameBase64, hasExtractedFrames: hasFrames };
+      return { ...video, rawFrameBase64, hasExtractedFrames: hasFrames, extractedFramesCount };
     });
 
     return NextResponse.json(videosWithFrames);
