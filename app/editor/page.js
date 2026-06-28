@@ -3781,7 +3781,7 @@ export default function Dashboard() {
         });
 
         // 5. Completar subida en la base de datos
-        setSimpleUploadStatus("Finalizando registro en YouTube...");
+        setSimpleUploadStatus("Finalizando registro en la base de datos...");
         const completeRes = await fetch("/api/upload?action=complete", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -3796,13 +3796,66 @@ export default function Dashboard() {
           throw new Error(errData.error || "Fallo al completar subida en base de datos");
         }
 
+        // 6. Aplicar metadatos (título, descripción, tags, playlist, miniatura) y programar/publicar en YouTube usando el endpoint existente
+        setSimpleUploadStatus("Sincronizando metadatos y portada en YouTube...");
+        const updateRes = await fetch("/api/youtube/update", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            youtubeVideoId: youtubeId,
+            title: updateForm.title,
+            description: updateForm.description,
+            tags: updateForm.tags,
+            thumbnail: isAutoThumbnailEnabled ? newThumbnailBase64 : null,
+            scheduledAt: updateForm.isScheduled ? toUTCISOString(updateForm.scheduledAt) : null,
+            playlistId: updateForm.playlistId || null,
+            privacyStatus: privacyStatus
+          }),
+        });
+
+        if (!updateRes.ok) {
+          const errData = await updateRes.json();
+          throw new Error(errData.error || "Fallo al sincronizar metadatos y portada en YouTube");
+        }
+
+        const updateData = await updateRes.json();
+
+        // 7. Actualizar el registro local a SCHEDULED o COMPLETED según corresponda
+        const isScheduled = updateForm.isScheduled;
+        const newStatus = isScheduled ? 'SCHEDULED' : 'COMPLETED';
+
+        const dbRes = await fetch(`/api/videos?id=${selectedYoutubeVideo.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: updateForm.title,
+            description: updateForm.description,
+            tags: updateForm.tags,
+            playlistId: updateForm.playlistId || null,
+            thumbnailBase64: newThumbnailBase64 || null,
+            rawFrameBase64: (customBgBase64 && customBgBase64.startsWith("data:")) ? customBgBase64 : undefined,
+            status: newStatus,
+            privacyStatus: privacyStatus || 'private',
+            scheduledAt: isScheduled ? toUTCISOString(updateForm.scheduledAt) : null
+          })
+        });
+
+        if (!dbRes.ok) {
+          console.warn("[Editor Upload] Failed to update local database video status after upload completed.");
+        }
+
         // Nota: el archivo de Supabase NO se borra aquí.
         // Se conserva para que el editor pueda usar el slider de fotograma.
         // Se eliminará automáticamente cuando el editor publique el vídeo (handleSaveVideo).
         console.log("[Editor Upload] Supabase file preserved for editor frame selection slider.");
 
-        setSimpleUploadStatus("¡Vídeo publicado con éxito!");
-        alert("¡El vídeo ha sido subido a YouTube y configurado correctamente!");
+        if (updateData.scheduled) {
+          setSimpleUploadStatus("¡Sincronización programada con éxito!");
+          alert("¡El vídeo ha sido subido a YouTube y programado con éxito!");
+        } else {
+          setSimpleUploadStatus("¡Vídeo publicado con éxito!");
+          alert("¡El vídeo ha sido subido y publicado con éxito en YouTube!");
+        }
       } else {
         // Vídeo que ya está en YouTube: usar endpoint existente
         setSimpleUploadProgress(5);
