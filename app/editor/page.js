@@ -5907,15 +5907,50 @@ export default function Dashboard() {
                         return (
                           <div style={{
                             fontSize: "0.72rem",
-                            color: "var(--text-muted)",
+                            color: "var(--text-secondary)",
                             textAlign: "center",
-                            padding: "0.65rem 0.75rem",
-                            background: "rgba(100, 116, 139, 0.06)",
-                            border: "1px solid rgba(100, 116, 139, 0.2)",
-                            borderRadius: "8px",
-                            marginTop: "0.75rem"
+                            padding: "0.8rem 1rem",
+                            background: "rgba(100, 116, 139, 0.08)",
+                            border: "1px solid rgba(100, 116, 139, 0.25)",
+                            borderRadius: "12px",
+                            marginTop: "0.75rem",
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: "0.6rem",
+                            alignItems: "center"
                           }}>
-                            ℹ️ Vídeo local no disponible para extraer fotogramas. Puedes subir una imagen de portada.
+                            <span style={{ fontWeight: "500" }}>
+                              ℹ️ Vídeo no disponible en el servidor. Selecciona el archivo en tu PC para extraer fotogramas:
+                            </span>
+                            <input
+                              type="file"
+                              accept="video/*"
+                              style={{
+                                fontSize: "0.72rem",
+                                color: "var(--text-secondary)",
+                                background: "rgba(255,255,255,0.05)",
+                                border: "1px solid var(--border-color)",
+                                borderRadius: "8px",
+                                padding: "0.4rem 0.6rem",
+                                cursor: "pointer",
+                                width: "100%",
+                                maxWidth: "250px"
+                              }}
+                              onChange={(e) => {
+                                const file = e.target.files[0];
+                                if (file) {
+                                  const url = URL.createObjectURL(file);
+                                  if (videoObjectURL) {
+                                    URL.revokeObjectURL(videoObjectURL);
+                                  }
+                                  setVideoObjectURL(url);
+                                  if (hiddenVideoRef.current) {
+                                    hiddenVideoRef.current.src = url;
+                                    hiddenVideoRef.current.load();
+                                  }
+                                }
+                              }}
+                            />
                           </div>
                         );
                       }
@@ -6907,6 +6942,7 @@ export default function Dashboard() {
       {/* Elemento de vídeo oculto para extracción de miniaturas */}
       <video
         ref={hiddenVideoRef}
+        crossOrigin="anonymous"
         style={{
           position: "absolute",
           top: "-9999px",
@@ -7065,16 +7101,40 @@ export default function Dashboard() {
                   </div>
                 )}
                 
-                {/* Subida manual */}
-                <div style={{ marginTop: "0.25rem" }}>
-                  <label style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>Subir fondo personalizado:</label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleHistoryModalNewBgSelect}
-                    style={{ fontSize: "0.72rem", background: "transparent", border: "none", color: "#cbd5e1" }}
-                  />
-                </div>
+                 {/* Subida manual */}
+                 <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginTop: "0.5rem" }}>
+                   <div>
+                     <label style={{ fontSize: "0.72rem", color: "var(--text-muted)", display: "block" }}>Subir fondo personalizado (imagen):</label>
+                     <input
+                       type="file"
+                       accept="image/*"
+                       onChange={handleHistoryModalNewBgSelect}
+                       style={{ fontSize: "0.72rem", background: "transparent", border: "none", color: "#cbd5e1" }}
+                     />
+                   </div>
+                   {historyModalCapturedFrames.length === 0 && !historyModalIsExtracting && (
+                     <div>
+                       <label style={{ fontSize: "0.72rem", color: "var(--text-muted)", display: "block" }}>O cargar vídeo local para extraer fotogramas:</label>
+                       <input
+                         type="file"
+                         accept="video/*"
+                         style={{ fontSize: "0.72rem", background: "transparent", border: "none", color: "#cbd5e1" }}
+                         onChange={(e) => {
+                           const file = e.target.files[0];
+                           if (file) {
+                             const url = URL.createObjectURL(file);
+                             setHistoryModalStatus("Cargando archivo de vídeo local...");
+                             setHistoryModalIsExtracting(true);
+                             if (historyModalVideoRef.current) {
+                               historyModalVideoRef.current.src = url;
+                               historyModalVideoRef.current.load();
+                             }
+                           }
+                         }}
+                       />
+                     </div>
+                   )}
+                 </div>
               </div>
             </div>
 
@@ -7184,6 +7244,7 @@ export default function Dashboard() {
           {/* Elemento de vídeo oculto del modal */}
           <video
             ref={historyModalVideoRef}
+            crossOrigin="anonymous"
             style={{ display: "none" }}
             preload="auto"
             muted

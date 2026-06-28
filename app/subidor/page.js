@@ -1909,6 +1909,7 @@ export default function SubidorPage() {
       {/* Elemento de vídeo oculto para extracción de miniaturas */}
       <video
         ref={hiddenVideoRef}
+        crossOrigin="anonymous"
         style={{
           position: "absolute",
           top: "-9999px",
