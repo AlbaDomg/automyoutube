@@ -322,10 +322,10 @@ Para CADA vídeo válido detectado en el documento, extrae de forma EXACTA y LIT
 
 Además, genera usando IA para cada vídeo:
 1. El nombre del programa de televisión al que corresponde el contenido de la lista de programas válidos.
-   - FUENTES DE INFORMACIÓN: Utiliza tanto el texto del documento (planilla) como el nombre del archivo del documento "${file.name}" y la información del video coincidente de YouTube si está disponible.
+   - FUENTES DE INFORMACIÓN: Utiliza tanto el texto del documento (planilla) como el nombre del archivo del documento "${fileNamesJoined}" y la información del video coincidente de YouTube si está disponible.
    - PRIORIDAD DE DETECCIÓN (CRÍTICA):
      a) La prioridad número 1 es el contenido literal del documento (la planilla). Si el titular o la sinopsis de la planilla contienen palabras clave asociadas a un programa (por ejemplo, "Luar", "Hola", "A Coroa", "Hora Galega"), ese es el programa correcto.
-     b) La prioridad número 2 es el nombre del archivo del documento ("${file.name}"). Si el nombre del archivo contiene indicios claros o el nombre de alguno de los programas registrados (ej. si se llama "Luar_12_05.pdf" o contiene "LUAR", "HG", "Hora_Galega", etc.), asócialo como el programa de los vídeos que no especifiquen otro dentro del texto.
+     b) La prioridad número 2 es el nombre del archivo del documento ("${fileNamesJoined}"). Si el nombre del archivo contiene indicios claros o el nombre de alguno de los programas registrados (ej. si se llama "Luar_12_05.pdf" o contiene "LUAR", "HG", "Hora_Galega", etc.), asócialo como el programa de los vídeos que no especifiquen otro dentro del texto.
        c) La prioridad número 3 es la información del vídeo coincidente de YouTube (su título, descripción o 'detectedProgramName'). Puedes usarlo para identificar el programa (por ejemplo, si tiene un sufijo como "| LUAR" o un enlace como "tvg.gal/luar").
      d) REGLA DE CONFLICTO: Si hay un conflicto (por ejemplo, el nombre del archivo o la planilla indica claramente el programa "HOLA", pero el vídeo coincidente de YouTube tiene el título con "| LUAR"), prevalece siempre el documento / nombre de archivo (el programa es "HOLA"). No te dejes guiar por sufijos obsoletos de YouTube si el documento indica otra cosa.
      e) Si no se puede identificar ningún programa por ninguna vía, devuelve el campo "programName" como una cadena vacía "". NO inventes un nombre de programa.
