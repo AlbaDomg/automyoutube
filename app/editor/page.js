@@ -547,14 +547,11 @@ export default function Dashboard() {
     }
 
     if (dbVideo && dbVideo.hasExtractedFrames) {
-      const serverFrames = [
-        `/api/videos/thumbnail?id=${dbVideo.id}&frame=0`,
-        `/api/videos/thumbnail?id=${dbVideo.id}&frame=1`,
-        `/api/videos/thumbnail?id=${dbVideo.id}&frame=2`,
-        `/api/videos/thumbnail?id=${dbVideo.id}&frame=3`,
-        `/api/videos/thumbnail?id=${dbVideo.id}&frame=4`,
-        `/api/videos/thumbnail?id=${dbVideo.id}&frame=5`
-      ];
+      const count = dbVideo.extractedFramesCount || 10;
+      const serverFrames = [];
+      for (let i = 0; i < count; i++) {
+        serverFrames.push(`/api/videos/thumbnail?id=${dbVideo.id}&frame=${i}`);
+      }
       setHistoryModalCapturedFrames(serverFrames);
       setHistoryModalIsExtracting(false);
       setHistoryModalStatus("Listo.");
@@ -581,12 +578,16 @@ export default function Dashboard() {
     if (historyModalVideoRef.current) {
       const duration = historyModalVideoRef.current.duration;
       const times = [
-        duration * 0.10,
+        duration * 0.05,
+        duration * 0.15,
         duration * 0.25,
-        duration * 0.40,
+        duration * 0.35,
+        duration * 0.45,
         duration * 0.55,
-        duration * 0.70,
-        duration * 0.85
+        duration * 0.65,
+        duration * 0.75,
+        duration * 0.85,
+        duration * 0.95
       ];
       historyModalTargetTimes.current = times;
       historyModalAccumulated.current = [];
@@ -608,7 +609,7 @@ export default function Dashboard() {
           historyModalAccumulated.current.push(base64);
           
           const nextIndex = historyModalCapturingIndex.current + 1;
-          if (nextIndex < 6 && nextIndex < historyModalTargetTimes.current.length) {
+          if (nextIndex < 10 && nextIndex < historyModalTargetTimes.current.length) {
             historyModalCapturingIndex.current = nextIndex;
             historyModalVideoRef.current.currentTime = historyModalTargetTimes.current[nextIndex];
           } else {
