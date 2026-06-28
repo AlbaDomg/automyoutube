@@ -546,7 +546,19 @@ export default function Dashboard() {
       }
     }
 
-    if (dbVideo && dbVideo.filePath && !['PDF_PARSED', 'YOUTUBE_UPLOAD', 'YOUTUBE_UPDATE'].includes(dbVideo.filePath)) {
+    if (dbVideo && dbVideo.hasExtractedFrames) {
+      const serverFrames = [
+        `/api/videos/thumbnail?id=${dbVideo.id}&frame=0`,
+        `/api/videos/thumbnail?id=${dbVideo.id}&frame=1`,
+        `/api/videos/thumbnail?id=${dbVideo.id}&frame=2`,
+        `/api/videos/thumbnail?id=${dbVideo.id}&frame=3`,
+        `/api/videos/thumbnail?id=${dbVideo.id}&frame=4`,
+        `/api/videos/thumbnail?id=${dbVideo.id}&frame=5`
+      ];
+      setHistoryModalCapturedFrames(serverFrames);
+      setHistoryModalIsExtracting(false);
+      setHistoryModalStatus("Listo.");
+    } else if (dbVideo && dbVideo.filePath && !['PDF_PARSED', 'YOUTUBE_UPLOAD', 'YOUTUBE_UPDATE'].includes(dbVideo.filePath)) {
       setHistoryModalStatus("Cargando vídeo local para extraer fotogramas...");
       setHistoryModalIsExtracting(true);
       
