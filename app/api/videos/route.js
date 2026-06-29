@@ -78,7 +78,39 @@ export async function GET(request) {
         }
       }
 
-      return NextResponse.json(video);
+      // Determinar si tiene fotogramas y cuántos
+      const uploadsDir = path.join(process.cwd(), 'uploads');
+      let hasFrames = ['LOCAL_DRAFT', 'EDITING', 'READY', 'SCHEDULED', 'UPLOADING', 'COMPLETED'].includes(video.status);
+      let extractedFramesCount = hasFrames ? 8 : 0;
+
+      try {
+        const hasLocalFrames = fs.existsSync(path.join(uploadsDir, `${video.id}-frame-0.jpg`));
+        if (hasLocalFrames) {
+          hasFrames = true;
+          let localCount = 0;
+          for (let i = 0; i < 8; i++) {
+            if (fs.existsSync(path.join(uploadsDir, `${video.id}-frame-${i}.jpg`))) {
+              localCount++;
+            } else {
+              break;
+            }
+          }
+          extractedFramesCount = localCount || 6;
+        }
+      } catch (fsErr) {
+        console.warn('[Videos API] Failed to check frame files on disk:', fsErr.message);
+      }
+
+      const thumbnailBase64 = `/api/videos/thumbnail?id=${video.id}`;
+      const rawFrameBase64 = hasFrames ? `/api/videos/thumbnail?id=${video.id}&frame=0` : null;
+
+      return NextResponse.json({
+        ...video,
+        thumbnailBase64,
+        rawFrameBase64,
+        hasExtractedFrames: hasFrames,
+        extractedFramesCount
+      });
     }
 
     const videos = await prisma.video.findMany({
@@ -183,7 +215,7 @@ export async function GET(request) {
       // Determinar si tiene fotogramas y cuántos
       // Como excluimos rawFrameBase64 de la consulta general por rendimiento,
       // deducimos la presencia de fotogramas según el estado del vídeo o el disco.
-      let hasFrames = ['READY', 'SCHEDULED', 'UPLOADING', 'COMPLETED'].includes(video.status);
+      let hasFrames = ['LOCAL_DRAFT', 'EDITING', 'READY', 'SCHEDULED', 'UPLOADING', 'COMPLETED'].includes(video.status);
       let extractedFramesCount = hasFrames ? 8 : 0;
 
       // Intentar comprobar también si hay fotogramas locales en disco
