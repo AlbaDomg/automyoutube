@@ -58,7 +58,18 @@ Descripción: ${description || ''}
 REGLAS CRÍTICAS DE GENERACIÓN:
 1. La frase debe tener entre 3 y 5 palabras en Gallego. Ni más de 5 ni menos de 3.
 2. No debe ser una copia de las primeras palabras del título. Debe tener sentido lógico completo y combinar elementos del título y de la descripción.
-3. ESTRUCTURA: Imagina la frase dividida conceptualmente en una primera línea superior de 1, 2 o 3 palabras (en naranja) y una segunda línea inferior de 1, 2 o 3 palabras (en blanco) que tengan relación y coherencia entre sí (por ejemplo: "ALERTA MOS" + "EVITA PICADURAS", "MANTER BATEAS" + "CONSELLO", o "PREMIO FINAL" + "TVG").
+3. ESTRUCTURA Y COLORES: La frase que generes se dividirá automáticamente por la mitad en dos líneas:
+   - La primera mitad (las primeras 1, 2 o 3 palabras) aparecerá en la LÍNEA SUPERIOR en color BLANCO, y actuará como el TÍTULO principal.
+   - La segunda mitad (las siguientes 1, 2 o 3 palabras) aparecerá en la LÍNEA INFERIOR en color NARANJA, y actuará como el SUBTÍTULO o alerta/contexto.
+   
+   Por lo tanto, debes generar la frase ordenando las palabras para que el título (blanco) vaya al inicio y el subtítulo (naranja) vaya al final.
+   
+   Ejemplos correctos de frase completa generada:
+   - "VERTIDO MOS ALERTA AUG" -> Línea 1 (Blanco): "VERTIDO MOS", Línea 2 (Naranja): "ALERTA AUG"
+   - "EVITA PICADURAS ALERTA MOS" -> Línea 1 (Blanco): "EVITA PICADURAS", Línea 2 (Naranja): "ALERTA MOS"
+   - "CONSELLO PRÁCTICO MANTER BATEAS" -> Línea 1 (Blanco): "CONSELLO PRÁCTICO", Línea 2 (Naranja): "MANTER BATEAS"
+   - "PREMIO FINAL CONCURSO TVG" -> Línea 1 (Blanco): "PREMIO FINAL", Línea 2 (Naranja): "CONCURSO TVG"
+   
 4. Las palabras deben estar muy optimizadas para capturar el interés de la audiencia gallega (SEO / CTR alto).
 5. REGLA DE FORMATO ESTRICTO: La frase debe contener EXCLUSIVAMENTE entre 3 y 5 palabras en gallego separadas por espacios. NO incluyas barras (/), guiones (-), comillas, ni ningún signo de puntuación en el texto.
 

@@ -111,7 +111,7 @@ Analyze this video and generate metadata for a YouTube upload in the following l
 2. A compelling description including key topics and estimated timestamps if applicable in ${language}.
 3. Relevant hashtags (all starting with the '#' symbol, e.g. ["#keyword1", "#keyword2"]) in ${language} to be appended to the video description.
 4. A list of 10-15 highly relevant SEO tags/keywords (WITHOUT the '#' symbol, e.g. ["keyword1", "keyword2", "keyword3"]) in ${language} for the video tags field.
-5. A high-impact SEO phrase of exactly 4 words in ${language} to print on the video thumbnail.
+5. A high-impact SEO phrase of exactly 4 words in ${language} to print on the video thumbnail. CRITICAL: The phrase will be split in half when rendering. The first 2 words will appear on the top line in WHITE (serving as the main title), and the last 2 words will appear on the bottom line in ORANGE (serving as the subtitle/alert/context). Generate and order the words so this makes logical sense (e.g., "VERTIDO MOS ALERTA AUG" where "VERTIDO MOS" is the white title and "ALERTA AUG" is the orange subtitle).
 
 Respond in JSON format with the following keys:
 {
