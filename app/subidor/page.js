@@ -1639,8 +1639,10 @@ export default function SubidorPage() {
             <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", maxHeight: "320px", overflowY: "auto", paddingRight: "0.25rem" }}>
               {pendingPrivateVideos.map(video => {
                 const videoTitle = video.snippet?.title || video.title || "Sin título";
-                const publishedAt = video.snippet?.publishedAt || video.createdAt;
                 const ytId = video.id?.videoId || video.id;
+                const dbVid = dbVideos.find(v => v.youtubeId === ytId || v.id === ytId || v.id === video.dbId);
+                const uploadDate = dbVid?.createdAt || video.snippet?.publishedAt || video.createdAt;
+                const scheduledDate = dbVid?.scheduledAt;
                 return (
                   <div key={ytId} style={{
                     display: "flex",
@@ -1656,9 +1658,23 @@ export default function SubidorPage() {
                       <div style={{ fontSize: "0.85rem", fontWeight: "600", color: "#f8fafc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {videoTitle}
                       </div>
-                      <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
-                        ID YouTube: <code style={{ color: "#94a3b8" }}>{ytId}</code>
-                        {publishedAt && <span> · Subido el {formatDate(publishedAt)}</span>}
+                      <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "0.25rem", display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                        <span>ID YouTube: <code style={{ color: "#94a3b8" }}>{ytId}</code></span>
+                        {uploadDate && <span> · Subido el {formatDate(uploadDate)}</span>}
+                        {scheduledDate && (
+                          <span style={{
+                            color: "#a855f7",
+                            background: "rgba(168,85,247,0.12)",
+                            border: "1px solid rgba(168,85,247,0.25)",
+                            padding: "1px 7px",
+                            borderRadius: "8px",
+                            fontWeight: "700",
+                            fontSize: "0.68rem",
+                            whiteSpace: "nowrap"
+                          }}>
+                            📅 Publicar: {formatDate(scheduledDate)}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>

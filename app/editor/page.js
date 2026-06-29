@@ -5363,9 +5363,10 @@ export default function Dashboard() {
                       const ytId = video.id?.videoId || video.id;
                       const dbVid = dbVideos.find(v => v.youtubeId === ytId || v.id === ytId);
                       const vTitle = dbVid?.title || video.snippet?.title || video.title || "Sin título";
-                      const vDate = video.snippet?.publishedAt || video.createdAt;
+                      const vDate = dbVid?.createdAt || video.snippet?.publishedAt || video.createdAt;
                       const vId = video.id?.videoId || video.id;
                       const vThumb = video.snippet?.thumbnails?.medium?.url || video.thumbnail;
+                      const scheduledDate = dbVid?.scheduledAt || video.scheduledAt;
 
                       const isUploading = dbVid?.status === "UPLOADING" || video.status === "UPLOADING";
                       const uploadPercent = dbVid?.uploadProgress || video.uploadProgress || 0;
@@ -5382,8 +5383,8 @@ export default function Dashboard() {
                             <div style={{ minWidth: 0, flex: 1 }}>
                               <div style={{ fontSize: "0.85rem", fontWeight: "600", color: "#f8fafc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{vTitle}</div>
                               <div style={{ fontSize: "0.71rem", color: "var(--text-muted)", marginTop: "0.2rem", display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-                                ID: <code style={{ color: "#94a3b8" }}>{vId}</code>{vDate && <span> · {formatDate(vDate)}</span>}
-                                {video.scheduledAt && (
+                                ID: <code style={{ color: "#94a3b8" }}>{vId}</code>{vDate && <span> · Subido el {formatDate(vDate)}</span>}
+                                {scheduledDate && (
                                   <span style={{
                                     color: "#a855f7",
                                     background: "rgba(168,85,247,0.12)",
@@ -5394,7 +5395,7 @@ export default function Dashboard() {
                                     fontSize: "0.68rem",
                                     whiteSpace: "nowrap"
                                   }}>
-                                    📅 Publicar: {formatDate(video.scheduledAt)}
+                                    📅 Publicar: {formatDate(scheduledDate)}
                                   </span>
                                 )}
                               </div>
@@ -5418,6 +5419,7 @@ export default function Dashboard() {
                             )}
                             <button
                               type="button"
+                              disabled={isUploading}
                               onClick={() => {
                                 // Buscar el registro completo en la BD para tener acceso al filePath
                                 const dbRecord = dbVideos.find(dbv =>
@@ -5463,15 +5465,16 @@ export default function Dashboard() {
                                 width: "auto",
                                 fontSize: "0.72rem",
                                 padding: "0.35rem 0.75rem",
-                                background: "rgba(168, 85, 247, 0.15)",
-                                color: "#c084fc",
-                                border: "1px solid rgba(168, 85, 247, 0.35)",
+                                background: isUploading ? "rgba(255, 255, 255, 0.05)" : "rgba(168, 85, 247, 0.15)",
+                                color: isUploading ? "#64748b" : "#c084fc",
+                                border: isUploading ? "1px solid rgba(255, 255, 255, 0.1)" : "1px solid rgba(168, 85, 247, 0.35)",
                                 borderRadius: "6px",
-                                cursor: "pointer",
+                                cursor: isUploading ? "not-allowed" : "pointer",
                                 fontWeight: "700",
+                                opacity: isUploading ? 0.6 : 1,
                                 whiteSpace: "nowrap"
                               }}
-                              title="Abrir en el editor"
+                              title={isUploading ? "El vídeo se está subiendo y no se puede editar todavía" : "Abrir en el editor"}
                             >
                               ✏️ Editar
                             </button>
