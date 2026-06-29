@@ -124,8 +124,10 @@ Responde exclusivamente en formato JSON con la siguiente estructura exacta:
 // Función helper para garantizar entre 3 y 5 palabras en el texto de la miniatura
 function ensureThreeToFiveWords(text, fallbackContext = "") {
   if (!text) text = "";
+  // Eliminar cualquier emoji del texto
+  let cleanText = text.replace(/[\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/gu, "");
   // Limpiar caracteres especiales
-  let cleanText = text.replace(/[\/\-\"\']/g, " ").replace(/\s+/g, " ").trim();
+  cleanText = cleanText.replace(/[\/\-\"\']/g, " ").replace(/\s+/g, " ").trim();
   let words = cleanText ? cleanText.split(/\s+/) : [];
 
   // Filtrar palabras vacías

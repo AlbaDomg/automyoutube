@@ -359,6 +359,7 @@ export default function Dashboard() {
   const [historyModalIsExtracting, setHistoryModalIsExtracting] = useState(false);
   const [historyModalStatus, setHistoryModalStatus] = useState("");
   const [historyModalIsSaving, setHistoryModalIsSaving] = useState(false);
+  const [historyModalIsGeneratingSeo, setHistoryModalIsGeneratingSeo] = useState(false);
   const historyModalVideoRef = useRef(null);
   const historyModalCanvasRef = useRef(null);
   const historyModalTargetTimes = useRef([]);
@@ -760,7 +761,9 @@ export default function Dashboard() {
   // Helper para garantizar entre 3 y 5 palabras en el texto de la miniatura
   const ensureThreeToFiveWords = (text, fallbackContext = "") => {
     if (!text) text = "";
-    let cleanText = text.replace(/[\/\-\"\']/g, " ").replace(/\s+/g, " ").trim();
+    // Eliminar cualquier emoji del texto para cumplir las especificaciones del usuario
+    let cleanText = text.replace(/[\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/gu, "");
+    cleanText = cleanText.replace(/[\/\-\"\']/g, " ").replace(/\s+/g, " ").trim();
     let words = cleanText ? cleanText.split(/\s+/) : [];
     words = words.filter(w => w.trim().length > 0);
 
@@ -5323,6 +5326,24 @@ export default function Dashboard() {
 
                           {/* Fila inferior: Botones de acción */}
                           <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.25rem" }}>
+                            {!item.isSynced && item.matchedVideoId && (
+                              <button
+                                type="button"
+                                onClick={() => handleSyncSingleBatchItem(item)}
+                                disabled={item.isSyncing}
+                                className={styles.btnSubmit}
+                                style={{
+                                  width: "auto",
+                                  background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                                  padding: "0.3rem 0.8rem",
+                                  fontSize: "0.7rem",
+                                  borderRadius: "6px",
+                                  margin: 0
+                                }}
+                              >
+                                {item.isSyncing ? "Sincronizando..." : "Sincronizar vídeo"}
+                              </button>
+                            )}
                             {item.isSynced && (
                               <span style={{
                                 fontSize: "0.72rem",
@@ -5829,7 +5850,10 @@ export default function Dashboard() {
                           <input
                             type="text"
                             value={thumbnailText}
-                            onChange={(e) => setThumbnailText(e.target.value)}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/[\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/gu, "");
+                              setThumbnailText(val);
+                            }}
                             placeholder="Ej: GRAN CONCURSO HORA GALEGA"
                           />
                           {thumbnailText && (getWordCount(thumbnailText) < 3 || getWordCount(thumbnailText) > 5) && (
@@ -7293,14 +7317,67 @@ export default function Dashboard() {
                 <div className={styles.inputGroup} style={{ margin: 0 }}>
                   <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <span>Frase SEO en miniatura (3-5 palabras)</span>
-                    <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>
-                      {historyModalText.trim().split(/\s+/).filter(Boolean).length}/5 palabras
-                    </span>
+                    <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                      <button
+                        type="button"
+                        disabled={historyModalIsGeneratingSeo}
+                        onClick={async () => {
+                          if (!historyModalItem.title) {
+                            alert("El vídeo no tiene título para generar la frase SEO.");
+                            return;
+                          }
+                          setHistoryModalIsGeneratingSeo(true);
+                          try {
+                            const res = await fetch("/api/youtube/generate-seo-phrase", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ title: historyModalItem.title, description: historyModalItem.description || "" })
+                            });
+                            if (res.ok) {
+                              const data = await res.json();
+                              if (data.thumbnailText) {
+                                // Eliminar emojis de la frase SEO generada
+                                const cleanPhrase = data.thumbnailText.replace(/[\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/gu, "");
+                                setHistoryModalText(cleanPhrase);
+                              }
+                            } else {
+                              alert("Error al generar la frase SEO.");
+                            }
+                          } catch (err) {
+                            console.error(err);
+                            alert("Error de red al conectar con Gemini.");
+                          } finally {
+                            setHistoryModalIsGeneratingSeo(false);
+                          }
+                        }}
+                        className={styles.btnSubmit}
+                        style={{
+                          width: "auto",
+                          margin: 0,
+                          padding: "0.2rem 0.5rem",
+                          fontSize: "0.65rem",
+                          borderRadius: "4px",
+                          background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
+                          color: "#fff",
+                          border: "none",
+                          cursor: "pointer"
+                        }}
+                      >
+                        {historyModalIsGeneratingSeo ? "Generando..." : "Generar con IA"}
+                      </button>
+                      <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>
+                        {historyModalText.trim().split(/\s+/).filter(Boolean).length}/5 palabras
+                      </span>
+                    </div>
                   </label>
                   <input
                     type="text"
                     value={historyModalText}
-                    onChange={(e) => setHistoryModalText(e.target.value)}
+                    onChange={(e) => {
+                      // Eliminar cualquier emoji introducido a mano en tiempo real
+                      const val = e.target.value.replace(/[\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/gu, "");
+                      setHistoryModalText(val);
+                    }}
                     required
                   />
                 </div>
