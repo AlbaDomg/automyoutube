@@ -1872,7 +1872,11 @@ export default function Dashboard() {
     try {
       const res = await fetch("/api/videos", { cache: "no-store" });
       if (res.ok) {
-        const data = await res.json();
+        const rawData = await res.json();
+        const data = rawData.map(v => ({
+          ...v,
+          thumbnail: v.thumbnail || v.thumbnailBase64 || `/api/videos/thumbnail?id=${v.id}`
+        }));
         setDbVideos(data);
         const activeMap = new Map();
         data
@@ -3228,38 +3232,37 @@ export default function Dashboard() {
         mapped.push(item);
 
         if (matchedVideo) {
-          // Guardar la actualización en la base de datos para los elementos que pertenecen a la cola local
-          const isLocalDraft = localVideosQueue.some(ld => ld.id === matchedVideo.id);
-          if (isLocalDraft) {
-            try {
-              let finalThumbnailBase64 = null;
-              if (item.thumbnailText && detected.logoName !== "none") {
-                try {
-                  finalThumbnailBase64 = await generateSingleAutoThumbnail(
-                    item.thumbnailText,
-                    matchedVideo,
-                    null,
-                    detected.logoName
-                  );
-                } catch (thumbErr) {
-                  console.error("[handleAnalyzeFile] Error al generar miniatura automática en mapeo:", thumbErr);
-                }
+          try {
+            let finalThumbnailBase64 = null;
+            if (item.thumbnailText && detected.logoName !== "none") {
+              try {
+                finalThumbnailBase64 = await generateSingleAutoThumbnail(
+                  item.thumbnailText,
+                  matchedVideo,
+                  null,
+                  detected.logoName
+                );
+              } catch (thumbErr) {
+                console.error("[handleAnalyzeFile] Error al generar miniatura automática en mapeo:", thumbErr);
               }
+            }
 
-              // Generar emoji si tiene logotipo
-              let finalTitleWithEmoji = item.title;
-              if (detected.logoName && detected.logoName !== "none") {
-                try {
-                  const emoji = await fetchEmojiForTitle(item.title, item.description || "");
-                  if (emoji) {
-                    finalTitleWithEmoji = updateTitleSuffix(item.title, detected.logoName, emoji);
-                  }
-                } catch (emojiErr) {
-                  console.warn("[handleAnalyzeFile] Error al generar emoji para el título:", emojiErr);
+            // Generar emoji si tiene logotipo
+            let finalTitleWithEmoji = item.title;
+            if (detected.logoName && detected.logoName !== "none") {
+              try {
+                const emoji = await fetchEmojiForTitle(item.title, item.description || "");
+                if (emoji) {
+                  finalTitleWithEmoji = updateTitleSuffix(item.title, detected.logoName, emoji);
                 }
+              } catch (emojiErr) {
+                console.warn("[handleAnalyzeFile] Error al generar emoji para el título:", emojiErr);
               }
+            }
 
-              const patchRes = await fetch(`/api/videos?id=${matchedVideo.dbId || matchedVideo.id}`, {
+            const existingDbVid = dbVideos.find(dbv => dbv.youtubeId === matchedVideo.id || dbv.id === matchedVideo.id);
+            if (existingDbVid) {
+              const patchRes = await fetch(`/api/videos?id=${existingDbVid.id}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -3275,12 +3278,39 @@ export default function Dashboard() {
               } else {
                 console.error(`[handleAnalyzeFile] Fallo al actualizar video en BD:`, await patchRes.text());
               }
-            } catch (dbErr) {
-              console.error(`[handleAnalyzeFile] Error de red al actualizar base de datos:`, dbErr);
+            } else {
+              // Si no existe localmente en la base de datos (p.ej. subido directo a YouTube), lo registramos automáticamente
+              const postRes = await fetch(`/api/videos`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  title: finalTitleWithEmoji,
+                  description: item.description,
+                  filename: matchedVideo.fileName || matchedVideo.title || "Vídeo de YouTube",
+                  filePath: "YOUTUBE_UPLOAD",
+                  youtubeId: matchedVideo.id,
+                  status: "EDITING",
+                  playlistId: detected.playlistId || null
+                })
+              });
+              if (postRes.ok) {
+                const postData = await postRes.json();
+                if (finalThumbnailBase64 && postData.video?.id) {
+                  await fetch(`/api/videos?id=${postData.video.id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ thumbnailBase64: finalThumbnailBase64 })
+                  });
+                }
+                // Actualizar la referencia de ID para que el botón Editar borrador use el UUID local
+                item.matchedVideoId = postData.video?.id || matchedVideo.id;
+                matchedResults.push({ index: v.index, success: true });
+              } else {
+                console.error(`[handleAnalyzeFile] Fallo al crear registro para vídeo de YouTube en BD:`, await postRes.text());
+              }
             }
-          } else {
-            // Si es un vídeo de YouTube directo, lo contamos como mapeado con éxito
-            matchedResults.push({ index: v.index, success: true });
+          } catch (dbErr) {
+            console.error(`[handleAnalyzeFile] Error al guardar vinculación en base de datos:`, dbErr);
           }
         }
       }
@@ -3334,10 +3364,42 @@ export default function Dashboard() {
     }
 
     // Caso B: Vincular a un vídeo de YouTube
-    const dbVid = dbVideos.find(v => v.youtubeId === youtubeVideoId || v.id === youtubeVideoId);
+    let dbVid = dbVideos.find(v => v.youtubeId === youtubeVideoId || v.id === youtubeVideoId);
     if (!dbVid) {
-      alert("No se encontró el registro de vídeo local correspondiente.");
-      return;
+      // Buscar en los vídeos importados de YouTube
+      const ytVideo = privateVideos.find(pv => pv.id === youtubeVideoId);
+      if (!ytVideo) {
+        alert("No se encontró el registro de vídeo local correspondiente ni en YouTube.");
+        return;
+      }
+      try {
+        const postRes = await fetch(`/api/videos`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: pdfItem.title,
+            description: pdfItem.description,
+            filename: ytVideo.fileName || ytVideo.title || "Vídeo de YouTube",
+            filePath: "YOUTUBE_UPLOAD",
+            youtubeId: ytVideo.id,
+            status: "EDITING",
+            playlistId: pdfItem.playlistId || null
+          })
+        });
+        if (postRes.ok) {
+          const postData = await postRes.json();
+          dbVid = postData.video;
+          // Asignar el ID local generado temporalmente para el resto de la vinculación
+          youtubeVideoId = dbVid.id;
+        } else {
+          alert("Error al registrar el vídeo de YouTube en la base de datos.");
+          return;
+        }
+      } catch (postErr) {
+        console.error("Error creating video record:", postErr);
+        alert("Error de red al registrar el vídeo.");
+        return;
+      }
     }
 
     // Generar miniatura preliminar
@@ -5781,7 +5843,15 @@ export default function Dashboard() {
                 {/* Columna Izquierda: Sugerencias e Información */}
                 <div className={styles.inlineEditColLeft}>
                   <div className={styles.selectedVideoPreview}>
-                    <img src={selectedYoutubeVideo.thumbnail} alt="Preview" className={styles.selectedVideoThumbnail} />
+                    <img
+                      src={selectedYoutubeVideo.thumbnail || `/api/videos/thumbnail?id=${selectedYoutubeVideo.id}`}
+                      onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.src = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'><rect width='100' height='100' fill='%231e293b'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-family='sans-serif' font-size='10' fill='%2364748b'>Sin Portada</text></svg>";
+                      }}
+                      alt="Preview"
+                      className={styles.selectedVideoThumbnail}
+                    />
                     <div className={styles.selectedVideoInfo}>
                       <h5 style={{ fontSize: "0.85rem", margin: 0 }}>{selectedYoutubeVideo.title}</h5>
                       <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>ID: {selectedYoutubeVideo.id}</span>

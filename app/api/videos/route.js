@@ -493,7 +493,12 @@ export async function POST(request) {
 
     const email = await getCurrentUserEmail(request);
     const body = await request.json();
-    const { title, description, filename, filePath, playlistId, rawFrameBase64, scheduledAt } = body;
+    const { title, description, filename, filePath, playlistId, rawFrameBase64, scheduledAt, status, youtubeId } = body;
+
+    // Buscar si hay canal
+    const channel = await prisma.channel.findUnique({
+      where: { userEmail: email }
+    });
 
     const video = await prisma.video.create({
       data: {
@@ -501,10 +506,12 @@ export async function POST(request) {
         filePath: filePath || 'PDF_PARSED',
         title: title || '',
         description: description || '',
-        status: 'READY',
+        status: status || 'READY',
+        youtubeId: youtubeId || null,
         playlistId: playlistId || null,
         rawFrameBase64: rawFrameBase64 || null,
         userEmail: email,
+        channelId: channel ? channel.id : null,
         scheduledAt: scheduledAt ? new Date(scheduledAt) : null
       }
     });
