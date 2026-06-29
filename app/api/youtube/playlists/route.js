@@ -70,24 +70,48 @@ export async function GET(request) {
 
     const activePlaylistIds = youtubePlaylists.map(item => item.id);
 
+    // 4. Obtener las playlists existentes en la base de datos para comparar y evitar escrituras innecesarias
+    const dbPlaylistsBefore = await prisma.playlist.findMany({
+      where: { channelId: channel.id }
+    });
+    const existingMap = new Map(dbPlaylistsBefore.map(p => [p.id, p]));
+    const upsertPromises = [];
+
     // 5. Sincronizar las listas filtradas con la base de datos (upsert)
     for (const item of youtubePlaylists) {
-      await prisma.playlist.upsert({
-        where: { id: item.id },
-        update: {
-          title: item.snippet.title,
-          description: item.snippet.description || '',
-          thumbnail: item.snippet.thumbnails?.medium?.url || item.snippet.thumbnails?.default?.url || '',
-          channelId: channel.id
-        },
-        create: {
-          id: item.id,
-          title: item.snippet.title,
-          description: item.snippet.description || '',
-          thumbnail: item.snippet.thumbnails?.medium?.url || item.snippet.thumbnails?.default?.url || '',
-          channelId: channel.id
-        }
-      });
+      const existing = existingMap.get(item.id);
+      const newTitle = item.snippet.title;
+      const newDesc = item.snippet.description || '';
+      const newThumb = item.snippet.thumbnails?.medium?.url || item.snippet.thumbnails?.default?.url || '';
+
+      // Solo hacemos upsert si no existe en la BD o si algún dato ha cambiado
+      if (!existing || existing.title !== newTitle || existing.description !== newDesc || existing.thumbnail !== newThumb) {
+        upsertPromises.push(
+          prisma.playlist.upsert({
+            where: { id: item.id },
+            update: {
+              title: newTitle,
+              description: newDesc,
+              thumbnail: newThumb,
+              channelId: channel.id
+            },
+            create: {
+              id: item.id,
+              title: newTitle,
+              description: newDesc,
+              thumbnail: newThumb,
+              channelId: channel.id
+            }
+          })
+        );
+      }
+    }
+
+    if (upsertPromises.length > 0) {
+      console.log(`[Playlists API] Syncing ${upsertPromises.length} changed playlists in parallel...`);
+      await Promise.all(upsertPromises);
+    } else {
+      console.log(`[Playlists API] No playlists changes detected. Skipping DB writes.`);
     }
 
     // 6. Eliminar listas locales que ya no estén en el conjunto activo filtrado
