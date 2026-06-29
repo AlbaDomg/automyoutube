@@ -3148,19 +3148,15 @@ export default function Dashboard() {
         }
       }
 
-      // 4. Crear mapeo de parsedVideos de la escaleta (EXCLUYENDO los no vinculados)
+      // 4. Crear mapeo de parsedVideos de la escaleta (INCLUYENDO los no vinculados para permitir mapeo manual)
       const mapped = [];
       const matchedResults = [];
 
       for (const v of data.videos) {
         const matchedVideo = matchedMap.get(v.index) || null;
-        if (!matchedVideo) {
-          console.log(`[handleAnalyzeFile] Omitiendo vídeo no vinculado de la escaleta: index ${v.index} ("${v.title}")`);
-          continue;
-        }
 
         const detected = detectProgramAndPlaylist(
-          v.title || "", v.description || "", matchedVideo.filename || matchedVideo.fileName || "", v.programName || ""
+          v.title || "", v.description || "", matchedVideo ? (matchedVideo.filename || matchedVideo.fileName || "") : "", v.programName || ""
         );
 
         let finalTitle = (v.title || "").trim();
@@ -3188,7 +3184,7 @@ export default function Dashboard() {
           selectedProgramLogo: detected.logoName,
           customBgBase64: null,
           generatedThumbnailBase64: null,
-          matchedVideoId: matchedVideo.id,
+          matchedVideoId: matchedVideo ? matchedVideo.id : "",
           isScheduled: false,
           scheduledAt: "",
           playlistId: detected.playlistId || "",
@@ -3197,65 +3193,69 @@ export default function Dashboard() {
           syncError: null
         };
 
-        // Generar miniatura automática en segundo plano
-        generateSingleAutoThumbnail(
-          item.thumbnailText,
-          matchedVideo,
-          item.customBgBase64,
-          item.selectedProgramLogo
-        ).then(thumbBase64 => {
-          setParsedVideos(latest => {
-            const latestList = [...latest];
-            const targetIdx = latestList.findIndex(x => x.index === v.index);
-            if (targetIdx !== -1) {
-              latestList[targetIdx].generatedThumbnailBase64 = thumbBase64 || "";
-            }
-            return latestList;
+        // Generar miniatura automática en segundo plano si hay video vinculado
+        if (matchedVideo) {
+          generateSingleAutoThumbnail(
+            item.thumbnailText,
+            matchedVideo,
+            item.customBgBase64,
+            item.selectedProgramLogo
+          ).then(thumbBase64 => {
+            setParsedVideos(latest => {
+              const latestList = [...latest];
+              const targetIdx = latestList.findIndex(x => x.index === v.index);
+              if (targetIdx !== -1) {
+                latestList[targetIdx].generatedThumbnailBase64 = thumbBase64 || "";
+              }
+              return latestList;
+            });
           });
-        });
+        }
 
         mapped.push(item);
 
-        // Guardar la actualización en la base de datos para los elementos que pertenecen a la cola local
-        const isLocalDraft = localVideosQueue.some(ld => ld.id === matchedVideo.id);
-        if (isLocalDraft) {
-          try {
-            let finalThumbnailBase64 = null;
-            if (item.thumbnailText && detected.logoName !== "none") {
-              try {
-                finalThumbnailBase64 = await generateSingleAutoThumbnail(
-                  item.thumbnailText,
-                  matchedVideo,
-                  null,
-                  detected.logoName
-                );
-              } catch (thumbErr) {
-                console.error("[handleAnalyzeFile] Error al generar miniatura automática en mapeo:", thumbErr);
+        if (matchedVideo) {
+          // Guardar la actualización en la base de datos para los elementos que pertenecen a la cola local
+          const isLocalDraft = localVideosQueue.some(ld => ld.id === matchedVideo.id);
+          if (isLocalDraft) {
+            try {
+              let finalThumbnailBase64 = null;
+              if (item.thumbnailText && detected.logoName !== "none") {
+                try {
+                  finalThumbnailBase64 = await generateSingleAutoThumbnail(
+                    item.thumbnailText,
+                    matchedVideo,
+                    null,
+                    detected.logoName
+                  );
+                } catch (thumbErr) {
+                  console.error("[handleAnalyzeFile] Error al generar miniatura automática en mapeo:", thumbErr);
+                }
               }
-            }
 
-            const patchRes = await fetch(`/api/videos?id=${matchedVideo.dbId || matchedVideo.id}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                title: item.title,
-                description: item.description,
-                playlistId: detected.playlistId || null,
-                thumbnailBase64: finalThumbnailBase64 || undefined,
-                status: "EDITING"
-              })
-            });
-            if (patchRes.ok) {
-              matchedResults.push({ index: v.index, success: true });
-            } else {
-              console.error(`[handleAnalyzeFile] Fallo al actualizar video en BD:`, await patchRes.text());
+              const patchRes = await fetch(`/api/videos?id=${matchedVideo.dbId || matchedVideo.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  title: item.title,
+                  description: item.description,
+                  playlistId: detected.playlistId || null,
+                  thumbnailBase64: finalThumbnailBase64 || undefined,
+                  status: "EDITING"
+                })
+              });
+              if (patchRes.ok) {
+                matchedResults.push({ index: v.index, success: true });
+              } else {
+                console.error(`[handleAnalyzeFile] Fallo al actualizar video en BD:`, await patchRes.text());
+              }
+            } catch (dbErr) {
+              console.error(`[handleAnalyzeFile] Error de red al actualizar base de datos:`, dbErr);
             }
-          } catch (dbErr) {
-            console.error(`[handleAnalyzeFile] Error de red al actualizar base de datos:`, dbErr);
+          } else {
+            // Si es un vídeo de YouTube directo, lo contamos como mapeado con éxito
+            matchedResults.push({ index: v.index, success: true });
           }
-        } else {
-          // Si es un vídeo de YouTube directo, lo contamos como mapeado con éxito
-          matchedResults.push({ index: v.index, success: true });
         }
       }
 
@@ -3270,7 +3270,7 @@ export default function Dashboard() {
 
       // Esperar brevemente para mostrar el 100%
       await new Promise(r => setTimeout(r, 400));
-      alert(`¡Análisis y mapeo completado! Se detectaron y asignaron automáticamente ${matchedResults.length} de ${data.videos.length} vídeos del documento PDF (los no vinculados han sido omitidos).`);
+      alert(`¡Análisis y mapeo completado! Se detectaron ${data.videos.length} vídeos en el PDF (vinculados automáticamente: ${matchedResults.length}). Puedes vincular el resto manualmente.`);
     } catch (err) {
       clearInterval(progressInterval);
       alert("Error al procesar el archivo: " + err.message);
