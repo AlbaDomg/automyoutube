@@ -3184,7 +3184,7 @@ export default function Dashboard() {
           selectedProgramLogo: detected.logoName,
           customBgBase64: null,
           generatedThumbnailBase64: null,
-          matchedVideoId: matchedVideo ? matchedVideo.id : "",
+          matchedVideoId: matchedVideo ? (matchedVideo.youtubeId || matchedVideo.id) : "",
           isScheduled: false,
           scheduledAt: "",
           playlistId: detected.playlistId || "",
