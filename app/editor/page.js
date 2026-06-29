@@ -2247,8 +2247,8 @@ export default function Dashboard() {
     const scheduledUpdate = scheduledUpdates.find(u => u.youtubeId === video.id);
 
     // Auto-detectar programa y playlist utilizando nuestro nuevo helper
-    const initialTitle = dbVideo?.title || video.title || "";
-    const initialDesc = dbVideo?.description || video.description || "";
+    const initialTitle = video.title || dbVideo?.title || "";
+    const initialDesc = video.description || dbVideo?.description || "";
     const initialPlaylistId = dbVideo?.playlistId || "";
 
     const detected = detectProgramAndPlaylist(
@@ -5362,7 +5362,7 @@ export default function Dashboard() {
                     {pendingPrivateVideos.map(video => {
                       const ytId = video.id?.videoId || video.id;
                       const dbVid = dbVideos.find(v => v.youtubeId === ytId || v.id === ytId);
-                      const vTitle = dbVid?.title || video.snippet?.title || video.title || "Sin título";
+                      const vTitle = video.snippet?.title || video.title || dbVid?.title || "Sin título";
                       const vDate = dbVid?.createdAt || video.snippet?.publishedAt || video.createdAt;
                       const vId = video.id?.videoId || video.id;
                       const vThumb = video.snippet?.thumbnails?.medium?.url || video.thumbnail;
