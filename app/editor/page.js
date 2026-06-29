@@ -3293,6 +3293,89 @@ export default function Dashboard() {
     }
   };
 
+  // Vincular o desvincular un vídeo de YouTube a un ítem detectado del PDF en tiempo real
+  const handleLinkVideoToPdfItem = async (itemIndex, youtubeVideoId) => {
+    const pdfItem = parsedVideos.find(v => v.index === itemIndex);
+    if (!pdfItem) return;
+
+    // Caso A: Desvincular el vídeo
+    if (!youtubeVideoId) {
+      const prevYtId = pdfItem.matchedVideoId;
+      if (prevYtId) {
+        const dbVid = dbVideos.find(v => v.youtubeId === prevYtId || v.id === prevYtId);
+        if (dbVid) {
+          try {
+            await fetch(`/api/videos?id=${dbVid.id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ status: "LOCAL_DRAFT" })
+            });
+            await fetchScheduledUpdates();
+          } catch (err) {
+            console.error("Error al restablecer estado del vídeo desvinculado:", err);
+          }
+        }
+      }
+      setParsedVideos(prev => prev.map(v => v.index === itemIndex ? { ...v, matchedVideoId: "" } : v));
+      return;
+    }
+
+    // Caso B: Vincular a un vídeo de YouTube
+    const dbVid = dbVideos.find(v => v.youtubeId === youtubeVideoId || v.id === youtubeVideoId);
+    if (!dbVid) {
+      alert("No se encontró el registro de vídeo local correspondiente.");
+      return;
+    }
+
+    // Generar miniatura preliminar
+    let finalThumbnailBase64 = null;
+    if (pdfItem.thumbnailText && pdfItem.selectedProgramLogo !== "none") {
+      try {
+        finalThumbnailBase64 = await generateSingleAutoThumbnail(
+          pdfItem.thumbnailText,
+          dbVid,
+          null,
+          pdfItem.selectedProgramLogo
+        );
+      } catch (thumbErr) {
+        console.error("Error al pre-generar miniatura en vinculación manual:", thumbErr);
+      }
+    }
+
+    // Actualizar base de datos
+    try {
+      const res = await fetch(`/api/videos?id=${dbVid.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: pdfItem.title,
+          description: pdfItem.description,
+          playlistId: pdfItem.playlistId || null,
+          thumbnailBase64: finalThumbnailBase64 || undefined,
+          status: "EDITING"
+        })
+      });
+
+      if (res.ok) {
+        setParsedVideos(prev => prev.map(v => 
+          v.index === itemIndex 
+            ? { 
+                ...v, 
+                matchedVideoId: youtubeVideoId, 
+                generatedThumbnailBase64: finalThumbnailBase64 || v.generatedThumbnailBase64 
+              } 
+            : v
+        ));
+        await fetchScheduledUpdates();
+      } else {
+        alert("Error al actualizar la información del vídeo en la base de datos.");
+      }
+    } catch (err) {
+      console.error("Error de red al vincular el vídeo:", err);
+      alert("Error de red al conectar con el servidor.");
+    }
+  };
+
   // Generar frase SEO para un video en lote con IA
   const handleGenerateSeoPhraseForIndex = async (index, title, description) => {
     if (!title) {
@@ -5101,46 +5184,14 @@ export default function Dashboard() {
                         📋 Vídeos detectados: <span style={{ color: "#c084fc" }}>"{pendingDocumentName}"</span>
                       </h3>
                       <p style={{ fontSize: "0.72rem", color: "var(--text-muted)", margin: "0.2rem 0 0 0" }}>
-                        Revisa el emparejamiento con YouTube, edita el contenido SEO y publica todo el lote.
+                        Vincula cada vídeo del PDF para autocompletar su información en la cola de borradores inferior y poder editar su miniatura.
                       </p>
                     </div>
                     <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                       <button
                         type="button"
-                        onClick={handleSyncAllVideos}
-                        disabled={isSyncingBatch}
-                        className={styles.btnSubmit}
-                        style={{
-                          width: "auto",
-                          background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-                          padding: "0.45rem 1rem",
-                          fontSize: "0.75rem",
-                          fontWeight: "700",
-                          borderRadius: "8px",
-                          cursor: isSyncingBatch ? "not-allowed" : "pointer"
-                        }}
-                      >
-                        🚀 Sincronizar Lote
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setBatchScheduleEnabled(!batchScheduleEnabled)}
-                        className={styles.btnSubmit}
-                        style={{
-                          width: "auto",
-                          background: "linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)",
-                          padding: "0.45rem 1rem",
-                          fontSize: "0.75rem",
-                          fontWeight: "700",
-                          borderRadius: "8px"
-                        }}
-                      >
-                        📅 Programar Lote
-                      </button>
-                      <button
-                        type="button"
                         onClick={() => {
-                          if (confirm("¿Estás seguro de que deseas limpiar este lote de vídeos? Se perderán las portadas y textos generados si no han sido sincronizados.")) {
+                          if (confirm("¿Estás seguro de que deseas limpiar este lote de vídeos?")) {
                             setParsedVideos([]);
                             setPendingDocumentName("");
                           }
@@ -5156,44 +5207,6 @@ export default function Dashboard() {
                         Limpiar Lote
                       </button>
                     </div>
-                  </div>
-
-                  {batchScheduleEnabled && (
-                    <div style={{
-                      padding: "1rem",
-                      background: "rgba(59, 130, 246, 0.05)",
-                      border: "1px solid rgba(59, 130, 246, 0.2)",
-                      borderRadius: "8px",
-                      marginBottom: "1rem",
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "0.75rem"
-                    }}>
-                      <div style={{ fontSize: "0.8rem", fontWeight: "600", color: "#60a5fa" }}>📅 Programar sincronización automática para todo el lote:</div>
-                      <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
-                        <DateTimePicker
-                          value={batchScheduleDate}
-                          onChange={(e) => setBatchScheduleDate(e.target.value)}
-                        />
-                        <button
-                          type="button"
-                          onClick={handleScheduleAllVideos}
-                          disabled={isSyncingBatch}
-                          className={styles.btnSubmit}
-                          style={{
-                            width: "auto",
-                            background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
-                            margin: 0,
-                            padding: "0.4rem 1rem",
-                            fontSize: "0.75rem",
-                            borderRadius: "6px"
-                          }}
-                        >
-                          Programar ahora
-                        </button>
-                      </div>
-                    </div>
-                  )}
 
                   {/* Listado de items del lote */}
                   <div style={{ display: "flex", flexDirection: "column", gap: "0.8rem", maxHeight: "600px", overflowY: "auto", paddingRight: "0.25rem" }}>
@@ -5265,10 +5278,7 @@ export default function Dashboard() {
                               </label>
                               <select
                                 value={item.matchedVideoId || ""}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  setParsedVideos(prev => prev.map(v => v.index === item.index ? { ...v, matchedVideoId: val } : v));
-                                }}
+                                onChange={(e) => handleLinkVideoToPdfItem(item.index, e.target.value)}
                                 style={{
                                   padding: "0.4rem 0.6rem",
                                   background: "var(--bg-surface-solid, #1e293b)",
@@ -5336,36 +5346,43 @@ export default function Dashboard() {
 
                           {/* Fila inferior: Botones de acción */}
                           <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.25rem" }}>
-                            {!item.isSynced && item.matchedVideoId && (
+                            {item.matchedVideoId ? (
                               <button
                                 type="button"
-                                onClick={() => handleSyncSingleBatchItem(item)}
-                                disabled={item.isSyncing}
+                                onClick={() => {
+                                  const dbVid = dbVideos.find(v => v.youtubeId === item.matchedVideoId || v.id === item.matchedVideoId);
+                                  if (dbVid) {
+                                    handleSelectVideo(dbVid);
+                                    setTimeout(() => {
+                                      const editFormEl = document.getElementById("inline-edit-form");
+                                      if (editFormEl) {
+                                        editFormEl.scrollIntoView({ behavior: "smooth", block: "start" });
+                                      }
+                                    }, 100);
+                                  } else {
+                                    alert("No se pudo cargar el vídeo desde la base de datos.");
+                                  }
+                                }}
                                 className={styles.btnSubmit}
                                 style={{
                                   width: "auto",
-                                  background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-                                  padding: "0.3rem 0.8rem",
-                                  fontSize: "0.7rem",
+                                  background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
+                                  padding: "0.35rem 1rem",
+                                  fontSize: "0.72rem",
+                                  fontWeight: "700",
                                   borderRadius: "6px",
-                                  margin: 0
+                                  margin: 0,
+                                  cursor: "pointer"
                                 }}
                               >
-                                {item.isSyncing ? "Sincronizando..." : "Sincronizar vídeo"}
+                                ✏️ Editar borrador
                               </button>
+                            ) : (
+                              <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", fontStyle: "italic" }}>
+                                Vincula un vídeo de YouTube arriba para poder editarlo
+                              </span>
                             )}
-                            {item.isSynced && (
-                              <span style={{
-                                fontSize: "0.72rem",
-                                fontWeight: "700",
-                                color: "#10b981",
-                                background: "rgba(16,185,129,0.12)",
-                                border: "1px solid rgba(16,185,129,0.25)",
-                                padding: "2px 10px",
-                                borderRadius: "6px",
-                                whiteSpace: "nowrap"
-                              }}>✓ Sincronizado</span>
-                            )}
+
                           </div>
                         </div>
                       );
@@ -5558,7 +5575,7 @@ export default function Dashboard() {
 
           {/* Formulario de Edición (Si hay un video seleccionado) */}
           {selectedYoutubeVideo && (
-            <form onSubmit={(e) => handleSaveVideo(e)} className={styles.inlineEditPanel} style={{ display: "block", marginTop: "1.5rem" }}>
+            <form id="inline-edit-form" onSubmit={(e) => handleSaveVideo(e)} className={styles.inlineEditPanel} style={{ display: "block", marginTop: "1.5rem" }}>
               <div className={styles.inlineEditHeader}>
                 <div>
                   <h3>✏️ Editor de YouTube</h3>
