@@ -3246,11 +3246,24 @@ export default function Dashboard() {
                 }
               }
 
+              // Generar emoji si tiene logotipo
+              let finalTitleWithEmoji = item.title;
+              if (detected.logoName && detected.logoName !== "none") {
+                try {
+                  const emoji = await fetchEmojiForTitle(item.title, item.description || "");
+                  if (emoji) {
+                    finalTitleWithEmoji = updateTitleSuffix(item.title, detected.logoName, emoji);
+                  }
+                } catch (emojiErr) {
+                  console.warn("[handleAnalyzeFile] Error al generar emoji para el título:", emojiErr);
+                }
+              }
+
               const patchRes = await fetch(`/api/videos?id=${matchedVideo.dbId || matchedVideo.id}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  title: item.title,
+                  title: finalTitleWithEmoji,
                   description: item.description,
                   playlistId: detected.playlistId || null,
                   thumbnailBase64: finalThumbnailBase64 || undefined,
@@ -3342,13 +3355,26 @@ export default function Dashboard() {
       }
     }
 
+    // Generar emoji si tiene logotipo
+    let finalTitleWithEmoji = pdfItem.title;
+    if (pdfItem.selectedProgramLogo && pdfItem.selectedProgramLogo !== "none") {
+      try {
+        const emoji = await fetchEmojiForTitle(pdfItem.title, pdfItem.description || "");
+        if (emoji) {
+          finalTitleWithEmoji = updateTitleSuffix(pdfItem.title, pdfItem.selectedProgramLogo, emoji);
+        }
+      } catch (emojiErr) {
+        console.warn("[handleLinkVideoToPdfItem] Error al generar emoji para el título:", emojiErr);
+      }
+    }
+
     // Actualizar base de datos
     try {
       const res = await fetch(`/api/videos?id=${dbVid.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: pdfItem.title,
+          title: finalTitleWithEmoji,
           description: pdfItem.description,
           playlistId: pdfItem.playlistId || null,
           thumbnailBase64: finalThumbnailBase64 || undefined,
