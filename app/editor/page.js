@@ -962,10 +962,10 @@ export default function Dashboard() {
         const slugFile = slugify(rawFile);
         const slugTitleDesc = slugify(`${rawTitle} ${rawDesc}`);
 
-        // Expresión regular para siglas, más flexible
+        // Expresión regular para siglas, más flexible (permite números pegados como HG1234)
         const regexLogoSiglas = initials.length >= 2
           ? new RegExp(
-              `(^|[^a-z0-9])${initials}([^a-z0-9]|$)`,
+              `(^|[^a-z])${initials}([^a-z]|$)`,
               "i"
             )
           : null;
@@ -3086,7 +3086,7 @@ export default function Dashboard() {
           let score = 0;
           if (slugFile.includes(slugProg) && slugProg.length > 2) {
             score = 100;
-          } else if (initials.length >= 2 && new RegExp(`(^|[^a-z0-9])${initials}([^a-z0-9]|$)`, "i").test(cleanFilename)) {
+          } else if (initials.length >= 2 && new RegExp(`(^|[^a-z])${initials}([^a-z]|$)`, "i").test(cleanFilename)) {
             score = 80;
           }
 

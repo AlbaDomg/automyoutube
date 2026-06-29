@@ -20,7 +20,7 @@ function detectProgramLocally(title, description, fileName, availableLogos) {
   if (fileName && availableLogos) {
     const cleanFileName = fileName.toLowerCase().replace(/\.[^/.]+$/, "");
     const slugFile = slugify(cleanFileName);
-    const fileParts = cleanFileName.split(/[^a-z0-9]/i);
+    const fileParts = cleanFileName.match(/[a-z]+/gi) || [];
     
     // Generar abreviaciones dinámicas a partir de los logotipos disponibles
     const abbreviations = {};
