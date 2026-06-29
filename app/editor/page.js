@@ -1451,34 +1451,6 @@ export default function Dashboard() {
       if (data.logos) {
         // Guardar objetos completos { name, playlistId }
         setProgramLogosCatalog(data.logos);
-
-        // Auto-subir Hora_Galega.png si no está en el catálogo y el canvas ya está listo
-        const logoNames = data.logoNames || data.logos.map(l => l.name || l);
-        if (!logoNames.includes("Hora_Galega.png") && defaultProgramLogoCanvasRef.current) {
-          const canvas = defaultProgramLogoCanvasRef.current;
-          canvas.toBlob(async (blob) => {
-            if (!blob) return;
-            const fileToUpload = new File([blob], "Hora_Galega.png", { type: "image/png" });
-            const formData = new FormData();
-            formData.append("file", fileToUpload);
-            try {
-              const uploadRes = await fetch("/api/program-logos", {
-                method: "POST",
-                body: formData,
-              });
-              if (uploadRes.ok) {
-                console.log("[Auto-uploader] Hora_Galega.png subido al catálogo con éxito.");
-                const refetchRes = await fetch("/api/program-logos", { cache: "no-store" });
-                const refetchData = await refetchRes.json();
-                if (refetchData.logos) {
-                  setProgramLogosCatalog(refetchData.logos);
-                }
-              }
-            } catch (uploadErr) {
-              console.error("[Auto-uploader] Error al subir Hora_Galega.png:", uploadErr);
-            }
-          }, "image/png");
-        }
       }
     } catch (err) {
       console.error("Error fetching program logos catalog:", err);
