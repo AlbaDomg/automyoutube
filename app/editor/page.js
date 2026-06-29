@@ -354,6 +354,7 @@ export default function Dashboard() {
   const [historyModalText, setHistoryModalText] = useState("");
   const [historyModalLogo, setHistoryModalLogo] = useState("none");
   const [historyModalCustomBg, setHistoryModalCustomBg] = useState(null);
+  const [historyModalOriginalYtBg, setHistoryModalOriginalYtBg] = useState(null);
   const [historyModalGeneratedBase64, setHistoryModalGeneratedBase64] = useState(null);
   const [historyModalCapturedFrames, setHistoryModalCapturedFrames] = useState([]);
   const [historyModalIsExtracting, setHistoryModalIsExtracting] = useState(false);
@@ -510,6 +511,7 @@ export default function Dashboard() {
     setHistoryModalText(initialText);
     setHistoryModalLogo("none");
     setHistoryModalCustomBg(null);
+    setHistoryModalOriginalYtBg(null);
     setHistoryModalGeneratedBase64(null);
     setHistoryModalCapturedFrames([]);
     setHistoryModalIsExtracting(false);
@@ -553,6 +555,7 @@ export default function Dashboard() {
           ctx.drawImage(img, 0, 0, 1280, 720);
           const base64 = canvas.toDataURL("image/jpeg", 0.85);
           setHistoryModalCustomBg(base64);
+          setHistoryModalOriginalYtBg(base64);
         }
       } catch (err) {
         console.warn("Fallo al precargar la miniatura de YouTube:", err);
@@ -643,6 +646,13 @@ export default function Dashboard() {
 
   const handleGenerateHistoryModalPreview = async () => {
     if (!historyModalItem) return;
+    
+    // Si el fondo es la miniatura original de YouTube, no dibujamos ningún overlay de texto o logos encima.
+    if (historyModalCustomBg && historyModalOriginalYtBg && historyModalCustomBg === historyModalOriginalYtBg) {
+      setHistoryModalGeneratedBase64(historyModalOriginalYtBg);
+      return;
+    }
+
     const base64 = await generateSingleAutoThumbnail(
       historyModalText,
       historyModalItem,
