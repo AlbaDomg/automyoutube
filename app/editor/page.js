@@ -5434,7 +5434,16 @@ export default function Dashboard() {
                           {/* Fila principal */}
                           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", gap: "1rem" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", minWidth: 0, flex: 1 }}>
-                              {vThumb && <img src={vThumb} alt="" style={{ width: "64px", aspectRatio: "16/9", objectFit: "cover", borderRadius: "6px", flexShrink: 0 }} />}
+                              {vThumb && (
+                                <img
+                                  src={vThumb}
+                                  alt=""
+                                  onError={(e) => {
+                                    e.target.src = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'><rect width='100' height='100' fill='%231e293b'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-family='sans-serif' font-size='10' fill='%2364748b'>Sin Portada</text></svg>";
+                                  }}
+                                  style={{ width: "64px", aspectRatio: "16/9", objectFit: "cover", borderRadius: "6px", flexShrink: 0 }}
+                                />
+                              )}
                               <div style={{ minWidth: 0, flex: 1 }}>
                                 <div style={{ fontSize: "0.85rem", fontWeight: "600", color: "#f8fafc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{vTitle}</div>
                                 <div style={{ fontSize: "0.71rem", color: "var(--text-muted)", marginTop: "0.2rem", display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
@@ -5692,7 +5701,16 @@ export default function Dashboard() {
                                       onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255, 255, 255, 0.05)"}
                                       onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
                                     >
-                                      {res.thumbnail && <img src={res.thumbnail} alt="" style={{ width: "32px", aspectRatio: "16/9", objectFit: "cover", borderRadius: "3px" }} />}
+                                      {res.thumbnail && (
+                                        <img
+                                          src={res.thumbnail}
+                                          alt=""
+                                          onError={(e) => {
+                                            e.target.src = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'><rect width='100' height='100' fill='%231e293b'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-family='sans-serif' font-size='10' fill='%2364748b'>Sin Portada</text></svg>";
+                                          }}
+                                          style={{ width: "32px", aspectRatio: "16/9", objectFit: "cover", borderRadius: "3px" }}
+                                        />
+                                      )}
                                       <div style={{ minWidth: 0, flex: 1 }}>
                                         <div style={{ color: "#fff", fontWeight: "600", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
                                           {res.title}
