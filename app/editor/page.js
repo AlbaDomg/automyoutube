@@ -397,14 +397,16 @@ export default function Dashboard() {
       const duration = hiddenVideoRef.current.duration;
       setVideoDuration(duration);
       
-      // Calcular 6 timestamps
+      // Calcular 8 timestamps
       const times = [
-        duration * 0.10,
-        duration * 0.25,
-        duration * 0.40,
-        duration * 0.55,
-        duration * 0.70,
-        duration * 0.85
+        duration * 0.08,
+        duration * 0.20,
+        duration * 0.32,
+        duration * 0.44,
+        duration * 0.56,
+        duration * 0.68,
+        duration * 0.80,
+        duration * 0.92
       ];
       targetTimes.current = times;
       accumulatedFrames.current = [];
@@ -432,11 +434,11 @@ export default function Dashboard() {
             accumulatedFrames.current.push(base64);
             
             const nextIndex = capturingFrameIndex.current + 1;
-            if (nextIndex < 6 && nextIndex < targetTimes.current.length) {
+            if (nextIndex < 8 && nextIndex < targetTimes.current.length) {
               capturingFrameIndex.current = nextIndex;
               hiddenVideoRef.current.currentTime = targetTimes.current[nextIndex];
             } else {
-              // Finalizada la captura de los 6 fotogramas
+              // Finalizada la captura de los 8 fotogramas
               capturingFrameIndex.current = -1;
               setIsExtractingFrames(false);
               const frames = [...accumulatedFrames.current];
@@ -2297,7 +2299,7 @@ export default function Dashboard() {
 
     // Cargar el vídeo en el elemento oculto para permitir el ajuste manual del fotograma si existe el archivo, o usar fotogramas del servidor
     if (dbVideo && dbVideo.hasExtractedFrames) {
-      const count = dbVideo.extractedFramesCount || 6;
+      const count = dbVideo.extractedFramesCount || 8;
       const serverFrames = [];
       for (let i = 0; i < count; i++) {
         serverFrames.push(`/api/videos/thumbnail?id=${dbVideo.id}&frame=${i}`);

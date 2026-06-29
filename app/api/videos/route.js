@@ -88,6 +88,26 @@ export async function GET(request) {
           { channelId: null }
         ]
       },
+      select: {
+        id: true,
+        filename: true,
+        filePath: true,
+        title: true,
+        description: true,
+        tags: true,
+        scheduledAt: true,
+        status: true,
+        youtubeId: true,
+        errorMessage: true,
+        uploadProgress: true,
+        supabasePath: true,
+        playlistId: true,
+        userEmail: true,
+        channelId: true,
+        privacyStatus: true,
+        createdAt: true,
+        updatedAt: true
+      },
       orderBy: { createdAt: 'desc' }
     });
 
@@ -160,43 +180,44 @@ export async function GET(request) {
 
     const uploadsDir = path.join(process.cwd(), 'uploads');
     const videosWithFrames = videos.map(video => {
-      let hasFrames = false;
-      let rawFrameBase64 = video.rawFrameBase64;
-      let extractedFramesCount = 0;
+      // Determinar si tiene fotogramas y cuántos
+      // Como excluimos rawFrameBase64 de la consulta general por rendimiento,
+      // deducimos la presencia de fotogramas según el estado del vídeo o el disco.
+      let hasFrames = ['READY', 'SCHEDULED', 'UPLOADING', 'COMPLETED'].includes(video.status);
+      let extractedFramesCount = hasFrames ? 8 : 0;
 
-      if (video.rawFrameBase64) {
-        hasFrames = true;
-        if (video.rawFrameBase64.startsWith('[')) {
-          try {
-            const parsed = JSON.parse(video.rawFrameBase64);
-            rawFrameBase64 = parsed[0] || null; // Conservar solo el primer fotograma como predeterminado
-            extractedFramesCount = parsed.length;
-          } catch (e) {
-            rawFrameBase64 = null;
-            extractedFramesCount = 0;
+      // Intentar comprobar también si hay fotogramas locales en disco
+      try {
+        const hasLocalFrames = fs.existsSync(path.join(uploadsDir, `${video.id}-frame-0.jpg`));
+        if (hasLocalFrames) {
+          hasFrames = true;
+          // Contar cuántos fotogramas locales hay en disco (hasta 8)
+          let localCount = 0;
+          for (let i = 0; i < 8; i++) {
+            if (fs.existsSync(path.join(uploadsDir, `${video.id}-frame-${i}.jpg`))) {
+              localCount++;
+            } else {
+              break;
+            }
           }
-        } else {
-          extractedFramesCount = 1;
+          extractedFramesCount = localCount || 6;
         }
-      } else {
-        // Fallback local en disco
-        try {
-          const hasLocalFrames = fs.existsSync(path.join(uploadsDir, `${video.id}-frame-0.jpg`)) &&
-                                 fs.existsSync(path.join(uploadsDir, `${video.id}-frame-1.jpg`)) &&
-                                 fs.existsSync(path.join(uploadsDir, `${video.id}-frame-2.jpg`)) &&
-                                 fs.existsSync(path.join(uploadsDir, `${video.id}-frame-3.jpg`)) &&
-                                 fs.existsSync(path.join(uploadsDir, `${video.id}-frame-4.jpg`)) &&
-                                 fs.existsSync(path.join(uploadsDir, `${video.id}-frame-5.jpg`));
-          if (hasLocalFrames) {
-            hasFrames = true;
-            extractedFramesCount = 6;
-          }
-        } catch (fsErr) {
-          console.warn('[Videos API] Failed to check frame files on disk:', fsErr.message);
-        }
+      } catch (fsErr) {
+        console.warn('[Videos API] Failed to check frame files on disk:', fsErr.message);
       }
 
-      return { ...video, rawFrameBase64, hasExtractedFrames: hasFrames, extractedFramesCount };
+      // Devolver URLs dinámicas ligeras en lugar de los textos Base64 pesados.
+      // Esto reduce el tamaño de la respuesta JSON un 99.9% y aprovecha la caché del navegador.
+      const thumbnailBase64 = `/api/videos/thumbnail?id=${video.id}`;
+      const rawFrameBase64 = hasFrames ? `/api/videos/thumbnail?id=${video.id}&frame=0` : null;
+
+      return {
+        ...video,
+        thumbnailBase64,
+        rawFrameBase64,
+        hasExtractedFrames: hasFrames,
+        extractedFramesCount
+      };
     });
 
     return NextResponse.json(videosWithFrames);

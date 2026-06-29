@@ -115,18 +115,16 @@ export default function SubidorPage() {
       const duration = hiddenVideoRef.current.duration;
       setVideoDuration(duration);
       
-      // Secuencia de 10 fotogramas para todos los flujos (simple y lote)
+      // Secuencia de 8 fotogramas para todos los flujos (simple y lote)
       const times = [
-        duration * 0.05,
-        duration * 0.15,
-        duration * 0.25,
-        duration * 0.35,
-        duration * 0.45,
-        duration * 0.55,
-        duration * 0.65,
-        duration * 0.75,
-        duration * 0.85,
-        duration * 0.95
+        duration * 0.08,
+        duration * 0.20,
+        duration * 0.32,
+        duration * 0.44,
+        duration * 0.56,
+        duration * 0.68,
+        duration * 0.80,
+        duration * 0.92
       ];
       targetTimes.current = times;
       accumulatedFrames.current = [];
@@ -151,7 +149,7 @@ export default function SubidorPage() {
           if (capturingFrameIndex.current !== -1) {
             accumulatedFrames.current.push(base64);
             const nextIndex = capturingFrameIndex.current + 1;
-            if (nextIndex < 10 && nextIndex < targetTimes.current.length) {
+            if (nextIndex < 8 && nextIndex < targetTimes.current.length) {
               capturingFrameIndex.current = nextIndex;
               hiddenVideoRef.current.currentTime = targetTimes.current[nextIndex];
             } else {
@@ -1385,7 +1383,7 @@ export default function SubidorPage() {
                               )}
                               {item.status === 'extracting' && (
                                 <span style={{ fontSize: "0.68rem", fontWeight: "700", color: "#f59e0b", background: "rgba(245, 158, 11, 0.12)", border: "1px solid rgba(245,158,11,0.25)", padding: "2px 8px", borderRadius: "6px" }}>
-                                  🎞️ Extrayendo 10 fotogramas...
+                                  🎞️ Extrayendo 8 fotogramas...
                                 </span>
                               )}
                               {item.status === 'ready' && (
