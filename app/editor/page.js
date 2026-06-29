@@ -680,8 +680,11 @@ export default function Dashboard() {
       return;
     }
 
+    // Si está cargando/generando la frase SEO por IA, no queremos pintar el texto temporal
+    const textToDraw = historyModalIsGeneratingSeo ? "" : historyModalText;
+
     const base64 = await generateSingleAutoThumbnail(
-      historyModalText,
+      textToDraw,
       historyModalItem,
       historyModalCustomBg,
       historyModalLogo
@@ -768,7 +771,7 @@ export default function Dashboard() {
     if (showHistoryThumbnailModal && historyModalItem) {
       handleGenerateHistoryModalPreview();
     }
-  }, [showHistoryThumbnailModal, historyModalText, historyModalLogo, historyModalCustomBg]);
+  }, [showHistoryThumbnailModal, historyModalText, historyModalLogo, historyModalCustomBg, historyModalIsGeneratingSeo]);
 
   const fetchEmojiForTitle = async (title, description) => {
     try {
@@ -7350,6 +7353,27 @@ export default function Dashboard() {
                 ) : (
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--text-muted)", fontSize: "0.85rem" }}>
                     Generando preview...
+                  </div>
+                )}
+                {/* Overlay de carga IA */}
+                {historyModalIsGeneratingSeo && (
+                  <div style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: "rgba(9, 13, 31, 0.8)",
+                    backdropFilter: "blur(4px)",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "0.75rem",
+                    zIndex: 10
+                  }}>
+                    <div className={styles.batchSyncSpinner} style={{ width: "35px", height: "35px", borderTopColor: "#a855f7" }} />
+                    <span style={{ fontSize: "0.85rem", color: "#f8fafc", fontWeight: "500" }}>Generando frase SEO con IA...</span>
                   </div>
                 )}
               </div>
