@@ -142,13 +142,17 @@ function findBestLogoForPlaylist(playlistId, playlistTitle, logosCatalog) {
 function updateTitleSuffix(title, programName, emoji = "") {
   let cleanTitle = (title || "").trim();
   
-  // 1. Quitar emoji del principio del título si existe
+  // 1. Quitar emoji del principio del título si existe (de forma repetitiva para limpiar cualquier emoji acumulado)
   const emojiPrefixRegex = /^([\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])\s*/u;
-  cleanTitle = cleanTitle.replace(emojiPrefixRegex, "").trim();
+  while (emojiPrefixRegex.test(cleanTitle)) {
+    cleanTitle = cleanTitle.replace(emojiPrefixRegex, "").trim();
+  }
 
   // 2. Quitar emoji del final del título si existe
   const endingEmojiRegex = /\s*([\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])\s*$/u;
-  cleanTitle = cleanTitle.replace(endingEmojiRegex, "").trim();
+  while (endingEmojiRegex.test(cleanTitle)) {
+    cleanTitle = cleanTitle.replace(endingEmojiRegex, "").trim();
+  }
 
   // 3. Quitar el sufijo de programa si existe
   const suffixRegex = /\s*\|.*$/;
@@ -498,17 +502,6 @@ export default function Dashboard() {
 
   const handleOpenHistoryThumbnailModal = async (item) => {
     setHistoryModalItem(item);
-    
-    // Buscar si existe una tarea de sincronización para este video y cargar la frase SEO original
-    const task = tasks.find(t => t.youtubeId === item.youtubeId);
-    let initialText = "";
-    if (task && task.thumbnailText) {
-      initialText = task.thumbnailText;
-    } else {
-      initialText = ensureThreeToFiveWords(item.title ? item.title.split(" | ")[0] : "", item.title || "");
-    }
-    
-    setHistoryModalText(initialText);
     setHistoryModalLogo("none");
     setHistoryModalCustomBg(null);
     setHistoryModalOriginalYtBg(null);
@@ -518,6 +511,40 @@ export default function Dashboard() {
     setHistoryModalStatus("Inicializando...");
     setHistoryModalIsSaving(false);
     setShowHistoryThumbnailModal(true);
+
+    // Buscar si existe una tarea de sincronización para este video y cargar la frase SEO original
+    const task = tasks.find(t => t.youtubeId === item.youtubeId);
+    if (task && task.thumbnailText) {
+      setHistoryModalText(task.thumbnailText);
+    } else {
+      // Iniciar con un texto temporal e invocar la generación automática por IA en segundo plano
+      setHistoryModalText("Generando frase SEO con IA...");
+      setHistoryModalIsGeneratingSeo(true);
+      try {
+        const res = await fetch("/api/youtube/generate-seo-phrase", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: item.title, description: item.description || "" })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.thumbnailText) {
+            // Eliminar emojis del texto SEO generado
+            const cleanPhrase = data.thumbnailText.replace(/[\u2600-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/gu, "");
+            setHistoryModalText(cleanPhrase);
+          } else {
+            setHistoryModalText(ensureThreeToFiveWords(item.title ? item.title.split(" | ")[0] : "", item.title || ""));
+          }
+        } else {
+          setHistoryModalText(ensureThreeToFiveWords(item.title ? item.title.split(" | ")[0] : "", item.title || ""));
+        }
+      } catch (err) {
+        console.error("[Auto SEO History] Error al generar frase SEO:", err);
+        setHistoryModalText(ensureThreeToFiveWords(item.title ? item.title.split(" | ")[0] : "", item.title || ""));
+      } finally {
+        setHistoryModalIsGeneratingSeo(false);
+      }
+    }
 
     const dbVideo = completedLocalVideos.find(v => v.youtubeId === item.youtubeId) || dbVideos.find(v => v.youtubeId === item.youtubeId);
     
