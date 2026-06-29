@@ -562,13 +562,18 @@ export default function Dashboard() {
     setHistoryModalLogo(detectedLogo);
 
     if (item.youtubeId) {
-      setHistoryModalStatus("Cargando miniatura actual de YouTube...");
+      setHistoryModalStatus("Cargando miniatura actual...");
       try {
-        const ytThumbUrl = `https://i.ytimg.com/vi/${item.youtubeId}/hqdefault.jpg`;
-        const proxiedUrl = `/api/youtube/thumbnail-proxy?url=${encodeURIComponent(ytThumbUrl)}`;
+        // Si el video está en nuestra base de datos local, usamos la ruta de miniatura local
+        // ya que funciona siempre independientemente de que sea privado o público en YouTube
+        const targetUrl = dbVideo
+          ? `/api/videos/thumbnail?id=${dbVideo.id}`
+          : `/api/youtube/thumbnail-proxy?url=${encodeURIComponent(`https://i.ytimg.com/vi/${item.youtubeId}/hqdefault.jpg`)}`;
+
         const img = new Image();
         img.crossOrigin = "anonymous";
-        img.src = proxiedUrl;
+        img.crossOrigin = "anonymous";
+        img.src = targetUrl;
         await new Promise((resolve, reject) => {
           img.onload = resolve;
           img.onerror = reject;
@@ -585,7 +590,7 @@ export default function Dashboard() {
           setHistoryModalOriginalYtBg(base64);
         }
       } catch (err) {
-        console.warn("Fallo al precargar la miniatura de YouTube:", err);
+        console.warn("Fallo al precargar la miniatura:", err);
       }
     }
 
@@ -5532,7 +5537,7 @@ export default function Dashboard() {
                       const vTitle = video.snippet?.title || video.title || dbVid?.title || "Sin título";
                       const vDate = dbVid?.createdAt || video.snippet?.publishedAt || video.createdAt;
                       const vId = video.id?.videoId || video.id;
-                      const vThumb = video.snippet?.thumbnails?.medium?.url || video.thumbnail;
+                      const vThumb = dbVid?.thumbnail || video.thumbnail || video.snippet?.thumbnails?.medium?.url;
                       const scheduledDate = dbVid?.scheduledAt || video.scheduledAt;
 
                       const isUploading = dbVid?.status === "UPLOADING" || video.status === "UPLOADING";
