@@ -5207,6 +5207,7 @@ export default function Dashboard() {
                         Limpiar Lote
                       </button>
                     </div>
+                  </div>
 
                   {/* Listado de items del lote */}
                   <div style={{ display: "flex", flexDirection: "column", gap: "0.8rem", maxHeight: "600px", overflowY: "auto", paddingRight: "0.25rem" }}>
