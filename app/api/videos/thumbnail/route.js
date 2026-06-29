@@ -80,18 +80,53 @@ export async function GET(request) {
     const uploadsDir = path.join(process.cwd(), 'uploads');
     const thumbnailPath = path.join(uploadsDir, `${id}-thumbnail.jpg`);
 
-    if (!fs.existsSync(thumbnailPath)) {
-      return new Response('Thumbnail not found', { status: 404 });
+    if (fs.existsSync(thumbnailPath)) {
+      const imageBuffer = fs.readFileSync(thumbnailPath);
+      return new Response(imageBuffer, {
+        headers: {
+          'Content-Type': 'image/jpeg',
+          'Cache-Control': 'public, max-age=3600',
+        },
+      });
     }
 
-    const imageBuffer = fs.readFileSync(thumbnailPath);
+    // 3. Fallback al primer fotograma (frame 0) si no hay miniatura generada todavía
+    try {
+      const video = await prisma.video.findUnique({
+        where: { id }
+      });
 
-    return new Response(imageBuffer, {
-      headers: {
-        'Content-Type': 'image/jpeg',
-        'Cache-Control': 'public, max-age=3600',
-      },
-    });
+      if (video && video.rawFrameBase64 && video.rawFrameBase64.startsWith('[')) {
+        const frames = JSON.parse(video.rawFrameBase64);
+        const base64Image = frames[0];
+        if (base64Image) {
+          const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, "");
+          const imageBuffer = Buffer.from(base64Data, 'base64');
+          return new Response(imageBuffer, {
+            headers: {
+              'Content-Type': 'image/jpeg',
+              'Cache-Control': 'public, max-age=3600',
+            },
+          });
+        }
+      }
+    } catch (dbError) {
+      console.warn('[Thumbnail API] Fallback to database frame 0 failed:', dbError.message);
+    }
+
+    // 4. Fallback al primer fotograma local en disco si existe
+    const frame0Path = path.join(uploadsDir, `${id}-frame-0.jpg`);
+    if (fs.existsSync(frame0Path)) {
+      const imageBuffer = fs.readFileSync(frame0Path);
+      return new Response(imageBuffer, {
+        headers: {
+          'Content-Type': 'image/jpeg',
+          'Cache-Control': 'public, max-age=3600',
+        },
+      });
+    }
+
+    return new Response('Thumbnail not found', { status: 404 });
   } catch (error) {
     console.error('Error serving thumbnail:', error);
     return new Response('Error serving thumbnail', { status: 500 });
