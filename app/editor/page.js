@@ -307,6 +307,12 @@ export default function Dashboard() {
   const [ytDraftSearchResults, setYtDraftSearchResults] = useState([]);
   const [loadingYtDrafts, setLoadingYtDrafts] = useState(false);
 
+  // Estados para buscadores locales por tarjeta en la cola de borradores
+  const [cardSearchQueries, setCardSearchQueries] = useState({}); // { [dbId]: query }
+  const [cardSearchResults, setCardSearchResults] = useState({}); // { [dbId]: results }
+  const [cardSearchLoading, setCardSearchLoading] = useState({}); // { [dbId]: loading }
+  const [showSearchForCard, setShowSearchForCard] = useState({}); // { [dbId]: boolean }
+
   // Estados para búsqueda de videos en lote y filtrado de playlists
   const [batchVideoSearch, setBatchVideoSearch] = useState({}); // { [index]: { query, results, loading } }
   const [playlistFilterSingle, setPlaylistFilterSingle] = useState('');
@@ -3347,10 +3353,47 @@ export default function Dashboard() {
           } catch (dbErr) {
             console.error(`[handleAnalyzeFile] Error al guardar vinculación en base de datos:`, dbErr);
           }
+        } else {
+          // Si no está vinculado automáticamente
+          try {
+            // Generar emoji si tiene logotipo
+            let finalTitleWithEmoji = item.title;
+            if (detected.logoName && detected.logoName !== "none") {
+              try {
+                const emoji = await fetchEmojiForTitle(item.title, item.description || "");
+                if (emoji) {
+                  finalTitleWithEmoji = updateTitleSuffix(item.title, detected.logoName, emoji);
+                }
+              } catch (emojiErr) {
+                console.warn("[handleAnalyzeFile] Error al generar emoji para el título:", emojiErr);
+              }
+            }
+
+            const postRes = await fetch(`/api/videos`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                title: finalTitleWithEmoji,
+                description: item.description,
+                filename: `PDF Parsed: ${v.title || "Sin título"}`,
+                filePath: "PDF_PARSED",
+                status: "EDITING",
+                playlistId: detected.playlistId || null,
+                youtubeId: null
+              })
+            });
+            if (postRes.ok) {
+              matchedResults.push({ index: v.index, success: false });
+            } else {
+              console.error(`[handleAnalyzeFile] Fallo al crear registro para vídeo sin emparejar en BD:`, await postRes.text());
+            }
+          } catch (dbErr) {
+            console.error(`[handleAnalyzeFile] Error al guardar vídeo sin emparejar en base de datos:`, dbErr);
+          }
         }
       }
 
-      setParsedVideos(mapped);
+      setParsedVideos([]); // Limpiar la cola temporal
       setSelectedYoutubeVideo(null); // Cerrar editor individual
 
       clearInterval(progressInterval);
@@ -3361,13 +3404,90 @@ export default function Dashboard() {
 
       // Esperar brevemente para mostrar el 100%
       await new Promise(r => setTimeout(r, 400));
-      alert(`¡Análisis y mapeo completado! Se detectaron ${data.videos.length} vídeos en el PDF (vinculados automáticamente: ${matchedResults.length}). Puedes vincular el resto manualmente.`);
+      alert(`¡Análisis y mapeo completado! Se detectaron ${data.videos.length} vídeos en el PDF y se guardaron directamente en la cola de borradores (vinculados automáticamente: ${matchedResults.filter(r => r.success).length}).`);
     } catch (err) {
       clearInterval(progressInterval);
       alert("Error al procesar el archivo: " + err.message);
     } finally {
       clearInterval(progressInterval);
       setIsAnalyzingFile(false);
+    }
+  };
+
+  // Buscar vídeos en YouTube (incluyendo públicos) desde una tarjeta de la cola de borradores
+  const handleCardVideoSearch = async (cardId, query) => {
+    setCardSearchQueries(prev => ({ ...prev, [cardId]: query }));
+    if (!query || query.trim().length < 2) {
+      setCardSearchResults(prev => ({ ...prev, [cardId]: [] }));
+      return;
+    }
+    setCardSearchLoading(prev => ({ ...prev, [cardId]: true }));
+    try {
+      const res = await fetch(`/api/youtube/videos?q=${encodeURIComponent(query)}&includePublic=true`);
+      if (res.ok) {
+        const data = await res.json();
+        setCardSearchResults(prev => ({ ...prev, [cardId]: data }));
+      } else {
+        setCardSearchResults(prev => ({ ...prev, [cardId]: [] }));
+      }
+    } catch (err) {
+      console.error("[handleCardVideoSearch] Error:", err);
+      setCardSearchResults(prev => ({ ...prev, [cardId]: [] }));
+    } finally {
+      setCardSearchLoading(prev => ({ ...prev, [cardId]: false }));
+    }
+  };
+
+  // Vincular borrador local a vídeo de YouTube
+  const handleLinkCardToYoutube = async (cardDbId, youtubeVideoId, ytVideoTitle) => {
+    try {
+      const res = await fetch(`/api/videos?id=${cardDbId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          youtubeId: youtubeVideoId,
+          status: "EDITING"
+        })
+      });
+
+      if (res.ok) {
+        // Limpiar estados de búsqueda
+        setCardSearchQueries(prev => { const next = { ...prev }; delete next[cardDbId]; return next; });
+        setCardSearchResults(prev => { const next = { ...prev }; delete next[cardDbId]; return next; });
+        setShowSearchForCard(prev => { const next = { ...prev }; delete next[cardDbId]; return next; });
+        
+        await fetchScheduledUpdates();
+        alert(`Borrador vinculado con éxito a: "${ytVideoTitle}"`);
+      } else {
+        const errData = await res.json();
+        alert(`Error al vincular: ${errData.error || "error desconocido"}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error de red al vincular el vídeo.");
+    }
+  };
+
+  // Desvincular borrador local del vídeo de YouTube
+  const handleUnlinkCardFromYoutube = async (cardDbId) => {
+    if (!confirm("¿Estás seguro de que deseas desvincular este borrador del vídeo de YouTube?")) return;
+    try {
+      const res = await fetch(`/api/videos?id=${cardDbId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          youtubeId: null
+        })
+      });
+
+      if (res.ok) {
+        await fetchScheduledUpdates();
+      } else {
+        alert("Error al desvincular.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error de red al desvincular.");
     }
   };
 
@@ -3891,6 +4011,11 @@ export default function Dashboard() {
       const isLocal = !!selectedYoutubeVideo.isLocal;
 
       if (isLocal) {
+        if (selectedYoutubeVideo.filePath === "PDF_PARSED") {
+          alert("Este borrador proviene de un PDF y debe vincularse a un vídeo de YouTube (mediante el buscador en su tarjeta) antes de poder guardarlo o sincronizarlo.");
+          setUpdatingYoutubeVideo(false);
+          return;
+        }
         setSimpleUploadProgress(0);
         setSimpleUploadStatus("Descargando vídeo de la nube...");
 
@@ -5297,223 +5422,7 @@ export default function Dashboard() {
                 )}
               </div>
 
-              {/* Lote de vídeos detectados en el PDF */}
-              {parsedVideos.length > 0 && (
-                <div className={styles.card} style={{ border: "1px solid rgba(168, 85, 247, 0.4)", background: "rgba(168, 85, 247, 0.02)", marginTop: "1.5rem" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "1rem" }}>
-                    <div>
-                      <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.08em", color: "#a855f7", marginBottom: "0.2rem" }}>Documento Analizado</div>
-                      <h3 style={{ fontSize: "1.1rem", fontWeight: "800", color: "#f8fafc", margin: 0 }}>
-                        📋 Vídeos detectados: <span style={{ color: "#c084fc" }}>"{pendingDocumentName}"</span>
-                      </h3>
-                      <p style={{ fontSize: "0.72rem", color: "var(--text-muted)", margin: "0.2rem 0 0 0" }}>
-                        Vincula cada vídeo del PDF para autocompletar su información en la cola de borradores inferior y poder editar su miniatura.
-                      </p>
-                    </div>
-                    <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (confirm("¿Estás seguro de que deseas limpiar este lote de vídeos?")) {
-                            setParsedVideos([]);
-                            setPendingDocumentName("");
-                          }
-                        }}
-                        className={styles.btnDelete}
-                        style={{
-                          width: "auto",
-                          padding: "0.45rem 0.8rem",
-                          fontSize: "0.75rem",
-                          borderRadius: "8px"
-                        }}
-                      >
-                        Limpiar Lote
-                      </button>
-                    </div>
-                  </div>
 
-                  {/* Listado de items del lote */}
-                  <div style={{ display: "flex", flexDirection: "column", gap: "0.8rem", maxHeight: "600px", overflowY: "auto", paddingRight: "0.25rem" }}>
-                    {parsedVideos.map((item, idx) => {
-                      const matchedYtVideo = privateVideos.find(v => v.id === item.matchedVideoId);
-                      const isLinked = !!matchedYtVideo;
-                      const wordCount = getWordCount(item.thumbnailText);
-                      
-                      return (
-                        <div key={item.index} style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: "0.75rem",
-                          padding: "1rem",
-                          background: item.isSynced 
-                            ? "rgba(16, 185, 129, 0.03)" 
-                            : (item.syncError ? "rgba(239, 68, 68, 0.04)" : "rgba(255, 255, 255, 0.015)"),
-                          border: item.isSynced
-                            ? "1px solid rgba(16, 185, 129, 0.25)"
-                            : (item.syncError ? "1px solid rgba(239, 68, 68, 0.25)" : "1px solid var(--border-color)"),
-                          borderRadius: "12px",
-                          position: "relative"
-                        }}>
-                          {/* Fila superior: Index, Logo, Título en PDF y estado */}
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", flexWrap: "wrap" }}>
-                            <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", minWidth: 0, flex: 1 }}>
-                              <span style={{
-                                width: "24px", height: "24px",
-                                background: "#a855f7", color: "#fff",
-                                display: "flex", alignItems: "center", justifyContent: "center",
-                                borderRadius: "50%", fontSize: "0.75rem", fontWeight: "700",
-                                flexShrink: 0
-                              }}>
-                                {item.index}
-                              </span>
-                              {item.selectedProgramLogo && item.selectedProgramLogo !== "none" && (
-                                <img
-                                  src={`/program_logos/${item.selectedProgramLogo}`}
-                                  alt="Logo"
-                                  style={{ width: "24px", height: "24px", objectFit: "contain", borderRadius: "4px", background: "rgba(255,255,255,0.05)", flexShrink: 0 }}
-                                />
-                              )}
-                              <h4 style={{ fontSize: "0.85rem", fontWeight: "700", color: "#f8fafc", margin: 0, textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
-                                {item.title}
-                              </h4>
-                            </div>
-                            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                              {item.isSynced ? (
-                                <span style={{ fontSize: "0.68rem", fontWeight: "700", color: "#10b981", background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.25)", padding: "2px 8px", borderRadius: "6px" }}>
-                                  ✓ Sincronizado {item.scheduledAt ? "⏰" : ""}
-                                </span>
-                              ) : item.syncError ? (
-                                <span style={{ fontSize: "0.68rem", fontWeight: "700", color: "#ef4444", background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.25)", padding: "2px 8px", borderRadius: "6px" }} title={item.syncError}>
-                                  ⚠ Error de Sync
-                                </span>
-                              ) : (
-                                <span style={{ fontSize: "0.68rem", fontWeight: "700", color: "#a855f7", background: "rgba(168,85,247,0.12)", border: "1px solid rgba(168,85,247,0.25)", padding: "2px 8px", borderRadius: "6px" }}>
-                                  Pendiente de Sync
-                                </span>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Fila intermedia: Selector de video de YouTube y previsualizaciones */}
-                          <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", alignItems: "center" }}>
-                            <div style={{ flex: 1, minWidth: "260px" }}>
-                              <label style={{ fontSize: "0.72rem", color: "var(--text-secondary)", fontWeight: "600", display: "block", marginBottom: "0.25rem" }}>
-                                🔗 Vincular a Vídeo de YouTube (Privado/Oculto):
-                              </label>
-                              <select
-                                value={item.matchedVideoId || ""}
-                                onChange={(e) => handleLinkVideoToPdfItem(item.index, e.target.value)}
-                                style={{
-                                  padding: "0.4rem 0.6rem",
-                                  background: "var(--bg-surface-solid, #1e293b)",
-                                  border: "1px solid var(--border-color, #334155)",
-                                  borderRadius: "6px",
-                                  color: "#fff",
-                                  fontSize: "0.75rem",
-                                  width: "100%"
-                                }}
-                              >
-                                <option value="">-- No vinculado --</option>
-                                {privateVideos.map(pv => (
-                                  <option key={pv.id} value={pv.id}>
-                                    {pv.title} ({pv.privacyStatus === 'private' ? 'Privado' : 'Oculto'}) - {pv.id}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                            {isLinked && (
-                              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "rgba(255,255,255,0.02)", padding: "4px 8px", borderRadius: "6px", border: "1px solid rgba(255,255,255,0.04)" }}>
-                                <img src={matchedYtVideo.thumbnail} alt="" style={{ width: "48px", aspectRatio: "16/9", objectFit: "cover", borderRadius: "3px" }} />
-                                <div style={{ fontSize: "0.68rem" }}>
-                                  <div style={{ color: "#94a3b8", fontWeight: "600", maxWidth: "160px", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
-                                    {matchedYtVideo.title}
-                                  </div>
-                                  <code style={{ color: "#64748b" }}>{matchedYtVideo.id}</code>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Secciones SEO */}
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "1rem", background: "rgba(0,0,0,0.15)", padding: "0.75rem", borderRadius: "8px" }}>
-                            <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", minWidth: 0 }}>
-                              <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                                <strong>Descripción:</strong> <span style={{ fontStyle: "italic" }}>{item.description.substring(0, 150)}...</span>
-                              </div>
-                              <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
-                                <span style={{ fontSize: "0.72rem", color: "var(--text-secondary)" }}>
-                                  <strong>Frase SEO miniatura:</strong>
-                                </span>
-                                <span style={{
-                                  fontSize: "0.72rem", fontWeight: "700",
-                                  color: (wordCount >= 3 && wordCount <= 5) ? "#f59e0b" : "#ef4444",
-                                  background: (wordCount >= 3 && wordCount <= 5) ? "rgba(245,158,11,0.12)" : "rgba(239,68,68,0.12)",
-                                  padding: "2px 8px", borderRadius: "4px"
-                                }}>
-                                  "{item.thumbnailText}" ({wordCount} palabras)
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* Miniatura automática generada */}
-                            {item.generatedThumbnailBase64 && (
-                              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.25rem" }}>
-                                <img
-                                  src={item.generatedThumbnailBase64}
-                                  alt="Preview miniatura"
-                                  style={{ width: "96px", aspectRatio: "16/9", objectFit: "cover", borderRadius: "6px", border: "1px solid rgba(255,255,255,0.08)" }}
-                                />
-                                <span style={{ fontSize: "0.62rem", color: "#c084fc", fontWeight: "600" }}>Lienzo TVG</span>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Fila inferior: Botones de acción */}
-                          <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.25rem" }}>
-                            {item.matchedVideoId ? (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const dbVid = dbVideos.find(v => v.youtubeId === item.matchedVideoId || v.id === item.matchedVideoId);
-                                  if (dbVid) {
-                                    handleSelectVideo(dbVid);
-                                    setTimeout(() => {
-                                      const editFormEl = document.getElementById("inline-edit-form");
-                                      if (editFormEl) {
-                                        editFormEl.scrollIntoView({ behavior: "smooth", block: "start" });
-                                      }
-                                    }, 100);
-                                  } else {
-                                    alert("No se pudo cargar el vídeo desde la base de datos.");
-                                  }
-                                }}
-                                className={styles.btnSubmit}
-                                style={{
-                                  width: "auto",
-                                  background: "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
-                                  padding: "0.35rem 1rem",
-                                  fontSize: "0.72rem",
-                                  fontWeight: "700",
-                                  borderRadius: "6px",
-                                  margin: 0,
-                                  cursor: "pointer"
-                                }}
-                              >
-                                ✏️ Editar borrador
-                              </button>
-                            ) : (
-                              <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", fontStyle: "italic" }}>
-                                Vincula un vídeo de YouTube arriba para poder editarlo
-                              </span>
-                            )}
-
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
 
               {/* Cola 1 – Editor: Borradores en YouTube listos para editar */}
               <div className={styles.card}>
@@ -5545,148 +5454,290 @@ export default function Dashboard() {
 
                       return (
                         <div key={vId} style={{
-                          display: "flex", alignItems: "center", justifyContent: "space-between",
+                          display: "flex", flexDirection: "column",
                           padding: "0.75rem 1rem",
                           background: "rgba(245,158,11,0.04)", border: "1px solid rgba(245,158,11,0.15)",
-                          borderRadius: "10px", gap: "1rem"
+                          borderRadius: "10px", gap: "0.5rem"
                         }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", minWidth: 0, flex: 1 }}>
-                            {vThumb && <img src={vThumb} alt="" style={{ width: "64px", aspectRatio: "16/9", objectFit: "cover", borderRadius: "6px", flexShrink: 0 }} />}
-                            <div style={{ minWidth: 0, flex: 1 }}>
-                              <div style={{ fontSize: "0.85rem", fontWeight: "600", color: "#f8fafc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{vTitle}</div>
-                              <div style={{ fontSize: "0.71rem", color: "var(--text-muted)", marginTop: "0.2rem", display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-                                ID: <code style={{ color: "#94a3b8" }}>{vId}</code>{vDate && <span> · Subido el {formatDate(vDate)}</span>}
-                                {scheduledDate && (
-                                  <span style={{
-                                    color: "#a855f7",
-                                    background: "rgba(168,85,247,0.12)",
-                                    border: "1px solid rgba(168,85,247,0.25)",
-                                    padding: "1px 7px",
-                                    borderRadius: "8px",
-                                    fontWeight: "700",
-                                    fontSize: "0.68rem",
-                                    whiteSpace: "nowrap"
-                                  }}>
-                                    📅 Publicar: {formatDate(scheduledDate)}
-                                  </span>
-                                )}
+                          {/* Fila principal */}
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", gap: "1rem" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", minWidth: 0, flex: 1 }}>
+                              {vThumb && <img src={vThumb} alt="" style={{ width: "64px", aspectRatio: "16/9", objectFit: "cover", borderRadius: "6px", flexShrink: 0 }} />}
+                              <div style={{ minWidth: 0, flex: 1 }}>
+                                <div style={{ fontSize: "0.85rem", fontWeight: "600", color: "#f8fafc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{vTitle}</div>
+                                <div style={{ fontSize: "0.71rem", color: "var(--text-muted)", marginTop: "0.2rem", display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                                  ID: <code style={{ color: "#94a3b8" }}>{vId}</code>{vDate && <span> · Subido el {formatDate(vDate)}</span>}
+                                  {scheduledDate && (
+                                    <span style={{
+                                      color: "#a855f7",
+                                      background: "rgba(168,85,247,0.12)",
+                                      border: "1px solid rgba(168,85,247,0.25)",
+                                      padding: "1px 7px",
+                                      borderRadius: "8px",
+                                      fontWeight: "700",
+                                      fontSize: "0.68rem",
+                                      whiteSpace: "nowrap"
+                                    }}>
+                                      📅 Publicar: {formatDate(scheduledDate)}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
-                            <span style={{ fontSize: "0.68rem", fontWeight: "700", color: "#f59e0b", background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", padding: "2px 9px", borderRadius: "6px", whiteSpace: "nowrap" }}>
-                              Borrador
-                            </span>
-                            {isUploading && (
-                              <span style={{
-                                fontSize: "0.72rem",
-                                fontWeight: "700",
-                                color: "#38bdf8",
-                                background: "rgba(56,189,248,0.12)",
-                                border: "1px solid rgba(56,189,248,0.25)",
-                                padding: "2px 9px",
-                                borderRadius: "6px",
-                                whiteSpace: "nowrap"
-                              }}>⚡ Subiendo...</span>
-                            )}
-                            <button
-                              type="button"
-                              disabled={isUploading}
-                              onClick={() => {
-                                // Buscar el registro completo en la BD para tener acceso al filePath
-                                const dbRecord = dbVideos.find(dbv =>
-                                  dbv.youtubeId === vId || dbv.id === vId || dbv.id === video.dbId
-                                );
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
+                              <span style={{ fontSize: "0.68rem", fontWeight: "700", color: "#f59e0b", background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", padding: "2px 9px", borderRadius: "6px", whiteSpace: "nowrap" }}>
+                                {dbVid && !dbVid.youtubeId ? "Borrador PDF" : "Borrador YouTube"}
+                              </span>
 
-                                if (video.isLocalDraft || (dbRecord && !dbRecord.youtubeId)) {
-                                  // Vídeo local: usar handleSelectLocalVideo con el registro completo de BD
-                                  if (dbRecord) {
-                                    handleSelectLocalVideo(dbRecord);
+                              {/* Botón para cambiar o vincular vídeo */}
+                              {dbVid && dbVid.youtubeId && (
+                                <button
+                                  type="button"
+                                  onClick={() => setShowSearchForCard(prev => ({ ...prev, [dbVid.id]: !prev[dbVid.id] }))}
+                                  style={{
+                                    background: "rgba(168, 85, 247, 0.15)",
+                                    border: "1px solid rgba(168, 85, 247, 0.3)",
+                                    color: "#c084fc",
+                                    fontSize: "0.72rem",
+                                    padding: "0.35rem 0.6rem",
+                                    borderRadius: "6px",
+                                    cursor: "pointer"
+                                  }}
+                                  title="Vincular a otro vídeo de YouTube"
+                                >
+                                  🔗
+                                </button>
+                              )}
+
+                              {isUploading && (
+                                <span style={{
+                                  fontSize: "0.72rem",
+                                  fontWeight: "700",
+                                  color: "#38bdf8",
+                                  background: "rgba(56,189,248,0.12)",
+                                  border: "1px solid rgba(56,189,248,0.25)",
+                                  padding: "2px 9px",
+                                  borderRadius: "6px",
+                                  whiteSpace: "nowrap"
+                                }}>⚡ Subiendo...</span>
+                              )}
+                              <button
+                                type="button"
+                                disabled={isUploading}
+                                onClick={() => {
+                                  // Buscar el registro completo en la BD para tener acceso al filePath
+                                  const dbRecord = dbVideos.find(dbv =>
+                                    dbv.youtubeId === vId || dbv.id === vId || dbv.id === video.dbId
+                                  );
+
+                                  if (video.isLocalDraft || (dbRecord && !dbRecord.youtubeId)) {
+                                    // Vídeo local: usar handleSelectLocalVideo con el registro completo de BD
+                                    if (dbRecord) {
+                                      handleSelectLocalVideo(dbRecord);
+                                    } else {
+                                      // Fallback: construir objeto mínimo
+                                      handleSelectLocalVideo({
+                                        id: vId,
+                                        title: vTitle,
+                                        description: video.description || video.snippet?.description || "",
+                                        filePath: null,
+                                        filename: video.fileName || "",
+                                        tags: video.tags || "",
+                                        status: "LOCAL_DRAFT"
+                                      });
+                                    }
                                   } else {
-                                    // Fallback: construir objeto mínimo
-                                    handleSelectLocalVideo({
+                                    // Vídeo de YouTube: usar handleSelectVideo con el ID de YouTube
+                                    const videoObj = {
                                       id: vId,
                                       title: vTitle,
                                       description: video.description || video.snippet?.description || "",
-                                      filePath: null,
-                                      filename: video.fileName || "",
-                                      tags: video.tags || "",
-                                      status: "LOCAL_DRAFT"
-                                    });
+                                      thumbnail: vThumb || "",
+                                      tags: video.tags || (video.snippet?.tags ? video.snippet.tags.join(", ") : ""),
+                                      privacyStatus: video.privacyStatus || video.snippet?.status?.privacyStatus || "private",
+                                      fileName: video.fileName || video.fileDetails?.fileName || dbRecord?.filename || "",
+                                      publishedAt: video.publishedAt || video.snippet?.publishedAt || null
+                                    };
+                                    handleSelectVideo(videoObj);
                                   }
-                                } else {
-                                  // Vídeo de YouTube: usar handleSelectVideo con el ID de YouTube
-                                  const videoObj = {
-                                    id: vId,
-                                    title: vTitle,
-                                    description: video.description || video.snippet?.description || "",
-                                    thumbnail: vThumb || "",
-                                    tags: video.tags || (video.snippet?.tags ? video.snippet.tags.join(", ") : ""),
-                                    privacyStatus: video.privacyStatus || video.snippet?.status?.privacyStatus || "private",
-                                    fileName: video.fileName || video.fileDetails?.fileName || dbRecord?.filename || "",
-                                    publishedAt: video.publishedAt || video.snippet?.publishedAt || null
-                                  };
-                                  handleSelectVideo(videoObj);
-                                }
-                                setTimeout(() => {
-                                  document.querySelector("[class*='inlineEditPanel']")?.scrollIntoView({ behavior: "smooth", block: "start" });
-                                }, 200);
-                              }}
-                              className={styles.btnSubmit}
-                              style={{
-                                width: "auto",
-                                fontSize: "0.72rem",
-                                padding: "0.35rem 0.75rem",
-                                background: isUploading ? "rgba(255, 255, 255, 0.05)" : "rgba(168, 85, 247, 0.15)",
-                                color: isUploading ? "#64748b" : "#c084fc",
-                                border: isUploading ? "1px solid rgba(255, 255, 255, 0.1)" : "1px solid rgba(168, 85, 247, 0.35)",
-                                borderRadius: "6px",
-                                cursor: isUploading ? "not-allowed" : "pointer",
-                                fontWeight: "700",
-                                opacity: isUploading ? 0.6 : 1,
-                                whiteSpace: "nowrap"
-                              }}
-                              title={isUploading ? "El vídeo se está subiendo y no se puede editar todavía" : "Abrir en el editor"}
-                            >
-                              ✏️ Editar
-                            </button>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                if (window.confirm("¿Estás seguro de que deseas eliminar este borrador de la lista? Se borrará de la base de datos local y dejará de aparecer en esta cola.")) {
-                                  try {
-                                    const ytId = video.id?.videoId || video.id;
-                                    const dbVideo = dbVideos.find(dbv => dbv.youtubeId === ytId);
-                                    const dbId = dbVideo?.id || video.dbId || video.id;
-                                    const res = await fetch(`/api/videos?id=${dbId}`, { method: "DELETE" });
-                                    if (res.ok) {
-                                      alert("Borrador eliminado correctamente de la base de datos.");
-                                      fetchScheduledUpdates();
-                                    } else {
-                                      const errData = await res.json();
-                                      alert(`Error al eliminar: ${errData.error || 'error desconocido'}`);
+                                  setTimeout(() => {
+                                    document.querySelector("[class*='inlineEditPanel']")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                                  }, 200);
+                                }}
+                                className={styles.btnSubmit}
+                                style={{
+                                  width: "auto",
+                                  fontSize: "0.72rem",
+                                  padding: "0.35rem 0.75rem",
+                                  background: isUploading ? "rgba(255, 255, 255, 0.05)" : "rgba(168, 85, 247, 0.15)",
+                                  color: isUploading ? "#64748b" : "#c084fc",
+                                  border: isUploading ? "1px solid rgba(255, 255, 255, 0.1)" : "1px solid rgba(168, 85, 247, 0.35)",
+                                  borderRadius: "6px",
+                                  cursor: isUploading ? "not-allowed" : "pointer",
+                                  fontWeight: "700",
+                                  opacity: isUploading ? 0.6 : 1,
+                                  whiteSpace: "nowrap"
+                                }}
+                                title={isUploading ? "El vídeo se está subiendo y no se puede editar todavía" : "Abrir en el editor"}
+                              >
+                                ✏️ Editar
+                              </button>
+
+                              {/* Botón para desvincular si tiene youtubeId */}
+                              {dbVid && dbVid.youtubeId && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUnlinkCardFromYoutube(dbVid.id)}
+                                  style={{
+                                    background: "rgba(245, 158, 11, 0.15)",
+                                    border: "1px solid rgba(245, 158, 11, 0.3)",
+                                    color: "#f59e0b",
+                                    fontSize: "0.72rem",
+                                    padding: "0.35rem 0.6rem",
+                                    borderRadius: "6px",
+                                    cursor: "pointer"
+                                  }}
+                                  title="Desvincular vídeo de YouTube"
+                                >
+                                  🔗✕
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  if (window.confirm("¿Estás seguro de que deseas eliminar este borrador de la lista? Se borrará de la base de datos local y dejará de aparecer en esta cola.")) {
+                                    try {
+                                      const ytId = video.id?.videoId || video.id;
+                                      const dbVideo = dbVideos.find(dbv => dbv.youtubeId === ytId);
+                                      const dbId = dbVideo?.id || video.dbId || video.id;
+                                      const res = await fetch(`/api/videos?id=${dbId}`, { method: "DELETE" });
+                                      if (res.ok) {
+                                        alert("Borrador eliminado correctamente de la base de datos.");
+                                        fetchScheduledUpdates();
+                                      } else {
+                                        const errData = await res.json();
+                                        alert(`Error al eliminar: ${errData.error || 'error desconocido'}`);
+                                      }
+                                    } catch (err) {
+                                      alert(`Error de red al intentar eliminar: ${err.message}`);
                                     }
-                                  } catch (err) {
-                                    alert(`Error de red al intentar eliminar: ${err.message}`);
                                   }
-                                }
-                              }}
-                              className={styles.btnDelete}
-                              style={{
-                                width: "auto",
-                                fontSize: "0.72rem",
-                                padding: "0.35rem 0.6rem",
-                                background: "rgba(239, 68, 68, 0.15)",
-                                color: "#ef4444",
-                                border: "1px solid rgba(239, 68, 68, 0.3)",
-                                borderRadius: "6px",
-                                cursor: "pointer"
-                              }}
-                              title="Eliminar borrador de la aplicación"
-                            >
-                              ✕
-                            </button>
+                                }}
+                                className={styles.btnDelete}
+                                style={{
+                                  width: "auto",
+                                  fontSize: "0.72rem",
+                                  padding: "0.35rem 0.6rem",
+                                  background: "rgba(239, 68, 68, 0.15)",
+                                  color: "#ef4444",
+                                  border: "1px solid rgba(239, 68, 68, 0.3)",
+                                  borderRadius: "6px",
+                                  cursor: "pointer"
+                                }}
+                                title="Eliminar borrador de la aplicación"
+                              >
+                                ✕
+                              </button>
+                            </div>
                           </div>
+
+                          {/* Fila inferior: Buscador manual */}
+                          {dbVid && (!dbVid.youtubeId || showSearchForCard[dbVid.id]) && (
+                            <div style={{
+                              marginTop: "0.5rem",
+                              borderTop: "1px dashed rgba(255,255,255,0.08)",
+                              paddingTop: "0.5rem",
+                              width: "100%",
+                              position: "relative"
+                            }}>
+                              <div style={{ fontSize: "0.72rem", color: "var(--text-secondary)", marginBottom: "0.25rem" }}>
+                                { !dbVid.youtubeId 
+                                  ? "⚠️ Este borrador no está vinculado a YouTube. Vincula un vídeo:" 
+                                  : "🔍 Cambiar vinculación de vídeo en YouTube:" }
+                              </div>
+                              <div style={{ display: "flex", gap: "0.5rem", position: "relative" }}>
+                                <input
+                                  type="text"
+                                  placeholder="Buscar vídeo en el canal (título, ID o URL)..."
+                                  value={cardSearchQueries[dbVid.id] || ""}
+                                  onChange={(e) => handleCardVideoSearch(dbVid.id, e.target.value)}
+                                  style={{
+                                    flex: 1,
+                                    padding: "0.35rem 0.5rem",
+                                    fontSize: "0.75rem",
+                                    background: "var(--bg-surface-solid, #1e293b)",
+                                    color: "#fff",
+                                    border: "1px solid var(--border-color, #334155)",
+                                    borderRadius: "6px"
+                                  }}
+                                />
+                                {cardSearchQueries[dbVid.id] && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setCardSearchQueries(prev => { const next = { ...prev }; delete next[dbVid.id]; return next; });
+                                      setCardSearchResults(prev => { const next = { ...prev }; delete next[dbVid.id]; return next; });
+                                    }}
+                                    style={{
+                                      background: "transparent",
+                                      border: "none",
+                                      color: "var(--text-muted)",
+                                      cursor: "pointer",
+                                      fontSize: "0.75rem"
+                                    }}
+                                  >✕</button>
+                                )}
+                              </div>
+
+                              {/* Resultados de búsqueda */}
+                              {cardSearchResults[dbVid.id] && cardSearchResults[dbVid.id].length > 0 && (
+                                <div style={{
+                                  position: "absolute",
+                                  zIndex: 100,
+                                  background: "#0f172a",
+                                  border: "1px solid #334155",
+                                  borderRadius: "6px",
+                                  marginTop: "2px",
+                                  maxHeight: "180px",
+                                  overflowY: "auto",
+                                  width: "100%",
+                                  boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.5)"
+                                }}>
+                                  {cardSearchResults[dbVid.id].map(res => (
+                                    <div
+                                      key={res.id}
+                                      onClick={() => handleLinkCardToYoutube(dbVid.id, res.id, res.title)}
+                                      style={{
+                                        padding: "0.4rem 0.6rem",
+                                        cursor: "pointer",
+                                        borderBottom: "1px solid rgba(255,255,255,0.05)",
+                                        fontSize: "0.72rem",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: "0.5rem"
+                                      }}
+                                      onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255, 255, 255, 0.05)"}
+                                      onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                                    >
+                                      {res.thumbnail && <img src={res.thumbnail} alt="" style={{ width: "32px", aspectRatio: "16/9", objectFit: "cover", borderRadius: "3px" }} />}
+                                      <div style={{ minWidth: 0, flex: 1 }}>
+                                        <div style={{ color: "#fff", fontWeight: "600", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+                                          {res.title}
+                                        </div>
+                                        <div style={{ color: "#94a3b8", fontSize: "0.65rem" }}>
+                                          ID: {res.id} · {res.privacyStatus === 'public' ? 'Público' : res.privacyStatus === 'unlisted' ? 'Oculto' : 'Privado'}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {cardSearchLoading[dbVid.id] && (
+                                <div style={{ fontSize: "0.68rem", color: "#a855f7", marginTop: "2px" }}>Buscando en YouTube...</div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       );
                     })}

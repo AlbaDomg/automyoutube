@@ -32,6 +32,7 @@ export async function GET(request) {
 
     const { searchParams } = new URL(request.url);
     const q = searchParams.get('q');
+    const includePublic = searchParams.get('includePublic') === 'true';
 
     const email = await getCurrentUserEmail(request);
     const channel = await prisma.channel.findUnique({
@@ -163,9 +164,9 @@ export async function GET(request) {
           return null;
         }
 
-        // Filtro de privacidad: Solo detectar videos en estado PRIVADO u OCULTO
+        // Filtro de privacidad: Solo detectar videos en estado PRIVADO u OCULTO (o PUBLICO si se solicita)
         const privacy = item.status?.privacyStatus;
-        if (privacy !== 'private' && privacy !== 'unlisted') {
+        if (privacy !== 'private' && privacy !== 'unlisted' && !(includePublic && privacy === 'public')) {
           return null;
         }
 
@@ -193,9 +194,12 @@ export async function GET(request) {
         videos = videos.filter(v => v.title.toLowerCase().includes(queryClean));
       }
 
-      // Si buscamos por ID y la lista final está vacía (no era privado/oculto o no existe)
+      // Si buscamos por ID y la lista final está vacía (no era privado/oculto/público o no existe)
       if (isSearchById && videos.length === 0) {
-        return NextResponse.json({ error: 'El video no se encontró o no cumple los requisitos (debe ser privado u oculto en tu canal).' }, { status: 400 });
+        const errorMsg = includePublic
+          ? 'El video no se encontró en tu canal.'
+          : 'El video no se encontró o no cumple los requisitos (debe ser privado u oculto en tu canal).';
+        return NextResponse.json({ error: errorMsg }, { status: 400 });
       }
     }
 
