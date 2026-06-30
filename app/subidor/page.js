@@ -1638,9 +1638,9 @@ export default function SubidorPage() {
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", maxHeight: "320px", overflowY: "auto", paddingRight: "0.25rem" }}>
               {pendingPrivateVideos.map(video => {
-                const videoTitle = video.snippet?.title || video.title || "Sin título";
                 const ytId = video.id?.videoId || video.id;
                 const dbVid = dbVideos.find(v => v.youtubeId === ytId || v.id === ytId || v.id === video.dbId);
+                const videoTitle = dbVid?.title || video.snippet?.title || video.title || "Sin título";
                 const uploadDate = dbVid?.createdAt || video.snippet?.publishedAt || video.createdAt;
                 const scheduledDate = dbVid?.scheduledAt;
                 return (

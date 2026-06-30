@@ -1567,7 +1567,7 @@ export default function Dashboard() {
 
           // Si no tiene rawFrameBase64 o falló la carga, usamos el fotograma por defecto de YouTube
           if (!bgImg) {
-            const cleanUrl = getCleanVideoFrameUrl(videoVal?.thumbnail, videoVal?.id);
+            const cleanUrl = getCleanVideoFrameUrl(videoVal?.thumbnail, videoVal?.youtubeId || videoVal?.id);
             if (cleanUrl) {
               try {
                 const proxiedUrl = (cleanUrl.startsWith("data:") || cleanUrl.startsWith("/"))
@@ -2277,8 +2277,8 @@ export default function Dashboard() {
     const scheduledUpdate = scheduledUpdates.find(u => u.youtubeId === video.id);
 
     // Auto-detectar programa y playlist utilizando nuestro nuevo helper
-    const initialTitle = video.title || dbVideo?.title || "";
-    const initialDesc = video.description || dbVideo?.description || "";
+    const initialTitle = dbVideo?.title || video.title || "";
+    const initialDesc = dbVideo?.description || video.description || "";
     const initialPlaylistId = dbVideo?.playlistId || "";
 
     const detected = detectProgramAndPlaylist(
@@ -3413,27 +3413,114 @@ export default function Dashboard() {
   // Vincular borrador local a vídeo de YouTube
   const handleLinkCardToYoutube = async (cardDbId, youtubeVideoId, ytVideoTitle) => {
     try {
-      const res = await fetch(`/api/videos?id=${cardDbId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          youtubeId: youtubeVideoId,
-          status: "EDITING"
-        })
-      });
-
-      if (res.ok) {
-        // Limpiar estados de búsqueda
-        setCardSearchQueries(prev => { const next = { ...prev }; delete next[cardDbId]; return next; });
-        setCardSearchResults(prev => { const next = { ...prev }; delete next[cardDbId]; return next; });
-        setShowSearchForCard(prev => { const next = { ...prev }; delete next[cardDbId]; return next; });
-        
-        await fetchScheduledUpdates();
-        alert(`Borrador vinculado con éxito a: "${ytVideoTitle}"`);
-      } else {
-        const errData = await res.json();
-        alert(`Error al vincular: ${errData.error || "error desconocido"}`);
+      // Buscar el borrador local del PDF en el estado
+      const pdfCard = dbVideos.find(v => v.id === cardDbId);
+      if (!pdfCard) {
+        alert("No se encontró el borrador del PDF en la base de datos.");
+        return;
       }
+
+      // Buscar si ya existe un registro en la base de datos para este vídeo de YouTube (ej. subido por el subidor)
+      const existingYtVid = dbVideos.find(v => v.youtubeId === youtubeVideoId && v.id !== cardDbId);
+
+      // Detectar programa y playlist a partir de los datos del PDF
+      const detected = detectProgramAndPlaylist(
+        pdfCard.title || "",
+        pdfCard.description || "",
+        pdfCard.filename || ""
+      );
+
+      // Generar miniatura preliminar con el fondo real de YouTube
+      let finalThumbnailBase64 = null;
+      if (detected.logoName !== "none") {
+        try {
+          const cleanTitle = (pdfCard.title || "").replace(/\|.*$/, "").trim();
+          let seoPhrase = "";
+
+          // Intentar obtener la frase SEO desde Gemini
+          try {
+            const seoRes = await fetch("/api/youtube/generate-seo-phrase", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ title: cleanTitle, description: pdfCard.description })
+            });
+            if (seoRes.ok) {
+              const seoData = await seoRes.json();
+              seoPhrase = seoData.thumbnailText;
+            }
+          } catch (e) {
+            console.warn("Fallo al generar frase SEO por API:", e);
+          }
+
+          if (!seoPhrase) {
+            seoPhrase = ensureThreeToFiveWords("", cleanTitle);
+          }
+
+          // Generar la miniatura usando el objeto que contiene el youtubeId real para cargar el fotograma de YouTube
+          finalThumbnailBase64 = await generateSingleAutoThumbnail(
+            seoPhrase,
+            existingYtVid || { id: youtubeVideoId, youtubeId: youtubeVideoId },
+            null,
+            detected.logoName
+          );
+        } catch (thumbErr) {
+          console.error("Error al generar miniatura en vinculación manual desde buscador:", thumbErr);
+        }
+      }
+
+      if (existingYtVid) {
+        // CASO A: Ya existe un registro para este vídeo de YouTube en la BD local.
+        // Actualizamos dicho registro con los metadatos correctos del PDF y la miniatura generada.
+        const updateRes = await fetch(`/api/videos?id=${existingYtVid.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: pdfCard.title,
+            description: pdfCard.description,
+            playlistId: pdfCard.playlistId || detected.playlistId || null,
+            thumbnailBase64: finalThumbnailBase64 || undefined,
+            status: "EDITING"
+          })
+        });
+
+        if (updateRes.ok) {
+          // Eliminamos el registro temporal del PDF para evitar duplicados en la cola
+          await fetch(`/api/videos?id=${pdfCard.id}&onlyLocal=true`, {
+            method: "DELETE"
+          });
+        } else {
+          const errData = await updateRes.json();
+          alert(`Error al actualizar metadatos del vídeo: ${errData.error || "error desconocido"}`);
+          return;
+        }
+      } else {
+        // CASO B: No existe registro para este vídeo de YouTube todavía.
+        // Simplemente enlazamos el registro del PDF a este youtubeId y guardamos la miniatura.
+        const updateRes = await fetch(`/api/videos?id=${pdfCard.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            youtubeId: youtubeVideoId,
+            thumbnailBase64: finalThumbnailBase64 || undefined,
+            status: "EDITING"
+          })
+        });
+
+        if (!updateRes.ok) {
+          const errData = await updateRes.json();
+          alert(`Error al vincular: ${errData.error || "error desconocido"}`);
+          return;
+        }
+      }
+
+      // Limpiar estados de búsqueda
+      setCardSearchQueries(prev => { const next = { ...prev }; delete next[cardDbId]; return next; });
+      setCardSearchResults(prev => { const next = { ...prev }; delete next[cardDbId]; return next; });
+      setShowSearchForCard(prev => { const next = { ...prev }; delete next[cardDbId]; return next; });
+      
+      await fetchScheduledUpdates();
+      fetchTasks();
+      alert(`Borrador vinculado con éxito y metadatos del PDF copiados.`);
     } catch (err) {
       console.error(err);
       alert("Error de red al vincular el vídeo.");
@@ -5415,7 +5502,7 @@ export default function Dashboard() {
                     {pendingPrivateVideos.map(video => {
                       const ytId = video.id?.videoId || video.id;
                       const dbVid = dbVideos.find(v => v.youtubeId === ytId || v.id === ytId);
-                      const vTitle = video.snippet?.title || video.title || dbVid?.title || "Sin título";
+                      const vTitle = dbVid?.title || video.snippet?.title || video.title || "Sin título";
                       const vDate = dbVid?.createdAt || video.snippet?.publishedAt || video.createdAt;
                       const vId = video.id?.videoId || video.id;
                       const vThumb = dbVid?.thumbnail || video.thumbnail || video.snippet?.thumbnails?.medium?.url;
