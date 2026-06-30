@@ -1514,14 +1514,8 @@ export default function Dashboard() {
   const getCleanVideoFrameUrl = (videoThumbnailUrl, videoId) => {
     // Si la URL de la miniatura está firmada (contiene parámetros de consulta de YouTube para vídeos privados)
     if (videoThumbnailUrl && (videoThumbnailUrl.includes("?sqp=") || videoThumbnailUrl.includes("&rs="))) {
-      // Intentar usar hqdefault o maxresdefault en lugar de default/mqdefault para mayor calidad, manteniendo la firma
-      let highResUrl = videoThumbnailUrl;
-      if (highResUrl.includes("/default.jpg")) {
-        highResUrl = highResUrl.replace("/default.jpg", "/hqdefault.jpg");
-      } else if (highResUrl.includes("/mqdefault.jpg")) {
-        highResUrl = highResUrl.replace("/mqdefault.jpg", "/hqdefault.jpg");
-      }
-      return highResUrl;
+      // Retornar exactamente la URL firmada tal cual, porque la firma está vinculada al path exacto
+      return videoThumbnailUrl;
     }
 
     if (videoId && videoId.length === 11) {

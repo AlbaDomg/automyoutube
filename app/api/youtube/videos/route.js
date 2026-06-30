@@ -179,7 +179,11 @@ export async function GET(request) {
           id: item.id,
           title: item.snippet.title,
           description: item.snippet.description,
-          thumbnail: item.snippet.thumbnails?.medium?.url || item.snippet.thumbnails?.default?.url || '',
+          thumbnail: item.snippet.thumbnails?.maxres?.url || 
+                     item.snippet.thumbnails?.standard?.url || 
+                     item.snippet.thumbnails?.high?.url || 
+                     item.snippet.thumbnails?.medium?.url || 
+                     item.snippet.thumbnails?.default?.url || '',
           publishedAt: item.snippet.publishedAt,
           tags: item.snippet.tags ? item.snippet.tags.join(', ') : '',
           isShort: isShort,
