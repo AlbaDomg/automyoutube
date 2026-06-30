@@ -5505,7 +5505,7 @@ export default function Dashboard() {
                       const vTitle = dbVid?.title || video.snippet?.title || video.title || "Sin título";
                       const vDate = dbVid?.createdAt || video.snippet?.publishedAt || video.createdAt;
                       const vId = video.id?.videoId || video.id;
-                      const vThumb = dbVid?.thumbnail || video.thumbnail || video.snippet?.thumbnails?.medium?.url;
+                      const vThumb = dbVid?.thumbnailBase64 || video.thumbnail || video.snippet?.thumbnails?.medium?.url;
                       const scheduledDate = dbVid?.scheduledAt || video.scheduledAt;
 
                       const isUploading = dbVid?.status === "UPLOADING" || video.status === "UPLOADING";
