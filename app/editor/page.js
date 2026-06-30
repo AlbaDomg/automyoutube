@@ -1822,7 +1822,6 @@ export default function Dashboard() {
     const interval = setInterval(() => {
       fetchScheduledUpdates();
       fetchTasks(true);
-      fetchPrivateVideos();
     }, 10000);
     return () => clearInterval(interval);
   }, [isAuthenticated]);
@@ -4619,6 +4618,12 @@ export default function Dashboard() {
       ...tasks.filter(t => t.status === "COMPLETED" || t.status === "SCHEDULED").map(t => t.youtubeId)
     ].filter(Boolean));
 
+    // Obtener los IDs de YouTube vinculados al PDF (parsedVideos) o a borradores locales
+    const linkedYoutubeIds = new Set([
+      ...parsedVideos.map(pv => pv.matchedVideoId),
+      ...localDrafts.map(ld => ld.id)
+    ].filter(Boolean));
+
     // Obtener los títulos de los vídeos que se están subiendo actualmente
     const uploadingTitles = new Set(
       dbVideos
@@ -4626,8 +4631,11 @@ export default function Dashboard() {
         .map(v => v.title.toLowerCase().trim())
     );
 
-    // Filtrar privateVideos para excluir borradores de YouTube cuyo título coincida con un vídeo subiéndose
+    // Filtrar privateVideos para incluir solo los que están vinculados y no se están subiendo
     const filteredPrivateVideos = privateVideos.filter(video => {
+      const ytId = video.id?.videoId || video.id;
+      if (!linkedYoutubeIds.has(ytId)) return false;
+
       const vTitle = video.snippet?.title || video.title;
       if (!vTitle) return true;
       return !uploadingTitles.has(vTitle.toLowerCase().trim());
@@ -4650,7 +4658,7 @@ export default function Dashboard() {
         const dateB = new Date(b.publishedAt || b.createdAt || 0);
         return dateB - dateA;
       });
-  }, [privateVideos, localDrafts, completedLocalVideos, scheduledUpdates, tasks, dbVideos]);
+  }, [privateVideos, localDrafts, completedLocalVideos, scheduledUpdates, tasks, dbVideos, parsedVideos]);
 
   const mergedCompletedItems = useMemo(() => {
     const taskItems = tasks

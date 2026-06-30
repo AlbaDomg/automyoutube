@@ -396,7 +396,6 @@ export default function SubidorPage() {
     const interval = setInterval(() => {
       fetchScheduledUpdates();
       fetchTasks(true);
-      fetchPrivateVideos();
     }, 10000);
     return () => clearInterval(interval);
   }, [isAuthenticated]);
@@ -790,7 +789,15 @@ export default function SubidorPage() {
       ...tasks.filter(t => t.status === "COMPLETED" || t.status === "SCHEDULED").map(t => t.youtubeId)
     ].filter(Boolean));
 
-    const mergedList = [...privateVideos];
+    const linkedYoutubeIds = new Set(localDrafts.map(ld => ld.id).filter(Boolean));
+
+    // Filtrar privateVideos para incluir solo los que están vinculados a borradores locales
+    const filteredPrivateVideos = privateVideos.filter(video => {
+      const ytId = video.id?.videoId || video.id;
+      return linkedYoutubeIds.has(ytId);
+    });
+
+    const mergedList = [...filteredPrivateVideos];
     localDrafts.forEach(ld => {
       if (!mergedList.some(v => (v.id?.videoId || v.id) === ld.id)) {
         mergedList.push(ld);
