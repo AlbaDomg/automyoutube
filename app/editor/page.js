@@ -2529,9 +2529,13 @@ export default function Dashboard() {
           setIsExtractingFrame(false);
         });
     } else if (video.youtubeId) {
-      // Fallback: usar la miniatura por defecto que genera YouTube para este vídeo a través del proxy de CORS
-      const directUrl = video.thumbnail || `https://img.youtube.com/vi/${video.youtubeId}/hqdefault.jpg`;
-      const proxiedUrl = `/api/youtube/thumbnail-proxy?url=${encodeURIComponent(directUrl)}`;
+      // Intentar obtener la miniatura limpia firmada de YouTube desde la lista de privateVideos
+      const ytVideo = privateVideos.find(pv => pv.id === video.youtubeId);
+      const directUrl = ytVideo?.thumbnail || ytVideo?.snippet?.thumbnails?.medium?.url || `https://img.youtube.com/vi/${video.youtubeId}/hqdefault.jpg`;
+      const cleanUrl = getCleanVideoFrameUrl(directUrl, video.youtubeId);
+      const proxiedUrl = (cleanUrl.startsWith("data:") || cleanUrl.startsWith("/"))
+        ? cleanUrl
+        : `/api/youtube/thumbnail-proxy?url=${encodeURIComponent(cleanUrl)}`;
       setCustomBgBase64(proxiedUrl);
     }
     
@@ -3544,7 +3548,9 @@ export default function Dashboard() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          youtubeId: null
+          youtubeId: null,
+          thumbnailBase64: null,
+          rawFrameBase64: null
         })
       });
 
