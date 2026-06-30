@@ -306,6 +306,7 @@ export default function Dashboard() {
   const [showYtDraftSearchDropdown, setShowYtDraftSearchDropdown] = useState(false);
   const [ytDraftSearchResults, setYtDraftSearchResults] = useState([]);
   const [loadingYtDrafts, setLoadingYtDrafts] = useState(false);
+  const [deleteConfirmVideo, setDeleteConfirmVideo] = useState(null);
 
   // Estados para buscadores locales por tarjeta en la cola de borradores
   const [cardSearchQueries, setCardSearchQueries] = useState({}); // { [dbId]: query }
@@ -2122,6 +2123,45 @@ export default function Dashboard() {
       } catch (err) {
         alert("Error al desconectar.");
       }
+    }
+  };
+
+  // Manejar click en eliminar borrador (decidir si mostrar modal o confirmar directamente)
+  const handleDeleteDraftClick = (video, dbVid) => {
+    const ytId = video.id?.videoId || video.id;
+    const dbRecord = dbVid || dbVideos.find(dbv => dbv.youtubeId === ytId || dbv.id === ytId);
+    
+    const finalYoutubeId = dbRecord?.youtubeId || video.youtubeId || (ytId && ytId.length === 11 ? ytId : null);
+    
+    // Si no tiene youtubeId, se borra directamente de la base de datos (con confirmación normal)
+    if (!finalYoutubeId) {
+      if (window.confirm("¿Estás seguro de que deseas eliminar este borrador de la lista? Se borrará de la base de datos local.")) {
+        executeDeleteDraft(dbRecord?.id || video.dbId || video.id, true);
+      }
+    } else {
+      // Tiene youtubeId, abrimos el modal para elegir la opción
+      setDeleteConfirmVideo({
+        id: dbRecord?.id || video.dbId || video.id,
+        ytId: finalYoutubeId,
+        title: dbRecord?.title || video.title || video.snippet?.title || "Sin título"
+      });
+    }
+  };
+
+  // Ejecutar el borrado de borrador con la opción seleccionada
+  const executeDeleteDraft = async (dbId, onlyLocal) => {
+    try {
+      const res = await fetch(`/api/videos?id=${dbId}&onlyLocal=${onlyLocal}`, { method: "DELETE" });
+      if (res.ok) {
+        alert(onlyLocal ? "Borrador eliminado correctamente de la base de datos local." : "Borrador eliminado correctamente de la base de datos y de YouTube.");
+        fetchScheduledUpdates();
+        setDeleteConfirmVideo(null);
+      } else {
+        const errData = await res.json();
+        alert(`Error al eliminar: ${errData.error || 'error desconocido'}`);
+      }
+    } catch (err) {
+      alert(`Error de red al intentar eliminar: ${err.message}`);
     }
   };
 
@@ -5736,25 +5776,7 @@ export default function Dashboard() {
 
                               <button
                                 type="button"
-                                onClick={async () => {
-                                  if (window.confirm("¿Estás seguro de que deseas eliminar este borrador de la lista? Se borrará de la base de datos local y dejará de aparecer en esta cola.")) {
-                                    try {
-                                      const ytId = video.id?.videoId || video.id;
-                                      const dbVideo = dbVideos.find(dbv => dbv.youtubeId === ytId);
-                                      const dbId = dbVideo?.id || video.dbId || video.id;
-                                      const res = await fetch(`/api/videos?id=${dbId}`, { method: "DELETE" });
-                                      if (res.ok) {
-                                        alert("Borrador eliminado correctamente de la base de datos.");
-                                        fetchScheduledUpdates();
-                                      } else {
-                                        const errData = await res.json();
-                                        alert(`Error al eliminar: ${errData.error || 'error desconocido'}`);
-                                      }
-                                    } catch (err) {
-                                      alert(`Error de red al intentar eliminar: ${err.message}`);
-                                    }
-                                  }
-                                }}
+                                onClick={() => handleDeleteDraftClick(video, dbVid)}
                                 className={styles.btnDelete}
                                 style={{
                                   width: "auto",
@@ -7844,6 +7866,93 @@ export default function Dashboard() {
             onLoadedMetadata={handleHistoryVideoLoadedMetadata}
             onSeeked={handleHistoryVideoSeeked}
           />
+        </div>
+      )}
+
+      {/* Modal de confirmación de eliminación con opciones de YouTube */}
+      {deleteConfirmVideo && (
+        <div className={styles.settingsOverlay} onClick={() => setDeleteConfirmVideo(null)}>
+          <div className={styles.settingsModal} style={{ maxWidth: "450px" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem" }}>
+              <h3 style={{ fontSize: "1.1rem", fontWeight: "850", color: "#f8fafc", margin: 0 }}>🗑️ Eliminar Borrador</h3>
+              <button type="button" className={styles.closeBtn} onClick={() => setDeleteConfirmVideo(null)}>✕</button>
+            </div>
+            
+            <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginBottom: "1.5rem", lineHeight: "1.4" }}>
+              Estás a punto de eliminar el borrador: <strong style={{ color: "#f8fafc" }}>"{deleteConfirmVideo.title}"</strong>.
+              <br /><br />
+              Este vídeo está subido a YouTube. Por favor, selecciona una opción:
+            </p>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              <button
+                type="button"
+                onClick={() => executeDeleteDraft(deleteConfirmVideo.id, true)}
+                className={styles.btnSubmit}
+                style={{
+                  width: "100%",
+                  padding: "0.75rem 1rem",
+                  fontSize: "0.82rem",
+                  background: "rgba(245, 158, 11, 0.15)",
+                  color: "#f59e0b",
+                  border: "1px solid rgba(245, 158, 11, 0.35)",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  fontWeight: "600",
+                  textAlign: "center",
+                  transition: "all 0.2s"
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = "rgba(245, 158, 11, 0.25)"}
+                onMouseLeave={(e) => e.currentTarget.style.background = "rgba(245, 158, 11, 0.15)"}
+              >
+                📱 Eliminar SOLO de la App (Mantener en YouTube)
+              </button>
+
+              <button
+                type="button"
+                onClick={() => executeDeleteDraft(deleteConfirmVideo.id, false)}
+                className={styles.btnSubmit}
+                style={{
+                  width: "100%",
+                  padding: "0.75rem 1rem",
+                  fontSize: "0.82rem",
+                  background: "rgba(239, 68, 68, 0.15)",
+                  color: "#ef4444",
+                  border: "1px solid rgba(239, 68, 68, 0.35)",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  fontWeight: "600",
+                  textAlign: "center",
+                  transition: "all 0.2s"
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = "rgba(239, 68, 68, 0.25)"}
+                onMouseLeave={(e) => e.currentTarget.style.background = "rgba(239, 68, 68, 0.15)"}
+              >
+                🔴 Eliminar de la App y de YouTube
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmVideo(null)}
+                className={styles.btnSubmit}
+                style={{
+                  width: "100%",
+                  padding: "0.6rem 1rem",
+                  fontSize: "0.82rem",
+                  background: "transparent",
+                  color: "#94a3b8",
+                  border: "1px solid rgba(255, 255, 255, 0.1)",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  fontWeight: "600",
+                  textAlign: "center",
+                  marginTop: "0.5rem"
+                }}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

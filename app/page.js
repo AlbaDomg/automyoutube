@@ -874,63 +874,6 @@ export default function LandingPortalPage() {
                   </div>
                 )}
               </div>
-
-              {/* Formulario de Credenciales API */}
-              <form onSubmit={handleSaveConfig} style={{ display: "flex", flexDirection: "column", gap: "1.2rem" }}>
-                <div style={{
-                  background: "rgba(255, 255, 255, 0.02)",
-                  border: "1px solid var(--border-color)",
-                  borderRadius: "12px",
-                  padding: "1rem"
-                }}>
-                  <h4 style={{ fontSize: "0.9rem", margin: "0 0 0.75rem 0", fontWeight: "700" }}>Credenciales del Servidor</h4>
-                  <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: "0 0 1rem 0" }}>
-                    Introduce los tokens para habilitar los modelos de IA de Gemini y las llamadas de API de Google Cloud.
-                  </p>
-
-                  <div className={styles.inputGroup}>
-                    <label>Gemini API Key</label>
-                    <input
-                      type="password"
-                      placeholder={config.isConfigured ? "••••••••••••••••" : "Introduce tu clave de API de Gemini..."}
-                      value={configInput.GEMINI_API_KEY}
-                      onChange={(e) => setConfigInput(prev => ({ ...prev, GEMINI_API_KEY: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className={styles.inputGroup}>
-                    <label>YouTube Client ID</label>
-                    <input
-                      type="text"
-                      placeholder={config.isConfigured ? "••••••••••••••••" : "Introduce el Client ID de Google OAuth..."}
-                      value={configInput.YOUTUBE_CLIENT_ID}
-                      onChange={(e) => setConfigInput(prev => ({ ...prev, YOUTUBE_CLIENT_ID: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className={styles.inputGroup}>
-                    <label>YouTube Client Secret</label>
-                    <input
-                      type="password"
-                      placeholder={config.isConfigured ? "••••••••••••••••" : "Introduce el Client Secret..."}
-                      value={configInput.YOUTUBE_CLIENT_SECRET}
-                      onChange={(e) => setConfigInput(prev => ({ ...prev, YOUTUBE_CLIENT_SECRET: e.target.value }))}
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={savingConfig}
-                  className={styles.btnSubmit}
-                  style={{
-                    background: savingConfig ? "#4b5563" : "linear-gradient(135deg, #a855f7 0%, #ec4899 100%)",
-                    cursor: savingConfig ? "not-allowed" : "pointer"
-                  }}
-                >
-                  {savingConfig ? "Guardando..." : "Guardar Ajustes"}
-                </button>
-              </form>
             </div>
           </div>
         )}
