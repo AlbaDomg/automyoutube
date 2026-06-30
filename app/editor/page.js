@@ -1511,23 +1511,35 @@ export default function Dashboard() {
 
 
 
-  // Helper para obtener una URL de miniatura limpia (sin capas previas de logo o texto)
   const getCleanVideoFrameUrl = (videoThumbnailUrl, videoId) => {
+    // Si la URL de la miniatura está firmada (contiene parámetros de consulta de YouTube para vídeos privados)
+    if (videoThumbnailUrl && (videoThumbnailUrl.includes("?sqp=") || videoThumbnailUrl.includes("&rs="))) {
+      // Intentar usar hqdefault o maxresdefault en lugar de default/mqdefault para mayor calidad, manteniendo la firma
+      let highResUrl = videoThumbnailUrl;
+      if (highResUrl.includes("/default.jpg")) {
+        highResUrl = highResUrl.replace("/default.jpg", "/hqdefault.jpg");
+      } else if (highResUrl.includes("/mqdefault.jpg")) {
+        highResUrl = highResUrl.replace("/mqdefault.jpg", "/hqdefault.jpg");
+      }
+      return highResUrl;
+    }
+
     if (videoId && videoId.length === 11) {
-      return `https://i.ytimg.com/vi/${videoId}/hq2.jpg`;
+      return `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
     }
     if (videoThumbnailUrl) {
       const match = videoThumbnailUrl.match(/(?:vi|vi_webp)\/([a-zA-Z0-9_-]{11})/);
       if (match && match[1]) {
-        return `https://i.ytimg.com/vi/${match[1]}/hq2.jpg`;
+        return `https://i.ytimg.com/vi/${match[1]}/hqdefault.jpg`;
       }
       const extracted = extractYoutubeId(videoThumbnailUrl);
       if (extracted && extracted.length === 11) {
-        return `https://i.ytimg.com/vi/${extracted}/hq2.jpg`;
+        return `https://i.ytimg.com/vi/${extracted}/hqdefault.jpg`;
       }
     }
     return videoThumbnailUrl || "";
   };
+
 
   // Dibujar y componer la miniatura estilo TVG en un canvas en memoria
   const generateSingleAutoThumbnail = async (thumbnailTextVal, videoVal, customBgVal, selectedLogoVal) => {
@@ -3411,7 +3423,7 @@ export default function Dashboard() {
   };
 
   // Vincular borrador local a vídeo de YouTube
-  const handleLinkCardToYoutube = async (cardDbId, youtubeVideoId, ytVideoTitle) => {
+  const handleLinkCardToYoutube = async (cardDbId, youtubeVideoId, ytVideoTitle, ytVideoThumbnail) => {
     try {
       // Buscar el borrador local del PDF en el estado
       const pdfCard = dbVideos.find(v => v.id === cardDbId);
@@ -3459,7 +3471,7 @@ export default function Dashboard() {
           // Generar la miniatura usando el objeto que contiene el youtubeId real para cargar el fotograma de YouTube
           finalThumbnailBase64 = await generateSingleAutoThumbnail(
             seoPhrase,
-            existingYtVid || { id: youtubeVideoId, youtubeId: youtubeVideoId },
+            existingYtVid || { id: youtubeVideoId, youtubeId: youtubeVideoId, thumbnail: ytVideoThumbnail },
             null,
             detected.logoName
           );
@@ -3616,13 +3628,16 @@ export default function Dashboard() {
       }
     }
 
+    // Obtener el objeto de vídeo de YouTube (que contiene la miniatura con la firma de acceso)
+    const ytVideo = privateVideos.find(pv => pv.id === youtubeVideoId || pv.id === dbVid?.youtubeId);
+
     // Generar miniatura preliminar
     let finalThumbnailBase64 = null;
     if (pdfItem.thumbnailText && pdfItem.selectedProgramLogo !== "none") {
       try {
         finalThumbnailBase64 = await generateSingleAutoThumbnail(
           pdfItem.thumbnailText,
-          dbVid,
+          { ...dbVid, thumbnail: ytVideo?.thumbnail || ytVideo?.snippet?.thumbnails?.medium?.url },
           null,
           pdfItem.selectedProgramLogo
         );
@@ -5775,7 +5790,7 @@ export default function Dashboard() {
                                   {cardSearchResults[dbVid.id].map(res => (
                                     <div
                                       key={res.id}
-                                      onClick={() => handleLinkCardToYoutube(dbVid.id, res.id, res.title)}
+                                      onClick={() => handleLinkCardToYoutube(dbVid.id, res.id, res.title, res.thumbnail)}
                                       style={{
                                         padding: "0.4rem 0.6rem",
                                         cursor: "pointer",
