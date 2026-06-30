@@ -2366,9 +2366,12 @@ export default function Dashboard() {
     if (combinedVideo.rawFrameBase64) {
       setCustomBgBase64(combinedVideo.rawFrameBase64);
     } else {
-      // Priorizar la miniatura real que viene de YouTube (video.thumbnail), o caer en hqdefault.jpg
-      const directUrl = video.thumbnail || `https://img.youtube.com/vi/${video.id}/hqdefault.jpg`;
-      const proxiedUrl = `/api/youtube/thumbnail-proxy?url=${encodeURIComponent(directUrl)}`;
+      // Priorizar la miniatura limpia firmada de YouTube (video.ytThumbnail || video.thumbnail), o caer en hqdefault.jpg
+      const directUrl = video.ytThumbnail || video.thumbnail || `https://img.youtube.com/vi/${video.id}/hqdefault.jpg`;
+      const cleanUrl = getCleanVideoFrameUrl(directUrl, video.id);
+      const proxiedUrl = (cleanUrl.startsWith("data:") || cleanUrl.startsWith("/"))
+        ? cleanUrl
+        : `/api/youtube/thumbnail-proxy?url=${encodeURIComponent(cleanUrl)}`;
       setCustomBgBase64(proxiedUrl);
     }
     
@@ -5630,6 +5633,7 @@ export default function Dashboard() {
                                       title: vTitle,
                                       description: video.description || video.snippet?.description || "",
                                       thumbnail: vThumb || "",
+                                      ytThumbnail: video.thumbnail || video.snippet?.thumbnails?.medium?.url || "",
                                       tags: video.tags || (video.snippet?.tags ? video.snippet.tags.join(", ") : ""),
                                       privacyStatus: video.privacyStatus || video.snippet?.status?.privacyStatus || "private",
                                       fileName: video.fileName || video.fileDetails?.fileName || dbRecord?.filename || "",
