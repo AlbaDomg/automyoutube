@@ -2373,6 +2373,20 @@ export default function Dashboard() {
         ? cleanUrl
         : `/api/youtube/thumbnail-proxy?url=${encodeURIComponent(cleanUrl)}`;
       setCustomBgBase64(proxiedUrl);
+
+      // Refrescar y obtener la miniatura firmada fresca de forma asíncrona directamente de la API de YouTube
+      if (video.id && video.id.length === 11) {
+        fetch(`/api/youtube/videos?q=${video.id}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data && data[0] && data[0].thumbnail) {
+              const freshClean = getCleanVideoFrameUrl(data[0].thumbnail, video.id);
+              const freshProxied = `/api/youtube/thumbnail-proxy?url=${encodeURIComponent(freshClean)}`;
+              setCustomBgBase64(freshProxied);
+            }
+          })
+          .catch(err => console.warn("[handleSelectVideo] Fallo al refrescar miniatura firmada:", err));
+      }
     }
     
     // Asignar el logotipo detectado y habilitar miniatura automática si es distinto de "none"
@@ -2537,6 +2551,18 @@ export default function Dashboard() {
         ? cleanUrl
         : `/api/youtube/thumbnail-proxy?url=${encodeURIComponent(cleanUrl)}`;
       setCustomBgBase64(proxiedUrl);
+
+      // Refrescar y obtener la miniatura firmada fresca de forma asíncrona directamente de la API de YouTube
+      fetch(`/api/youtube/videos?q=${video.youtubeId}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data && data[0] && data[0].thumbnail) {
+            const freshClean = getCleanVideoFrameUrl(data[0].thumbnail, video.youtubeId);
+            const freshProxied = `/api/youtube/thumbnail-proxy?url=${encodeURIComponent(freshClean)}`;
+            setCustomBgBase64(freshProxied);
+          }
+        })
+        .catch(err => console.warn("[handleSelectLocalVideo] Fallo al refrescar miniatura firmada:", err));
     }
     
     if (detectedLogo !== "none") {
