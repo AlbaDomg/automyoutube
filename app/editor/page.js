@@ -2363,8 +2363,18 @@ export default function Dashboard() {
     }
 
     // Establecer el fotograma de fondo (prioridad base64 local sobre YouTube proxy)
-    if (combinedVideo.rawFrameBase64) {
-      setCustomBgBase64(combinedVideo.rawFrameBase64);
+    let rawFrame = combinedVideo.rawFrameBase64 || null;
+    if (rawFrame && rawFrame.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(rawFrame);
+        rawFrame = parsed[0] || null;
+      } catch (e) {
+        rawFrame = null;
+      }
+    }
+
+    if (rawFrame) {
+      setCustomBgBase64(rawFrame);
     } else {
       // Priorizar la miniatura limpia firmada de YouTube (video.ytThumbnail || video.thumbnail), o caer en hqdefault.jpg
       const directUrl = video.ytThumbnail || video.thumbnail || `https://img.youtube.com/vi/${video.id}/hqdefault.jpg`;

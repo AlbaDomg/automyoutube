@@ -80,8 +80,17 @@ export async function GET(request) {
 
       // Determinar si tiene fotogramas y cuántos
       const uploadsDir = path.join(process.cwd(), 'uploads');
-      let hasFrames = ['LOCAL_DRAFT', 'EDITING', 'READY', 'SCHEDULED', 'UPLOADING', 'COMPLETED'].includes(video.status);
-      let extractedFramesCount = hasFrames ? 8 : 0;
+      let hasFrames = !!video.rawFrameBase64;
+      let extractedFramesCount = 0;
+
+      if (hasFrames && video.rawFrameBase64.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(video.rawFrameBase64);
+          extractedFramesCount = Array.isArray(parsed) ? parsed.length : 1;
+        } catch (e) {
+          extractedFramesCount = 1;
+        }
+      }
 
       try {
         const hasLocalFrames = fs.existsSync(path.join(uploadsDir, `${video.id}-frame-0.jpg`));
@@ -95,7 +104,7 @@ export async function GET(request) {
               break;
             }
           }
-          extractedFramesCount = localCount || 6;
+          extractedFramesCount = Math.max(extractedFramesCount, localCount || 6);
         }
       } catch (fsErr) {
         console.warn('[Videos API] Failed to check frame files on disk:', fsErr.message);
@@ -210,12 +219,30 @@ export async function GET(request) {
       }
     }
 
+    // 1. Obtener los IDs de vídeos que tienen rawFrameBase64 en la BD de manera ultra-rápida (seleccionando solo id)
+    let idsWithFrames = new Set();
+    try {
+      const videosWithRawFrames = await prisma.video.findMany({
+        where: {
+          OR: [
+            { channelId: channel.id },
+            { channelId: null }
+          ],
+          rawFrameBase64: { not: null }
+        },
+        select: { id: true }
+      });
+      idsWithFrames = new Set(videosWithRawFrames.map(v => v.id));
+    } catch (dbErr) {
+      console.warn('[Videos API] Failed to fetch rawFrameBase64 presence set:', dbErr.message);
+    }
+
     const uploadsDir = path.join(process.cwd(), 'uploads');
     const videosWithFrames = videos.map(video => {
       // Determinar si tiene fotogramas y cuántos
       // Como excluimos rawFrameBase64 de la consulta general por rendimiento,
-      // deducimos la presencia de fotogramas según el estado del vídeo o el disco.
-      let hasFrames = ['LOCAL_DRAFT', 'EDITING', 'READY', 'SCHEDULED', 'UPLOADING', 'COMPLETED'].includes(video.status);
+      // comprobamos su presencia usando idsWithFrames y el disco local.
+      let hasFrames = idsWithFrames.has(video.id);
       let extractedFramesCount = hasFrames ? 8 : 0;
 
       // Intentar comprobar también si hay fotogramas locales en disco
@@ -232,14 +259,13 @@ export async function GET(request) {
               break;
             }
           }
-          extractedFramesCount = localCount || 6;
+          extractedFramesCount = Math.max(extractedFramesCount, localCount || 6);
         }
       } catch (fsErr) {
         console.warn('[Videos API] Failed to check frame files on disk:', fsErr.message);
       }
 
       // Devolver URLs dinámicas ligeras en lugar de los textos Base64 pesados.
-      // Esto reduce el tamaño de la respuesta JSON un 99.9% y aprovecha la caché del navegador.
       const thumbnailBase64 = `/api/videos/thumbnail?id=${video.id}`;
       const rawFrameBase64 = hasFrames ? `/api/videos/thumbnail?id=${video.id}&frame=0` : null;
 
